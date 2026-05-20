@@ -14,7 +14,7 @@ Local dev runs on Vite and uses `.env.development`:
 ```env
 VITE_API_BASE=/api
 VITE_DOCTOR_ID=doctor_sami_dev
-VITE_API_PROXY_TARGET=https://subrepand-troublesome-darrell.ngrok-free.dev
+VITE_API_PROXY_TARGET=https://api-staging.dardoc.com
 ```
 
 `/api` is proxied by Vite to the backend target, so browser code can keep calling `/api/...` locally.
@@ -24,7 +24,7 @@ VITE_API_PROXY_TARGET=https://subrepand-troublesome-darrell.ngrok-free.dev
 Vercel does not use the Vite dev proxy. Set this in Vercel Environment Variables for both Preview and Production:
 
 ```env
-VITE_API_BASE=https://your-production-backend.example.com
+VITE_API_BASE=https://api-staging.dardoc.com
 VITE_DOCTOR_ID=doctor_sami_dev
 ```
 
