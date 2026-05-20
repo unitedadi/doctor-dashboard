@@ -1,10 +1,9 @@
 import * as React from "react";
+import { API_BASE, DOCTOR_ID } from "../config.js";
 
 /* global React */
 const { useEffect: useEffectR, useMemo: useMemoR, useState: useStateR } = React;
 
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
-const DOCTOR_ID = "doctor_sami_dev";
 const TRACKS = [
   { key: "weight-loss", label: "Weight loss", summary: "Doctor-prescribed weight loss medication with ongoing support." },
   { key: "peptides", label: "Peptides", summary: "Doctor-prescribed peptide care plan with ongoing support." },

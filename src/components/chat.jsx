@@ -1,4 +1,5 @@
 import * as React from "react";
+import { API_BASE, DOCTOR_ID } from "../config.js";
 import { StreamChat } from "stream-chat";
 import {
   Channel,
@@ -12,9 +13,6 @@ import "stream-chat-react/dist/css/index.css";
 
 /* global React */
 const { useEffect: useEffectC, useMemo: useMemoC, useState: useStateC } = React;
-
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
-const DOCTOR_ID = "doctor_sami_dev";
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);

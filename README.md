@@ -1,73 +1,47 @@
 # doctor-dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+DarDoc doctor dashboard for appointments, patients, chat, and Rx care-plan prescribing.
 
-Currently, two official plugins are available:
+## Local Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Local dev runs on Vite and uses `.env.development`:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+```env
+VITE_API_BASE=/api
+VITE_DOCTOR_ID=doctor_sami_dev
+VITE_API_PROXY_TARGET=https://subrepand-troublesome-darrell.ngrok-free.dev
+```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+`/api` is proxied by Vite to the backend target, so browser code can keep calling `/api/...` locally.
+
+## Production / Vercel
+
+Vercel does not use the Vite dev proxy. Set this in Vercel Environment Variables for both Preview and Production:
+
+```env
+VITE_API_BASE=https://your-production-backend.example.com
+VITE_DOCTOR_ID=doctor_sami_dev
+```
+
+Then deploy normally from the linked GitHub repo. The project includes `vercel.json` with:
+
+- framework: `vite`
+- build command: `npm run build:prod`
+- output directory: `dist`
+- SPA fallback rewrite to `index.html`
+
+## Scripts
+
+```bash
+npm run dev        # local dev, uses .env.development
+npm run build      # production build
+npm run build:dev  # development-mode build
+npm run build:prod # production-mode build
+npm run preview    # preview built dist locally
+npm run lint
 ```

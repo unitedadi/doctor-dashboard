@@ -1,10 +1,8 @@
 import * as React from "react";
+import { API_BASE, DOCTOR_ID } from "../config.js";
 
 /* global React */
 const { useEffect: useEffectA, useMemo: useMemoA, useState: useStateA } = React;
-
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
-const DOCTOR_ID = "doctor_sami_dev";
 
 function dubaiToday() {
   return new Intl.DateTimeFormat("en-CA", {
