@@ -90,7 +90,7 @@ function ChatView({ initialPatientId, onOpenPatient }) {
     try {
       const token = await fetchChatToken();
       const channelPayload = await fetchJson(`${API_BASE}/doctor/chat/channels?doctor_id=${DOCTOR_ID}`);
-      const streamClient = StreamChat.getInstance(token.api_key, { timeout: 15000 });
+      const streamClient = new StreamChat(token.api_key, { timeout: 15000 });
       if (streamClient.userID) {
         await streamClient.disconnectUser();
       }
