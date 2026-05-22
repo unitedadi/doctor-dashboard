@@ -75,6 +75,10 @@ function ChatView({ initialPatientId, onOpenPatient }) {
   const [client, setClient] = useStateC(null);
   const [channels, setChannels] = useStateC([]);
   const [activeId, setActiveId] = useStateC(null);
+  const [activeStreamChannel, setActiveStreamChannel] = useStateC(null);
+  const [activeChannelLoading, setActiveChannelLoading] = useStateC(false);
+  const [activeChannelError, setActiveChannelError] = useStateC("");
+  const [activeChannelRetry, setActiveChannelRetry] = useStateC(0);
   const [patientContext, setPatientContext] = useStateC(null);
   const [search, setSearch] = useStateC("");
   const [loading, setLoading] = useStateC(true);
@@ -130,21 +134,15 @@ function ChatView({ initialPatientId, onOpenPatient }) {
         }
       }
 
-      const nextChannels = await Promise.all(channelEntries.map(async (entry) => {
-        const streamChannel = streamClient.channel(entry.channel_type, entry.channel_id);
-        await streamChannel.watch();
-        return { ...entry, streamChannel };
-      }));
-
       setClient(streamClient);
-      setChannels(nextChannels);
+      setChannels(channelEntries);
       setActiveId((current) => {
         if (initialPatientId) {
-          const match = nextChannels.find((item) => item.patient_id === initialPatientId);
+          const match = channelEntries.find((item) => item.patient_id === initialPatientId);
           if (match) return match.channel_id;
         }
-        if (current && nextChannels.some((item) => item.channel_id === current)) return current;
-        return nextChannels[0]?.channel_id || null;
+        if (current && channelEntries.some((item) => item.channel_id === current)) return current;
+        return channelEntries[0]?.channel_id || null;
       });
     } catch (err) {
       setError(err.message || "Could not connect GetStream chat.");
@@ -165,7 +163,35 @@ function ChatView({ initialPatientId, onOpenPatient }) {
 
   const active = channels.find((item) => item.channel_id === activeId) || null;
   const activePatient = patientContext?.patient || active?.patient || null;
-  const activeStreamChannel = active?.streamChannel || null;
+
+  useEffectC(() => {
+    let cancelled = false;
+    let watchedChannel = null;
+
+    async function watchActiveChannel() {
+      setActiveStreamChannel(null);
+      setActiveChannelError("");
+      if (!client || !active) return;
+
+      setActiveChannelLoading(true);
+      try {
+        const streamChannel = client.channel(active.channel_type, active.channel_id);
+        watchedChannel = streamChannel;
+        await streamChannel.watch();
+        if (!cancelled) setActiveStreamChannel(streamChannel);
+      } catch (err) {
+        if (!cancelled) setActiveChannelError(err.message || "Could not open this conversation.");
+      } finally {
+        if (!cancelled) setActiveChannelLoading(false);
+      }
+    }
+
+    watchActiveChannel();
+    return () => {
+      cancelled = true;
+      if (watchedChannel) watchedChannel.stopWatching().catch(() => {});
+    };
+  }, [client, active, activeChannelRetry]);
 
   useEffectC(() => {
     let cancelled = false;
@@ -193,8 +219,8 @@ function ChatView({ initialPatientId, onOpenPatient }) {
 
   const totalUnread = useMemoC(() => {
     if (!client) return 0;
-    return channels.reduce((sum, item) => sum + (item.streamChannel?.countUnread?.() || 0), 0);
-  }, [channels, client]);
+    return client.user?.total_unread_count || 0;
+  }, [client]);
 
   return (
     <>
@@ -220,16 +246,18 @@ function ChatView({ initialPatientId, onOpenPatient }) {
             <div className="patient-loading"><div /><div /><div /></div>
           ) : filteredList.map((item) => {
             const p = item.patient;
-            const unread = item.streamChannel?.countUnread?.() || 0;
+            const isActive = item.channel_id === activeId;
+            const listChannel = isActive ? activeStreamChannel : null;
+            const unread = listChannel?.countUnread?.() || 0;
             return (
-              <div key={item.channel_id} className={"chat-list-item" + (item.channel_id === activeId ? " active" : "")} onClick={() => setActiveId(item.channel_id)}>
+              <div key={item.channel_id} className={"chat-list-item" + (isActive ? " active" : "")} onClick={() => setActiveId(item.channel_id)}>
                 <Avatar initials={p.initials} name={p.name} size="md" online />
                 <div style={{ minWidth: 0 }}>
                   <div className="top">
                     <span className="nm">{p.name}</span>
-                    <span className="tm">{lastMessageTime(item.streamChannel)}</span>
+                    <span className="tm">{lastMessageTime(listChannel)}</span>
                   </div>
-                  <div className="pv">{lastMessagePreview(item.streamChannel)}</div>
+                  <div className="pv">{isActive && activeChannelLoading ? "Opening conversation..." : lastMessagePreview(listChannel)}</div>
                 </div>
                 {unread > 0 ? <span className="badge">{unread}</span> : <span style={{ width: 20 }} />}
               </div>
@@ -238,7 +266,12 @@ function ChatView({ initialPatientId, onOpenPatient }) {
           {!loading && filteredList.length === 0 && <div className="empty-state chat-empty">No active Rx chat channels.</div>}
         </div>
 
-        {client && activeStreamChannel && activePatient ? (
+        {activeChannelError ? (
+          <div className="api-state chat-api-state">
+            <span>{activeChannelError}</span>
+            <button type="button" className="btn-ghost" onClick={() => setActiveChannelRetry((value) => value + 1)}>Retry</button>
+          </div>
+        ) : client && activeStreamChannel && activePatient ? (
           <div className="stream-chat-shell">
             <Chat client={client} theme="str-chat__theme-light">
               <Channel channel={activeStreamChannel}>
@@ -270,6 +303,8 @@ function ChatView({ initialPatientId, onOpenPatient }) {
               </Channel>
             </Chat>
           </div>
+        ) : activeChannelLoading ? (
+          <div className="empty-state">Opening conversation...</div>
         ) : (
           <div className="empty-state">Select a conversation</div>
         )}
