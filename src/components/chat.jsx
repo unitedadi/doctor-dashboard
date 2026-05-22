@@ -90,7 +90,7 @@ function ChatView({ initialPatientId, onOpenPatient }) {
     try {
       const token = await fetchChatToken();
       const channelPayload = await fetchJson(`${API_BASE}/doctor/chat/channels?doctor_id=${DOCTOR_ID}`);
-      const streamClient = StreamChat.getInstance(token.api_key);
+      const streamClient = StreamChat.getInstance(token.api_key, { timeout: 15000 });
       if (streamClient.userID) {
         await streamClient.disconnectUser();
       }
@@ -142,7 +142,7 @@ function ChatView({ initialPatientId, onOpenPatient }) {
           if (match) return match.channel_id;
         }
         if (current && channelEntries.some((item) => item.channel_id === current)) return current;
-        return channelEntries[0]?.channel_id || null;
+        return null;
       });
     } catch (err) {
       setError(err.message || "Could not connect GetStream chat.");
@@ -306,7 +306,7 @@ function ChatView({ initialPatientId, onOpenPatient }) {
         ) : activeChannelLoading ? (
           <div className="empty-state">Opening conversation...</div>
         ) : (
-          <div className="empty-state">Select a conversation</div>
+          <div className="empty-state">Select a conversation to open chat.</div>
         )}
 
         {activePatient && (
