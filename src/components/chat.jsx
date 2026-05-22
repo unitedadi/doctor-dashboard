@@ -21,6 +21,14 @@ async function fetchJson(url, options) {
   return data;
 }
 
+function fetchChatToken() {
+  return fetchJson(`${API_BASE}/doctor/chat/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doctor_id: DOCTOR_ID }),
+  });
+}
+
 function lastMessagePreview(channel) {
   const messages = channel?.state?.messages || [];
   const last = messages[messages.length - 1];
@@ -76,19 +84,25 @@ function ChatView({ initialPatientId, onOpenPatient }) {
     setLoading(true);
     setError("");
     try {
-      const token = await fetchJson(`${API_BASE}/doctor/chat/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doctor_id: DOCTOR_ID }),
-      });
+      const token = await fetchChatToken();
       const channelPayload = await fetchJson(`${API_BASE}/doctor/chat/channels?doctor_id=${DOCTOR_ID}`);
       const streamClient = StreamChat.getInstance(token.api_key);
-      if (streamClient.userID && streamClient.userID !== token.user_id) {
+      if (streamClient.userID) {
         await streamClient.disconnectUser();
       }
-      if (!streamClient.userID) {
-        await streamClient.connectUser({ id: token.user_id, name: token.user.name }, token.user_token);
-      }
+
+      let currentUserToken = token.user_token;
+      const tokenProvider = async () => {
+        if (currentUserToken) {
+          const nextToken = currentUserToken;
+          currentUserToken = "";
+          return nextToken;
+        }
+        const refreshed = await fetchChatToken();
+        return refreshed.user_token;
+      };
+
+      await streamClient.connectUser({ id: token.user_id, name: token.user.name }, tokenProvider);
 
       let channelEntries = channelPayload.channels || [];
       if (initialPatientId && !channelEntries.some((entry) => entry.patient_id === initialPatientId)) {
