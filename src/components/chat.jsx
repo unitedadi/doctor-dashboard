@@ -29,24 +29,115 @@ function fetchChatToken() {
   });
 }
 
-function lastMessagePreview(channel) {
-  const messages = channel?.state?.messages || [];
-  const last = messages[messages.length - 1];
-  if (!last) return "No messages yet";
-  if (last.text) return last.text;
-  if (last.attachments?.length) return "Attachment";
+function messagePreview(message) {
+  if (!message) return "No messages yet";
+  if (message.text) return message.text;
+  if (message.attachments?.length) return "Attachment";
   return "Message";
 }
 
-function lastMessageTime(channel) {
+function normalizeDate(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function lastMessageDate(channel) {
   const messages = channel?.state?.messages || [];
   const last = messages[messages.length - 1];
-  if (!last?.created_at) return "";
+  return normalizeDate(last?.created_at);
+}
+
+function lastMessagePreview(channel) {
+  const messages = channel?.state?.messages || [];
+  return messagePreview(messages[messages.length - 1]);
+}
+
+function formatChatTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
     timeZone: "Asia/Dubai",
-  }).format(new Date(last.created_at));
+  }).format(date);
+}
+
+function lastMessageTime(channel) {
+  return formatChatTime(lastMessageDate(channel));
+}
+
+function channelEventId(event) {
+  if (event?.channel_id) return event.channel_id;
+  if (event?.channel?.id) return event.channel.id;
+  if (event?.cid) return String(event.cid).split(":").pop();
+  return "";
+}
+
+function streamChannelMeta(channel) {
+  return {
+    lastText: lastMessagePreview(channel),
+    lastAt: lastMessageDate(channel),
+    unread: channel?.countUnread?.() || 0,
+  };
+}
+
+function metaFromMessageEvent(event) {
+  return {
+    lastText: messagePreview(event?.message),
+    lastAt: normalizeDate(event?.message?.created_at || event?.created_at) || new Date().toISOString(),
+  };
+}
+
+function subscribeToStreamEvents(client, handler) {
+  const subscription = client.on(handler);
+  return () => {
+    if (typeof subscription === "function") subscription();
+    else if (subscription?.unsubscribe) subscription.unsubscribe();
+  };
+}
+
+function hasIncomingMessage(event) {
+  return event?.type === "notification.message_new" || event?.type === "message.new";
+}
+
+function isOwnMessage(event, client) {
+  return event?.message?.user?.id && event.message.user.id === client?.userID;
+}
+
+function mergeChannelMeta(previous, channelId, next, activeId, incrementUnread) {
+  const existing = previous[channelId] || {};
+  const isActive = channelId === activeId;
+  return {
+    ...previous,
+    [channelId]: {
+      ...existing,
+      ...next,
+      unread: isActive ? 0 : incrementUnread ? (Number(existing.unread) || 0) + 1 : Number(existing.unread) || 0,
+    },
+  };
+}
+
+function clearUnread(previous, channelId) {
+  const existing = previous[channelId];
+  if (!existing || !existing.unread) return previous;
+  return { ...previous, [channelId]: { ...existing, unread: 0 } };
+}
+
+function channelTimestamp(meta) {
+  const time = Date.parse(meta?.lastAt || "");
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function channelPreview(meta, fallbackChannel, fallbackText = "No messages yet") {
+  if (meta?.lastText) return meta.lastText;
+  const preview = lastMessagePreview(fallbackChannel);
+  return preview || fallbackText;
+}
+
+function channelTime(meta, fallbackChannel) {
+  return formatChatTime(meta?.lastAt || lastMessageDate(fallbackChannel));
 }
 
 function titleCase(value) {
@@ -76,6 +167,7 @@ function ChatView({ initialPatientId, onOpenPatient }) {
   const [channels, setChannels] = useStateC([]);
   const [activeId, setActiveId] = useStateC(null);
   const [activeStreamChannel, setActiveStreamChannel] = useStateC(null);
+  const [channelMetaById, setChannelMetaById] = useStateC({});
   const [activeChannelLoading, setActiveChannelLoading] = useStateC(false);
   const [activeChannelError, setActiveChannelError] = useStateC("");
   const [activeChannelRetry, setActiveChannelRetry] = useStateC(0);
@@ -83,6 +175,11 @@ function ChatView({ initialPatientId, onOpenPatient }) {
   const [search, setSearch] = useStateC("");
   const [loading, setLoading] = useStateC(true);
   const [error, setError] = useStateC("");
+  const activeIdRef = React.useRef(activeId);
+
+  useEffectC(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   const loadChat = React.useCallback(async () => {
     setLoading(true);
@@ -136,6 +233,13 @@ function ChatView({ initialPatientId, onOpenPatient }) {
 
       setClient(streamClient);
       setChannels(channelEntries);
+      setChannelMetaById((current) => {
+        const next = { ...current };
+        channelEntries.forEach((entry) => {
+          if (!next[entry.channel_id]) next[entry.channel_id] = { unread: 0 };
+        });
+        return next;
+      });
       setActiveId((current) => {
         if (initialPatientId) {
           const match = channelEntries.find((item) => item.patient_id === initialPatientId);
@@ -154,6 +258,23 @@ function ChatView({ initialPatientId, onOpenPatient }) {
   useEffectC(() => {
     loadChat();
   }, [loadChat]);
+
+  useEffectC(() => {
+    if (!client) return undefined;
+    return subscribeToStreamEvents(client, (event) => {
+      if (!hasIncomingMessage(event)) return;
+      const channelId = channelEventId(event);
+      if (!channelId) return;
+
+      setChannelMetaById((current) => mergeChannelMeta(
+        current,
+        channelId,
+        metaFromMessageEvent(event),
+        activeIdRef.current,
+        !isOwnMessage(event, client),
+      ));
+    });
+  }, [client]);
 
   useEffectC(() => {
     if (!initialPatientId) return;
@@ -178,7 +299,17 @@ function ChatView({ initialPatientId, onOpenPatient }) {
         const streamChannel = client.channel(active.channel_type, active.channel_id);
         watchedChannel = streamChannel;
         await streamChannel.watch();
-        if (!cancelled) setActiveStreamChannel(streamChannel);
+        await streamChannel.markRead().catch(() => {});
+        if (!cancelled) {
+          setChannelMetaById((current) => {
+            const meta = streamChannelMeta(streamChannel);
+            return {
+              ...current,
+              [active.channel_id]: { ...(current[active.channel_id] || {}), ...meta, unread: 0 },
+            };
+          });
+          setActiveStreamChannel(streamChannel);
+        }
       } catch (err) {
         if (!cancelled) setActiveChannelError(err.message || "Could not open this conversation.");
       } finally {
@@ -213,14 +344,24 @@ function ChatView({ initialPatientId, onOpenPatient }) {
 
   const filteredList = useMemoC(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return channels;
-    return channels.filter((item) => item.patient.name.toLowerCase().includes(query));
-  }, [channels, search]);
+    const originalOrder = new Map(channels.map((item, index) => [item.channel_id, index]));
+    const list = query ? channels.filter((item) => item.patient.name.toLowerCase().includes(query)) : channels;
+    return [...list].sort((left, right) => {
+      const rightTime = channelTimestamp(channelMetaById[right.channel_id]);
+      const leftTime = channelTimestamp(channelMetaById[left.channel_id]);
+      if (rightTime !== leftTime) return rightTime - leftTime;
+      return (originalOrder.get(left.channel_id) || 0) - (originalOrder.get(right.channel_id) || 0);
+    });
+  }, [channels, search, channelMetaById]);
 
   const totalUnread = useMemoC(() => {
-    if (!client) return 0;
-    return client.user?.total_unread_count || 0;
-  }, [client]);
+    return Object.values(channelMetaById).reduce((total, meta) => total + (Number(meta.unread) || 0), 0);
+  }, [channelMetaById]);
+
+  const openConversation = React.useCallback((channelId) => {
+    setActiveId(channelId);
+    setChannelMetaById((current) => clearUnread(current, channelId));
+  }, []);
 
   return (
     <>
@@ -248,16 +389,18 @@ function ChatView({ initialPatientId, onOpenPatient }) {
             const p = item.patient;
             const isActive = item.channel_id === activeId;
             const listChannel = isActive ? activeStreamChannel : null;
-            const unread = listChannel?.countUnread?.() || 0;
+            const liveMeta = isActive && listChannel ? streamChannelMeta(listChannel) : null;
+            const meta = liveMeta || channelMetaById[item.channel_id] || {};
+            const unread = isActive ? 0 : Number(meta.unread) || 0;
             return (
-              <div key={item.channel_id} className={"chat-list-item" + (isActive ? " active" : "")} onClick={() => setActiveId(item.channel_id)}>
+              <div key={item.channel_id} className={"chat-list-item" + (isActive ? " active" : "") + (unread > 0 ? " unread" : "")} onClick={() => openConversation(item.channel_id)}>
                 <Avatar initials={p.initials} name={p.name} size="md" online />
                 <div style={{ minWidth: 0 }}>
                   <div className="top">
                     <span className="nm">{p.name}</span>
-                    <span className="tm">{lastMessageTime(listChannel)}</span>
+                    <span className="tm">{channelTime(meta, listChannel)}</span>
                   </div>
-                  <div className="pv">{isActive && activeChannelLoading ? "Opening conversation..." : lastMessagePreview(listChannel)}</div>
+                  <div className="pv">{isActive && activeChannelLoading ? "Opening conversation..." : channelPreview(meta, listChannel)}</div>
                 </div>
                 {unread > 0 ? <span className="badge">{unread}</span> : <span style={{ width: 20 }} />}
               </div>
