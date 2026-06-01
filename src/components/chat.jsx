@@ -3,7 +3,6 @@ import { API_BASE, DOCTOR_ID } from "../config.js";
 import { StreamChat } from "stream-chat";
 import {
   Channel,
-  ChannelHeader,
   ChannelList,
   Chat,
   MessageComposer,
@@ -50,19 +49,77 @@ function mapPatientForChannel(item) {
     conditions: Array.isArray(item.conditions) ? item.conditions : [],
     allergies: Array.isArray(item.allergies) ? item.allergies : [],
     medications: Array.isArray(item.medications) ? item.medications : [],
+    track_key: item.track_key || item.trackKey || "",
   };
 }
 
-function channelPatientName(channel, currentUserId) {
+function channelMemberPatient(channel, currentUserId) {
   const members = Object.values(channel?.state?.members || {})
     .map((member) => member.user)
     .filter(Boolean);
-  const patient = members.find((user) => {
+  return members.find((user) => {
     const text = `${user.id || ""} ${user.name || ""}`.toLowerCase();
     return user.id !== currentUserId && !text.includes("doctor") && !text.includes("dardoc");
   }) || members.find((user) => user.id !== currentUserId);
+}
 
-  return patient?.name || channel?.data?.name || "Patient";
+function normalizeName(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function findChannelPatient(channel, currentUserId, patientDirectory = []) {
+  const data = channel?.data || {};
+  const memberPatient = channelMemberPatient(channel, currentUserId);
+  const channelText = `${channel?.id || ""} ${channel?.cid || ""}`.toLowerCase();
+  const dataPatient = data.patient && typeof data.patient === "object" ? data.patient : null;
+  const patientId = data.patient_id || data.patientId || dataPatient?.id;
+  const customerId = data.customer_id || data.customerId || dataPatient?.customer_id;
+
+  const match = patientDirectory.find((patient) => {
+    const name = normalizeName(patient.name);
+    const memberName = normalizeName(memberPatient?.name);
+    return (
+      patient.id === patientId ||
+      patient.customer_id === customerId ||
+      patient.customer_id === memberPatient?.id ||
+      (patient.customer_id && channelText.includes(String(patient.customer_id).toLowerCase())) ||
+      (name && memberName && (name === memberName || name.includes(memberName) || memberName.includes(name)))
+    );
+  });
+  return match || null;
+}
+
+function channelPatient(channel, currentUserId, patientDirectory = []) {
+  const data = channel?.data || {};
+  const memberPatient = channelMemberPatient(channel, currentUserId);
+  const dataPatient = data.patient && typeof data.patient === "object" ? data.patient : null;
+  const patientId = data.patient_id || data.patientId || dataPatient?.id;
+  const customerId = data.customer_id || data.customerId || dataPatient?.customer_id;
+  const match = findChannelPatient(channel, currentUserId, patientDirectory);
+  if (match) return mapPatientForChannel(match);
+
+  if (dataPatient) return mapPatientForChannel(dataPatient);
+
+  return {
+    id: patientId || "",
+    customer_id: customerId || memberPatient?.id || "",
+    name: memberPatient?.name || data.name || "Patient",
+    initials: memberPatient?.name?.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "P",
+    track_key: data.track_key || data.trackKey || "",
+  };
+}
+
+function mapPrescribablePatient(item) {
+  return {
+    id: item.patient_id,
+    customer_id: item.customer_id,
+    name: item.name || "Unknown patient",
+    initials: item.initials || "P",
+    age: item.age,
+    sex: titleCase(item.sex),
+    track_key: item.track_key || "",
+    can_prescribe: item.can_prescribe === true,
+  };
 }
 
 function channelServiceName(channel, patientName) {
@@ -81,6 +138,19 @@ function latestMessagePreview(channel, currentUserId) {
   const author = message.user?.id === currentUserId ? "You" : message.user?.name || "Patient";
   const body = message.text || (message.attachments?.length ? "Attachment" : "Message");
   return `${author}: ${body}`;
+}
+
+function disabledReasonCopy(reason) {
+  const copy = {
+    completed_consultation_not_found: "Completed consultation required",
+    subscription_inactive: "Subscription inactive",
+    track_not_found: "Rx track missing",
+  };
+  return copy[reason] || "Prescription not available";
+}
+
+function fetchChannelContext(channelId) {
+  return fetchJson(`${API_BASE}/doctor/chat/channels/${encodeURIComponent(channelId)}/context?doctor_id=${DOCTOR_ID}`);
 }
 
 function formatChannelTime(channel) {
@@ -106,13 +176,13 @@ function EmptyChatPanel() {
   return <div className="empty-state stream-chat-empty">Select a conversation to open chat.</div>;
 }
 
-function StreamChannelRows({ channels }) {
+function StreamChannelRows({ channels, patientDirectory }) {
   const { channel: activeChannel, client, setActiveChannel } = useChatContext("StreamChannelRows");
 
   return (
     <div className="stream-kit-row-list">
       {channels.map((item) => {
-        const patientName = channelPatientName(item, client.userID);
+        const patientName = channelPatient(item, client.userID, patientDirectory).name;
         const unread = item.countUnread?.() || 0;
         const isActive = item.cid === activeChannel?.cid;
 
@@ -139,9 +209,113 @@ function StreamChannelRows({ channels }) {
   );
 }
 
-function StreamConversation({ onOpenPatient }) {
-  const { channel } = useChatContext("StreamConversation");
-  const patientId = channel?.data?.patient_id || channel?.data?.patientId;
+function ClinicalChatHeader({ channel, context, contextLoading, contextError, fallbackPatient, prescribablePatient, onOpenPatient, onPrescribe }) {
+  const contextPatient = context?.patient ? mapPatientForChannel({ ...context.patient, track_key: context.rx?.track_key }) : null;
+  const patient = contextPatient || fallbackPatient;
+  const patientId = prescribablePatient?.id || context?.actions?.prescribe_patient_id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
+  const chartPatientId = context?.patient?.id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
+  const patientCustomerId = prescribablePatient?.customer_id || context?.patient?.customer_id || patient?.customer_id || channel?.data?.customer_id || channel?.data?.customerId;
+  const prescribeTrackKey = prescribablePatient?.track_key || context?.actions?.prescribe_track_key || context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || "";
+  const service = channelServiceName(channel, patient?.name);
+  const meta = [
+    patient?.age && `${patient.age}`,
+    patient?.sex,
+    context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || service,
+  ].filter(Boolean).join(" · ");
+  const canOpenChart = context?.actions?.can_open_chart ?? Boolean(chartPatientId || patientCustomerId);
+  const canPrescribe = context?.actions?.can_prescribe ?? Boolean(prescribablePatient?.can_prescribe);
+  const prescribeDisabledReason = context?.rx?.can_prescribe_reason ? disabledReasonCopy(context.rx.can_prescribe_reason) : "Patient is not ready to prescribe";
+
+  return (
+    <div className="clinical-chat-header">
+      <div className="clinical-chat-main">
+        <div className="clinical-chat-eyebrow">{service}</div>
+        <div className="clinical-chat-name">{patient?.name || "Patient"}</div>
+        <div className="clinical-chat-meta">
+          {contextLoading ? "Checking Rx eligibility..." : contextError ? "Patient context from chat" : meta || "Patient context from chat"}
+        </div>
+      </div>
+      <div className="clinical-chat-actions">
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={!canOpenChart}
+          title={canOpenChart ? "Open patient chart" : "Waiting for patient mapping from backend"}
+          onClick={() => canOpenChart && onOpenPatient(chartPatientId, patientCustomerId)}
+        >
+          Patient chart
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={!canPrescribe}
+          title={canPrescribe ? "Create or update prescription" : prescribeDisabledReason}
+          onClick={() => canPrescribe && onPrescribe(patientId, prescribeTrackKey, patientCustomerId)}
+        >
+          Prescribe
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, prescribableDirectory }) {
+  const { channel, client } = useChatContext("StreamConversation");
+  const fallbackPatient = channelPatient(channel, client.userID, patientDirectory);
+  const directoryPrescribablePatient = findChannelPatient(channel, client.userID, prescribableDirectory);
+  const [activePrescribablePatient, setActivePrescribablePatient] = useStateC(null);
+  const [channelContext, setChannelContext] = useStateC(null);
+  const [contextLoading, setContextLoading] = useStateC(false);
+  const [contextError, setContextError] = useStateC("");
+
+  const prescribablePatient = activePrescribablePatient || directoryPrescribablePatient;
+
+  useEffectC(() => {
+    let cancelled = false;
+    const loadPrescribablePatient = async () => {
+      if (!channel?.id) {
+        setActivePrescribablePatient(null);
+        return;
+      }
+      try {
+        const data = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?doctor_id=${DOCTOR_ID}&limit=100&offset=0`);
+        const mappedPatients = (data.patients || []).map(mapPrescribablePatient);
+        if (!cancelled) setActivePrescribablePatient(findChannelPatient(channel, client.userID, mappedPatients) || null);
+      } catch {
+        if (!cancelled) setActivePrescribablePatient(null);
+      }
+    };
+
+    loadPrescribablePatient();
+    return () => { cancelled = true; };
+  }, [channel?.id, client.userID]);
+
+  useEffectC(() => {
+    let cancelled = false;
+    const loadContext = async () => {
+      if (!channel?.id) {
+        setChannelContext(null);
+        setContextError("");
+        return;
+      }
+      setContextLoading(true);
+      setContextError("");
+      try {
+        const data = await fetchChannelContext(channel.id);
+        if (!cancelled) setChannelContext(data);
+      } catch (err) {
+        if (!cancelled) {
+          setChannelContext(null);
+          setContextError(err.message || "channel_context_unavailable");
+        }
+      } finally {
+        if (!cancelled) setContextLoading(false);
+      }
+    };
+
+    loadContext();
+    return () => { cancelled = true; };
+  }, [channel?.id]);
 
   if (!channel) return <EmptyChatPanel />;
 
@@ -150,12 +324,16 @@ function StreamConversation({ onOpenPatient }) {
       <Channel channel={channel}>
         <Window>
           <div className="stream-kit-header">
-            <ChannelHeader />
-            {patientId && (
-              <button type="button" className="btn-ghost stream-kit-chart-button" onClick={() => onOpenPatient(patientId)}>
-                Open chart
-              </button>
-            )}
+            <ClinicalChatHeader
+              channel={channel}
+              context={channelContext}
+              contextError={contextError}
+              contextLoading={contextLoading}
+              fallbackPatient={fallbackPatient}
+              onOpenPatient={onOpenPatient}
+              onPrescribe={onPrescribe}
+              prescribablePatient={prescribablePatient}
+            />
           </div>
           <MessageList />
           <MessageComposer focus />
@@ -166,10 +344,12 @@ function StreamConversation({ onOpenPatient }) {
   );
 }
 
-function ChatView({ initialPatientId, onOpenPatient }) {
+function ChatView({ initialPatientId, onOpenPatient, onPrescribe }) {
   const { Topbar } = window.DD_UI;
   const [client, setClient] = useStateC(null);
   const [initialChannelId, setInitialChannelId] = useStateC("");
+  const [patientDirectory, setPatientDirectory] = useStateC([]);
+  const [prescribableDirectory, setPrescribableDirectory] = useStateC([]);
   const [loading, setLoading] = useStateC(true);
   const [error, setError] = useStateC("");
   const loadIdRef = React.useRef(0);
@@ -196,9 +376,14 @@ function ChatView({ initialPatientId, onOpenPatient }) {
 
       await streamClient.connectUser({ id: token.user_id, name: token.user.name }, tokenProvider);
 
+      const patientsPayload = await fetchJson(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`).catch(() => ({ patients: [] }));
+      const patients = patientsPayload.patients || [];
+      setPatientDirectory(patients);
+      const prescribablePayload = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?doctor_id=${DOCTOR_ID}&limit=100&offset=0`).catch(() => ({ patients: [] }));
+      setPrescribableDirectory((prescribablePayload.patients || []).map(mapPrescribablePatient));
+
       if (initialPatientId) {
-        const patientsPayload = await fetchJson(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`);
-        const patient = (patientsPayload.patients || []).find((item) => item.id === initialPatientId);
+        const patient = patients.find((item) => item.id === initialPatientId);
         if (patient?.chat?.available && patient.customer_id) {
           const opened = await fetchJson(`${API_BASE}/doctor/chat/channels`, {
             method: "POST",
@@ -261,7 +446,7 @@ function ChatView({ initialPatientId, onOpenPatient }) {
 
   const channelSort = useMemoC(() => ({ last_message_at: -1 }), []);
   const channelOptions = useMemoC(() => ({ limit: 30, presence: true, state: true, watch: true }), []);
-  const renderChannels = React.useCallback((channels) => <StreamChannelRows channels={channels} />, []);
+  const renderChannels = React.useCallback((channels) => <StreamChannelRows channels={channels} patientDirectory={patientDirectory} />, [patientDirectory]);
 
   return (
     <>
@@ -294,7 +479,12 @@ function ChatView({ initialPatientId, onOpenPatient }) {
                   sort={channelSort}
                 />
               </div>
-              <StreamConversation onOpenPatient={onOpenPatient} />
+              <StreamConversation
+                onOpenPatient={onOpenPatient}
+                onPrescribe={onPrescribe}
+                patientDirectory={patientDirectory}
+                prescribableDirectory={prescribableDirectory}
+              />
             </div>
           </Chat>
         </div>

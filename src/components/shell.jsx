@@ -114,9 +114,9 @@ function Avatar({ initials, name, size = "md", online }) {
 // ============================================================
 // Sidebar
 // ============================================================
-function Sidebar({ active, onNav, unreadChats }) {
+function Sidebar({ active, onNav, appointmentCount, unreadChats }) {
   const items = [
-    { id: "appointments", label: "Appointments", icon: I.calendar, count: 4 },
+    { id: "appointments", label: "Appointments", icon: I.calendar, count: appointmentCount },
     { id: "patients", label: "Patients", icon: I.user, count: null },
     { id: "chat", label: "Chat", icon: I.message, count: unreadChats },
     { id: "prescribe", label: "Prescribe", icon: I.pill, count: null },
@@ -136,7 +136,7 @@ function Sidebar({ active, onNav, unreadChats }) {
              onClick={() => onNav(it.id)}>
           {it.icon}
           <span>{it.label}</span>
-          {it.count ? <span className="count">{it.count}</span> : null}
+          {it.count != null ? <span className="count">{it.count}</span> : null}
         </div>
       ))}
 

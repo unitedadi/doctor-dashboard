@@ -93,7 +93,7 @@ function errorCopy(error) {
   return copy[error] || error || "Could not publish this prescription.";
 }
 
-function PrescribeView({ initialPatientId, onSent }) {
+function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, onSent }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const [patients, setPatients] = useStateR([]);
   const [selectedPatientKey, setSelectedPatientKey] = useStateR("");
@@ -121,7 +121,7 @@ function PrescribeView({ initialPatientId, onSent }) {
     try {
       const params = new URLSearchParams({
         doctor_id: DOCTOR_ID,
-        limit: "50",
+        limit: "100",
         offset: "0",
       });
       if (patientTrackFilter !== ALL_TRACK) params.set("track_key", patientTrackFilter);
@@ -130,7 +130,13 @@ function PrescribeView({ initialPatientId, onSent }) {
       const nextPatients = (data.patients || []).map(mapPrescribablePatient);
       setPatients(nextPatients);
       setSelectedPatientKey((current) => {
-        const deepLinked = initialPatientId ? nextPatients.find((item) => item.id === initialPatientId) : null;
+        const deepLinked = initialPatientId
+          ? nextPatients.find((item) => item.id === initialPatientId && (!initialTrackKey || item.trackKey === initialTrackKey))
+            || nextPatients.find((item) => item.id === initialPatientId)
+          : initialCustomerId
+            ? nextPatients.find((item) => item.customerId === initialCustomerId && (!initialTrackKey || item.trackKey === initialTrackKey))
+              || nextPatients.find((item) => item.customerId === initialCustomerId)
+          : null;
         if (deepLinked) return deepLinked.key;
         if (current && nextPatients.some((item) => item.key === current)) return current;
         return "";
@@ -140,15 +146,15 @@ function PrescribeView({ initialPatientId, onSent }) {
     } finally {
       setPatientsLoading(false);
     }
-  }, [initialPatientId, patientQuery, patientTrackFilter]);
+  }, [initialCustomerId, initialPatientId, initialTrackKey, patientQuery, patientTrackFilter]);
 
   useEffectR(() => {
     loadPatients();
   }, [loadPatients]);
 
   useEffectR(() => {
-    if (!initialPatientId) setSelectedPatientKey("");
-  }, [initialPatientId]);
+    if (!initialPatientId && !initialCustomerId) setSelectedPatientKey("");
+  }, [initialCustomerId, initialPatientId]);
 
   useEffectR(() => {
     if (!patient) return;
@@ -166,7 +172,7 @@ function PrescribeView({ initialPatientId, onSent }) {
       try {
         const params = new URLSearchParams({
           doctor_id: DOCTOR_ID,
-          limit: "50",
+          limit: "100",
           offset: "0",
         });
         if (query.trim()) params.set("q", query.trim());

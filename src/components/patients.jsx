@@ -91,7 +91,7 @@ function mapPatient(item) {
   };
 }
 
-function PatientsView({ initialPatientId, onMessage, onPrescribe }) {
+function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const [patients, setPatients] = useStateP([]);
   const [search, setSearch] = useStateP("");
@@ -112,6 +112,10 @@ function PatientsView({ initialPatientId, onMessage, onPrescribe }) {
       setPatients(nextPatients);
       setSelectedId((current) => {
         if (initialPatientId && nextPatients.some((patient) => patient.id === initialPatientId)) return initialPatientId;
+        if (initialCustomerId) {
+          const patientByCustomer = nextPatients.find((patient) => patient.customerId === initialCustomerId);
+          if (patientByCustomer) return patientByCustomer.id;
+        }
         if (current && nextPatients.some((patient) => patient.id === current)) return current;
         return nextPatients[0]?.id || null;
       });
@@ -120,7 +124,7 @@ function PatientsView({ initialPatientId, onMessage, onPrescribe }) {
     } finally {
       setLoading(false);
     }
-  }, [initialPatientId]);
+  }, [initialCustomerId, initialPatientId]);
 
   useEffectP(() => {
     loadPatients();
@@ -128,7 +132,11 @@ function PatientsView({ initialPatientId, onMessage, onPrescribe }) {
 
   useEffectP(() => {
     if (initialPatientId) setSelectedId(initialPatientId);
-  }, [initialPatientId]);
+    else if (initialCustomerId) {
+      const patientByCustomer = patients.find((patient) => patient.customerId === initialCustomerId);
+      if (patientByCustomer) setSelectedId(patientByCustomer.id);
+    }
+  }, [initialCustomerId, initialPatientId, patients]);
 
   const patientsToday = patients.filter((patient) => patient.upcoming?.date === today).length;
   const filtered = patients.filter((patient) => {

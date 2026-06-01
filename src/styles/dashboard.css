@@ -971,7 +971,7 @@ body {
 }
 .stream-kit-layout {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: 420px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--dd-bg);
@@ -992,9 +992,6 @@ body {
   min-height: 0;
 }
 .stream-kit-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   border-bottom: 1px solid var(--dd-divider);
   background: var(--dd-bg);
 }
@@ -1024,10 +1021,71 @@ body {
   margin-right: 18px;
   padding: 8px 14px;
 }
+.clinical-chat-header {
+  display: flex;
+  min-height: 88px;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 22px 16px 24px;
+  background: var(--dd-bg);
+}
+.clinical-chat-main {
+  min-width: 0;
+}
+.clinical-chat-eyebrow {
+  overflow: hidden;
+  color: var(--dd-accent);
+  font: 650 11px/1 var(--dd-font);
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.clinical-chat-name {
+  overflow: hidden;
+  margin-top: 6px;
+  color: var(--dd-text-primary);
+  font: 650 19px/1.15 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clinical-chat-meta {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.2 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clinical-chat-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+.clinical-chat-actions .btn-ghost,
+.clinical-chat-actions .btn-primary {
+  height: 36px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+.clinical-chat-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .stream-chat-kit-shell .str-chat__channel-list {
+  width: 100% !important;
   height: 100%;
   min-height: 0;
+  max-width: none !important;
   background: var(--dd-bg) !important;
+}
+.stream-chat-kit-shell .str-chat__channel-list-inner,
+.stream-chat-kit-shell .str-chat__channel-list-inner__main {
+  width: 100% !important;
+  max-width: none !important;
 }
 .stream-chat-kit-shell .str-chat__channel-list-messenger,
 .stream-chat-kit-shell .str-chat__channel-list-messenger__main,
