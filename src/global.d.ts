@@ -14,6 +14,7 @@ declare global {
     DD_PatientsView: ComponentType<Record<string, unknown>>
     DD_ChatView: ComponentType<Record<string, unknown>>
     DD_PrescribeView: ComponentType<Record<string, unknown>>
+    DD_RefillsView: ComponentType<Record<string, unknown>>
   }
 }
 

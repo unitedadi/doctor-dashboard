@@ -1406,6 +1406,149 @@ body {
   background: var(--dd-bg);
 }
 
+/* ============================================================
+   Refills view
+   ============================================================ */
+.refills-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  overflow: hidden;
+}
+.refills-main {
+  padding: 28px 40px 40px;
+  overflow-y: auto;
+}
+.refills-side {
+  border-left: 1px solid var(--dd-divider);
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--dd-bg);
+}
+.refill-list {
+  border-top: 1px solid var(--dd-divider);
+  margin-top: 16px;
+}
+.refill-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid var(--dd-divider);
+  background: transparent;
+  color: var(--dd-text-primary);
+  text-align: left;
+  padding: 14px 0;
+  cursor: pointer;
+}
+.refill-row:hover,
+.refill-row.selected {
+  background: var(--dd-fill-subtle);
+  box-shadow: inset 2px 0 0 rgba(23,59,61,0.16);
+}
+.refill-row .nm {
+  font: 400 15px/1.25 var(--dd-font);
+}
+.refill-row .ds {
+  font: 400 12px/1.45 var(--dd-font);
+  color: var(--dd-text-secondary);
+  margin-top: 3px;
+}
+.refill-row .tm {
+  text-align: right;
+  color: var(--dd-text-secondary);
+  white-space: nowrap;
+}
+.refill-row .tm span,
+.refill-row .tm strong {
+  display: block;
+  font: 400 11px/1.25 var(--dd-font);
+}
+.refill-row .tm strong {
+  color: var(--dd-text-primary);
+  margin-top: 3px;
+}
+.refill-detail-empty {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--dd-text-secondary);
+  gap: 10px;
+}
+.refill-detail-empty p {
+  max-width: 260px;
+  margin: 0;
+  font: 400 13px/1.5 var(--dd-font);
+  color: var(--dd-text-tertiary);
+}
+.refill-detail-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dd-fill-subtle);
+  color: var(--dd-accent);
+}
+.refill-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--dd-divider);
+}
+.refill-detail-name {
+  font: 400 19px/1.2 var(--dd-font);
+  color: var(--dd-text-primary);
+}
+.refill-detail-meta {
+  margin-top: 4px;
+  font: 400 12px/1.45 var(--dd-font);
+  color: var(--dd-text-secondary);
+}
+.refill-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 12px 14px;
+  border-radius: var(--dd-radius-md);
+  background: var(--dd-cell);
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.2 var(--dd-font);
+}
+.refill-status-strip strong {
+  font-weight: 500;
+  color: var(--dd-text-primary);
+}
+.refill-kv-list {
+  border-top: 1px solid var(--dd-divider);
+}
+.refill-note {
+  margin: 22px 0;
+  padding: 16px;
+  border-radius: var(--dd-radius-md);
+  background: var(--dd-cell);
+}
+.refill-note .label {
+  font: 400 10px/1 var(--dd-font);
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--dd-text-tertiary);
+}
+.refill-note p {
+  margin: 10px 0 0;
+  font: 400 14px/1.55 var(--dd-font);
+  color: var(--dd-text-primary);
+}
+
 .rx-patient-card {
   background: transparent;
   border-bottom: 1px solid var(--dd-divider);
@@ -1650,6 +1793,11 @@ body {
   border-color: var(--dd-accent);
   color: var(--dd-on-dark-1);
 }
+.rx-product-source-tabs {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 14px;
+}
 .rx-product-list {
   border-top: 1px solid var(--dd-divider);
   margin-top: 14px;
@@ -1671,6 +1819,16 @@ body {
 .rx-product-row:hover {
   background: var(--dd-fill-subtle);
   box-shadow: inset 2px 0 0 rgba(23,59,61,0.16);
+}
+.rx-product-row:disabled,
+.rx-product-row.out-of-stock {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.rx-product-row:disabled:hover,
+.rx-product-row.out-of-stock:hover {
+  background: transparent;
+  box-shadow: none;
 }
 .rx-product-row .nm {
   font: 400 15px/1.25 var(--dd-font);

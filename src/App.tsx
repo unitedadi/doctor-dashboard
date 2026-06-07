@@ -6,6 +6,7 @@ import './components/appointments.jsx'
 import './components/patients.jsx'
 import './components/chat.jsx'
 import './components/prescribe.jsx'
+import './components/refills.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 
@@ -44,6 +45,7 @@ function App() {
   const PatientsView = window.DD_PatientsView
   const ChatView = window.DD_ChatView
   const PrescribeView = window.DD_PrescribeView
+  const RefillsView = window.DD_RefillsView
 
   const go = (id: string, ctx: Record<string, string> = {}) => {
     setRoute(id)
@@ -128,11 +130,17 @@ function App() {
             onPrescribe={(id: string, trackKey?: string, customerId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || '', customerId: customerId || '' })}
           />
         )}
+        {route === 'refills' && (
+          <RefillsView
+            onPrescribe={(id: string, trackKey?: string, customerId?: string, refillRequestId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || 'weight-loss', customerId: customerId || '', refillRequestId: refillRequestId || '' })}
+          />
+        )}
         {route === 'prescribe' && (
           <PrescribeView
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
             initialTrackKey={routeContext.trackKey}
+            initialRefillRequestId={routeContext.refillRequestId}
             onSent={() => undefined}
           />
         )}

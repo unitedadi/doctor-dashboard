@@ -1,5 +1,5 @@
 import * as React from "react";
-import { API_BASE, DOCTOR_ID } from "../config.js";
+import { API_BASE, DOCTOR_ID, NEEDLES_PRODUCT_ID, SUPPLEMENT_SELLER_ID } from "../config.js";
 
 /* global React */
 const { useEffect: useEffectR, useMemo: useMemoR, useState: useStateR } = React;
@@ -8,12 +8,26 @@ const TRACKS = [
   { key: "weight-loss", label: "Weight loss", summary: "Doctor-prescribed weight loss medication with ongoing support." },
   { key: "peptides", label: "Peptides", summary: "Doctor-prescribed peptide care plan with ongoing support." },
 ];
+const SUPPLEMENTS_CATALOG = {
+  key: "supplements",
+  label: "Supplements",
+  summary: "Doctor-prescribed supplements with shipment support.",
+};
+const NEEDLES_CATALOG = {
+  key: "needles",
+  label: "Needles",
+};
+const AUTO_NEEDLES_CART_ID = `auto-needles:${NEEDLES_PRODUCT_ID}`;
 const ALL_TRACK = "all";
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || data.detail || `request_failed_${response.status}`);
+  if (!response.ok) {
+    const error = new Error(data.error || data.detail || `request_failed_${response.status}`);
+    error.payload = data;
+    throw error;
+  }
   return data;
 }
 
@@ -25,12 +39,63 @@ function titleCase(value) {
 }
 
 function formatPrice(fils) {
-  if (typeof fils !== "number") return "";
+  if (typeof fils !== "number" || !Number.isFinite(fils)) return "";
   return new Intl.NumberFormat("en-AE", {
     style: "currency",
     currency: "AED",
     maximumFractionDigits: 0,
   }).format(fils / 100);
+}
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function inventoryAvailability(product) {
+  const inventory = product?.inventory || product?.seller_offer?.inventory || {};
+  const available = toNumber(
+    inventory.available_qty
+      ?? inventory.total_available_qty
+      ?? inventory.available
+      ?? product?.available_qty
+  );
+  return available === undefined ? undefined : Math.max(0, Math.floor(available));
+}
+
+function supplementQuantityLimit(product) {
+  const available = inventoryAvailability(product);
+  if (available === undefined) return 5;
+  return Math.max(0, Math.min(5, available));
+}
+
+function productQuantityLimit(product, catalogKey) {
+  if (catalogKey !== SUPPLEMENTS_CATALOG.key) return 5;
+  return supplementQuantityLimit(product);
+}
+
+function productStockLabel(product, catalogKey) {
+  if (catalogKey !== SUPPLEMENTS_CATALOG.key) return "";
+  const available = product?.available_qty;
+  if (available === undefined) return "";
+  return available === 1 ? "1 available" : `${available} available`;
+}
+
+function isOutOfStock(product, catalogKey) {
+  return catalogKey === SUPPLEMENTS_CATALOG.key && product?.available_qty !== undefined && product.available_qty <= 0;
+}
+
+function compactList(value) {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((item) => {
+      if (typeof item === "string" || typeof item === "number") return String(item);
+      if (item && typeof item === "object") return item.name || item.label || item.value || "";
+      return "";
+    })
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
 function formatDateTime(value) {
@@ -66,6 +131,31 @@ function mapPrescribablePatient(item) {
 
 function productDetails(product, trackKey) {
   const attrs = product.attributes_json || {};
+  if (trackKey === NEEDLES_CATALOG.key) {
+    return {
+      name: product.name,
+      price: formatPrice(product.price_fils),
+      strength: "Injection supply",
+      frequency: "Auto-added for Mounjaro",
+      packSize: "Needles",
+      category: "Needles",
+      instructions: "Use as directed with the prescribed Mounjaro pen.",
+    };
+  }
+  if (trackKey === SUPPLEMENTS_CATALOG.key) {
+    const supplement = attrs.supplement || {};
+    const ingredients = compactList(supplement.ingredients);
+    const concentration = compactList(supplement.concentration);
+    return {
+      name: product.name,
+      price: formatPrice(product.price_fils),
+      strength: [ingredients, concentration].filter(Boolean).join(" · "),
+      frequency: supplement.dosage || supplement.serving || "Supplement",
+      packSize: supplement.pack_size || supplement.quantity || supplement.form,
+      category: titleCase(supplement.category || attrs.category || product.category),
+      instructions: supplement.instructions || "Use as directed by your DarDoc physician.",
+    };
+  }
   const source = trackKey === "peptides" ? attrs.peptide : attrs.weight_loss;
   const dosage = source?.dosage || {};
   const specs = source?.specs || [];
@@ -82,24 +172,84 @@ function productDetails(product, trackKey) {
   };
 }
 
-function errorCopy(error) {
+function mapShipmentProduct(product) {
+  const offer = product.seller_offer || {};
+  const priceFils = toNumber(offer.price_aed_fils) ?? toNumber(product.price_fils);
+  const productId = product.product_uuid || product.product_id;
+  const availableQty = inventoryAvailability(product);
+  return {
+    product_id: productId,
+    vertical_id: "shipments",
+    name: offer.display_name || product.default_name || product.name || productId,
+    price_fils: priceFils,
+    vat_included: product.vat_included === true,
+    active: String(product.status || "").toUpperCase() !== "INACTIVE",
+    category: product.category,
+    attributes_json: product.attributes_json || {},
+    available_qty: availableQty,
+    inventory: product.inventory || null,
+  };
+}
+
+function mapSupplementProduct(product) {
+  return mapShipmentProduct(product);
+}
+
+function isMounjaroProduct(product) {
+  return /mounjaro/i.test(product?.name || "");
+}
+
+function requiredNeedlesQuantity(items) {
+  return items.reduce((sum, item) => {
+    if (item.autoAdded) return sum;
+    return isMounjaroProduct(item) ? sum + item.quantity : sum;
+  }, 0);
+}
+
+function makeAutoNeedlesCartItem(needlesProduct, quantity) {
+  return {
+    id: AUTO_NEEDLES_CART_ID,
+    product_id: needlesProduct.product_id,
+    vertical_id: needlesProduct.vertical_id,
+    name: needlesProduct.name,
+    price_fils: needlesProduct.price_fils,
+    quantity,
+    doctor_instructions: needlesProduct.details.instructions,
+    details: needlesProduct.details,
+    catalogKey: NEEDLES_CATALOG.key,
+    autoAdded: true,
+  };
+}
+
+function syncAutoNeedles(items, needlesProduct) {
+  const withoutAutoNeedles = items.filter((item) => item.id !== AUTO_NEEDLES_CART_ID);
+  const quantity = requiredNeedlesQuantity(withoutAutoNeedles);
+  if (!quantity || !needlesProduct) return withoutAutoNeedles;
+  return [...withoutAutoNeedles, makeAutoNeedlesCartItem(needlesProduct, quantity)];
+}
+
+function errorCopy(error, payload) {
   const copy = {
     doctor_not_found: "Doctor profile is missing or inactive.",
     doctor_track_not_enabled: "Dr. Sami is not enabled for this Rx track yet.",
     rx_prescription_completed_consultation_required: "A completed consultation is required before publishing this care plan.",
     rx_prescription_product_not_allowed_for_track: "One of the selected products is not allowed for this track.",
     rx_prescription_product_not_found: "One of the selected products is no longer available in the catalog.",
+    rx_prescription_insufficient_inventory: payload?.product_name
+      ? `${payload.product_name} has only ${payload.available_quantity ?? 0} available.`
+      : "One of the selected supplements does not have enough stock.",
   };
   return copy[error] || error || "Could not publish this prescription.";
 }
 
-function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, onSent }) {
+function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, initialRefillRequestId, onSent }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const [patients, setPatients] = useStateR([]);
   const [selectedPatientKey, setSelectedPatientKey] = useStateR("");
   const [patientTrackFilter, setPatientTrackFilter] = useStateR(ALL_TRACK);
   const [patientQuery, setPatientQuery] = useStateR("");
   const [trackKey, setTrackKey] = useStateR("weight-loss");
+  const [productCatalogKey, setProductCatalogKey] = useStateR("weight-loss");
   const [query, setQuery] = useStateR("");
   const [products, setProducts] = useStateR([]);
   const [selectedProduct, setSelectedProduct] = useStateR(null);
@@ -108,12 +258,16 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
   const [cart, setCart] = useStateR([]);
   const [patientsLoading, setPatientsLoading] = useStateR(true);
   const [productsLoading, setProductsLoading] = useStateR(false);
+  const [needlesProduct, setNeedlesProduct] = useStateR(null);
   const [publishing, setPublishing] = useStateR(false);
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
 
   const patient = patients.find((item) => item.key === selectedPatientKey) || null;
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
+  const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
+    ? SUPPLEMENTS_CATALOG
+    : activeTrack;
 
   const loadPatients = React.useCallback(async () => {
     setPatientsLoading(true);
@@ -142,7 +296,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
         return "";
       });
     } catch (err) {
-      setError(errorCopy(err.message) || "Could not load prescribable patients.");
+      setError(errorCopy(err.message, err.payload) || "Could not load prescribable patients.");
     } finally {
       setPatientsLoading(false);
     }
@@ -159,9 +313,11 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
   useEffectR(() => {
     if (!patient) return;
     setTrackKey(patient.trackKey);
+    setProductCatalogKey(patient.trackKey);
     setCart([]);
     setSelectedProduct(null);
     setInstructions("");
+    setQuery("");
   }, [patient?.key]);
 
   useEffectR(() => {
@@ -170,18 +326,32 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
       setProductsLoading(true);
       setError("");
       try {
-        const params = new URLSearchParams({
-          doctor_id: DOCTOR_ID,
-          limit: "100",
-          offset: "0",
-        });
-        if (query.trim()) params.set("q", query.trim());
-        const data = await fetchJson(`${API_BASE}/doctor/rx/tracks/${trackKey}/prescribable-products?${params.toString()}`);
-        if (!cancelled) setProducts(data.products || []);
+        if (productCatalogKey === SUPPLEMENTS_CATALOG.key) {
+          const params = new URLSearchParams({
+            seller_id: SUPPLEMENT_SELLER_ID,
+            product_type: "SKU",
+            category: "SUPPLEMENT",
+            view: "full",
+            limit: "100",
+            offset: "0",
+          });
+          if (query.trim()) params.set("q", query.trim());
+          const data = await fetchJson(`${API_BASE}/verticals/shipments/products?${params.toString()}`);
+          if (!cancelled) setProducts((data.products || []).map(mapSupplementProduct));
+        } else {
+          const params = new URLSearchParams({
+            doctor_id: DOCTOR_ID,
+            limit: "100",
+            offset: "0",
+          });
+          if (query.trim()) params.set("q", query.trim());
+          const data = await fetchJson(`${API_BASE}/doctor/rx/tracks/${productCatalogKey}/prescribable-products?${params.toString()}`);
+          if (!cancelled) setProducts(data.products || []);
+        }
       } catch (err) {
         if (!cancelled) {
           setProducts([]);
-          setError(errorCopy(err.message) || "Could not load prescribable products.");
+          setError(errorCopy(err.message, err.payload) || "Could not load prescribable products.");
         }
       } finally {
         if (!cancelled) setProductsLoading(false);
@@ -193,12 +363,12 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
       setProductsLoading(false);
     }
     return () => { cancelled = true; };
-  }, [patient, trackKey, query]);
+  }, [patient, productCatalogKey, query]);
 
   const visibleProducts = useMemoR(() => {
     return products
-      .map((product) => ({ ...product, details: productDetails(product, trackKey) }));
-  }, [products, trackKey]);
+      .map((product) => ({ ...product, details: productDetails(product, productCatalogKey) }));
+  }, [products, productCatalogKey]);
 
   const cartTotal = cart.reduce((sum, item) => sum + ((item.price_fils || 0) * item.quantity), 0);
 
@@ -210,16 +380,67 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
     setInstructions("");
   };
 
+  const chooseProductCatalog = (nextCatalogKey) => {
+    setProductCatalogKey(nextCatalogKey);
+    setSelectedProduct(null);
+    setInstructions("");
+    setQuery("");
+  };
+
   const pickProduct = (product) => {
+    if (isOutOfStock(product, productCatalogKey)) {
+      setError(`${product.name} is out of stock.`);
+      return;
+    }
     setSelectedProduct(product);
-    setQuantity(1);
+    setQuantity(Math.min(1, Math.max(1, productQuantityLimit(product, productCatalogKey))));
     setInstructions(product.details.instructions);
   };
 
-  const addToCart = () => {
+  useEffectR(() => {
     if (!selectedProduct) return;
+    const limit = productQuantityLimit(selectedProduct, productCatalogKey);
+    if (limit > 0 && quantity > limit) setQuantity(limit);
+  }, [productCatalogKey, quantity, selectedProduct]);
+
+  const loadNeedlesProduct = React.useCallback(async () => {
+    if (needlesProduct) return needlesProduct;
+    const params = new URLSearchParams({
+      seller_id: SUPPLEMENT_SELLER_ID,
+      view: "full",
+    });
+    const data = await fetchJson(`${API_BASE}/verticals/shipments/products/${encodeURIComponent(NEEDLES_PRODUCT_ID)}?${params.toString()}`);
+    const mapped = mapShipmentProduct({ ...data.product, seller_offer: data.seller_offer });
+    const productWithDetails = {
+      ...mapped,
+      details: productDetails(mapped, NEEDLES_CATALOG.key),
+    };
+    setNeedlesProduct(productWithDetails);
+    return productWithDetails;
+  }, [needlesProduct]);
+
+  const addToCart = async () => {
+    if (!selectedProduct) return;
+    const quantityLimit = productQuantityLimit(selectedProduct, productCatalogKey);
+    if (quantityLimit <= 0) {
+      setError(`${selectedProduct.name} is out of stock.`);
+      return;
+    }
+    if (quantity > quantityLimit) {
+      setError(`Only ${quantityLimit} ${quantityLimit === 1 ? "unit is" : "units are"} available for ${selectedProduct.name}.`);
+      return;
+    }
+    let nextNeedlesProduct = needlesProduct;
+    if (isMounjaroProduct(selectedProduct) && !nextNeedlesProduct) {
+      try {
+        nextNeedlesProduct = await loadNeedlesProduct();
+      } catch {
+        setError("Could not load the needles product.");
+        return;
+      }
+    }
     const item = {
-      id: selectedProduct.product_id,
+      id: `${productCatalogKey}:${selectedProduct.product_id}`,
       product_id: selectedProduct.product_id,
       vertical_id: selectedProduct.vertical_id,
       name: selectedProduct.name,
@@ -227,17 +448,18 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
       quantity,
       doctor_instructions: instructions.trim() || selectedProduct.details.instructions,
       details: selectedProduct.details,
+      catalogKey: productCatalogKey,
     };
     setCart((current) => {
-      const withoutCurrent = current.filter((entry) => entry.product_id !== item.product_id);
-      return [...withoutCurrent, item];
+      const withoutCurrent = current.filter((entry) => entry.id !== item.id);
+      return syncAutoNeedles([...withoutCurrent, item], nextNeedlesProduct);
     });
     setSelectedProduct(null);
     setInstructions("");
     setQuery("");
   };
 
-  const removeCart = (id) => setCart((current) => current.filter((item) => item.id !== id));
+  const removeCart = (id) => setCart((current) => syncAutoNeedles(current.filter((item) => item.id !== id), needlesProduct));
 
   const publishPrescription = async () => {
     if (!patient || !cart.length) return;
@@ -256,7 +478,10 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
           doctor_instructions: item.doctor_instructions,
         })),
       };
-      const data = await fetchJson(`${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`, {
+      const endpoint = initialRefillRequestId
+        ? `${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(initialRefillRequestId)}/prescriptions`
+        : `${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`;
+      const data = await fetchJson(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -268,7 +493,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
       await loadPatients();
       if (onSent) onSent();
     } catch (err) {
-      setError(errorCopy(err.message));
+      setError(errorCopy(err.message, err.payload));
     } finally {
       setPublishing(false);
     }
@@ -277,7 +502,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
   return (
     <>
       <Topbar
-        title="Prescribe"
+        title={initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
         subtitle={patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
       />
       <div className="rx-layout">
@@ -353,31 +578,51 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
                 </div>
 
                 <div className="section-hdr"><div className="label">Prescribable products</div></div>
+                <div className="rx-track-tabs rx-product-source-tabs">
+                  {[activeTrack, SUPPLEMENTS_CATALOG].map((catalog) => (
+                    <button
+                      key={catalog.key}
+                      className={productCatalogKey === catalog.key ? "active" : ""}
+                      onClick={() => chooseProductCatalog(catalog.key)}
+                    >
+                      {catalog.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="rx-search">
                   <span className="rx-search-icon">{I.search}</span>
                   <input
                     className="rx-search-input"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder={`Search ${activeTrack.label.toLowerCase()} products`}
+                    placeholder={`Search ${activeProductCatalog.label.toLowerCase()} products`}
                   />
                 </div>
 
                 <div className="rx-product-list">
                   {productsLoading ? (
                     <div className="patient-loading"><div /><div /><div /></div>
-                  ) : visibleProducts.length ? visibleProducts.map((product) => (
-                    <button key={product.product_id} className="rx-product-row" onClick={() => pickProduct(product)}>
-                      <div>
-                        <div className="nm">{product.name}</div>
-                        <div className="ds">
-                          {[product.details.strength, product.details.frequency, product.details.packSize].filter(Boolean).join(" · ")}
+                  ) : visibleProducts.length ? visibleProducts.map((product) => {
+                    const stockLabel = productStockLabel(product, productCatalogKey);
+                    const outOfStock = isOutOfStock(product, productCatalogKey);
+                    return (
+                      <button
+                        key={product.product_id}
+                        className={`rx-product-row${outOfStock ? " out-of-stock" : ""}`}
+                        onClick={() => pickProduct(product)}
+                        disabled={outOfStock}
+                      >
+                        <div>
+                          <div className="nm">{product.name}</div>
+                          <div className="ds">
+                            {[product.details.strength, product.details.frequency, product.details.packSize, stockLabel].filter(Boolean).join(" · ")}
+                          </div>
                         </div>
-                      </div>
-                      <div className="rx-product-price">{product.details.price}</div>
-                    </button>
-                  )) : (
-                    <div className="empty-state rx-product-empty">No products found for this track.</div>
+                        <div className="rx-product-price">{outOfStock ? "Out of stock" : product.details.price}</div>
+                      </button>
+                    );
+                  }) : (
+                    <div className="empty-state rx-product-empty">No products found in this catalog.</div>
                   )}
                 </div>
               </>
@@ -386,11 +631,17 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
 
           {patient && selectedProduct && (
             <div className="rx-selection-tray fade-in" key={selectedProduct.product_id}>
+              {(() => {
+                const quantityLimit = productQuantityLimit(selectedProduct, productCatalogKey);
+                const stockLabel = productStockLabel(selectedProduct, productCatalogKey);
+                const blocked = quantityLimit <= 0;
+                return (
+                  <>
               <div className="rx-selection-head">
                 <div>
                   <div className="rx-selection-title">{selectedProduct.name}</div>
                   <div className="rx-selection-meta">
-                    {[selectedProduct.details.price, selectedProduct.details.category].filter(Boolean).join(" · ")}
+                    {[selectedProduct.details.price, selectedProduct.details.category, stockLabel].filter(Boolean).join(" · ")}
                   </div>
                 </div>
                 <button className="btn-ghost" onClick={() => setSelectedProduct(null)}>Change</button>
@@ -411,8 +662,8 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
                     <span>{quantity}</span>
                     <button
                       type="button"
-                      onClick={() => setQuantity((current) => Math.min(5, current + 1))}
-                      disabled={quantity >= 5}
+                      onClick={() => setQuantity((current) => Math.min(quantityLimit, current + 1))}
+                      disabled={blocked || quantity >= quantityLimit}
                       aria-label="Increase quantity"
                     >
                       {I.plus}
@@ -426,13 +677,16 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
               </div>
 
               <div className="rx-plan-note">
-                {selectedProduct.details.instructions}
+                {blocked ? "This supplement is out of stock." : selectedProduct.details.instructions}
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
                 <button className="btn-ghost" onClick={() => setSelectedProduct(null)}>Cancel</button>
-                <button className="btn-primary" onClick={addToCart}>{I.plus}<span>Add to plan</span></button>
+                <button className="btn-primary" onClick={addToCart} disabled={blocked}>{I.plus}<span>Add to plan</span></button>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -446,9 +700,13 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, o
               <div className="empty">No products added yet.<br/>Select catalog products to build the plan.</div>
             ) : cart.map((item) => (
               <div key={item.id} className="rx-cart-item">
-                <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
+                {!item.autoAdded && <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>}
                 <div className="nm">{item.name}</div>
-                <div className="ds">Qty {item.quantity} · {formatPrice(item.price_fils * item.quantity)}</div>
+                <div className="ds">
+                  {item.autoAdded
+                    ? "Auto-added needles"
+                    : item.catalogKey === SUPPLEMENTS_CATALOG.key ? "Supplements" : activeTrack.label} · Qty {item.quantity} · {formatPrice((item.price_fils || 0) * item.quantity)}
+                </div>
                 <div className="ds" style={{ marginTop: 2 }}>{item.doctor_instructions}</div>
               </div>
             ))}
