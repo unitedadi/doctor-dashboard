@@ -156,7 +156,8 @@ function productDetails(product, trackKey) {
       instructions: supplement.instructions || "Use as directed by your DarDoc physician.",
     };
   }
-  const source = trackKey === "peptides" ? attrs.peptide : attrs.weight_loss;
+  const productCategory = String(attrs.category || attrs.product_category || product.category || "").toUpperCase();
+  const source = productCategory === "PEPTIDE" ? attrs.peptide : attrs.weight_loss;
   const dosage = source?.dosage || {};
   const specs = source?.specs || [];
   const strength = dosage.strength || specs.find((item) => item.label === "Strength")?.value;
@@ -267,7 +268,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
-    : activeTrack;
+    : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
 
   const loadPatients = React.useCallback(async () => {
     setPatientsLoading(true);
