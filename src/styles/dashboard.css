@@ -38,12 +38,12 @@ body {
 
 .doctor-auth-card {
   width: 430px;
-  min-height: 360px;
-  border: 1px solid var(--dd-divider);
-  border-radius: 24px;
-  background: var(--dd-card);
-  box-shadow: 0 24px 70px rgba(31, 45, 46, 0.12);
-  padding: 30px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .doctor-auth-card img {
