@@ -7,6 +7,7 @@ import './components/patients.jsx'
 import './components/chat.jsx'
 import './components/prescribe.jsx'
 import './components/refills.jsx'
+import './components/quickwlp.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 
@@ -46,6 +47,7 @@ function App() {
   const ChatView = window.DD_ChatView
   const PrescribeView = window.DD_PrescribeView
   const RefillsView = window.DD_RefillsView
+  const QuickWlpView = window.DD_QuickWlpView
 
   const go = (id: string, ctx: Record<string, string> = {}) => {
     setRoute(id)
@@ -58,7 +60,7 @@ function App() {
 
     async function loadAppointmentCount() {
       try {
-        const data = await fetchJson(`${API_BASE}/doctor/dashboard/appointments?date=${dubaiToday()}`)
+        const data = await fetchJson(`${API_BASE}/doctor/dashboard/appointments?date=${dubaiToday()}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`)
         if (!cancelled) setAppointmentCount(Array.isArray(data.today) ? data.today.length : 0)
       } catch {
         if (!cancelled) setAppointmentCount(null)
@@ -135,12 +137,28 @@ function App() {
             onPrescribe={(id: string, trackKey?: string, customerId?: string, refillRequestId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || 'weight-loss', customerId: customerId || '', refillRequestId: refillRequestId || '' })}
           />
         )}
+        {route === 'quickwlp' && (
+          <QuickWlpView
+            onPrescribe={(request: any) => go('prescribe', {
+              quickWlpLeadId: request?.leadId || request?.id || '',
+              quickWlpName: request?.patient?.name || '',
+              quickWlpPhone: request?.patient?.userPhone || request?.patient?.phone || '',
+              quickWlpWhatsapp: request?.patient?.whatsapp || '',
+              quickWlpEmail: request?.patient?.email || '',
+            })}
+          />
+        )}
         {route === 'prescribe' && (
           <PrescribeView
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
             initialTrackKey={routeContext.trackKey}
             initialRefillRequestId={routeContext.refillRequestId}
+            initialQuickWlpLeadId={routeContext.quickWlpLeadId}
+            initialQuickWlpName={routeContext.quickWlpName}
+            initialQuickWlpPhone={routeContext.quickWlpPhone}
+            initialQuickWlpWhatsapp={routeContext.quickWlpWhatsapp}
+            initialQuickWlpEmail={routeContext.quickWlpEmail}
             onSent={() => undefined}
           />
         )}

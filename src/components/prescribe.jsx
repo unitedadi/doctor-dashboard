@@ -38,6 +38,11 @@ function titleCase(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function patientInitials(name) {
+  const parts = String(name || "Patient").trim().split(/\s+/).filter(Boolean);
+  return (parts[0]?.[0] || "P") + (parts[1]?.[0] || "");
+}
+
 function formatPrice(fils) {
   if (typeof fils !== "number" || !Number.isFinite(fils)) return "";
   return new Intl.NumberFormat("en-AE", {
@@ -239,12 +244,27 @@ function errorCopy(error, payload) {
     rx_prescription_insufficient_inventory: payload?.product_name
       ? `${payload.product_name} has only ${payload.available_quantity ?? 0} available.`
       : "One of the selected supplements does not have enough stock.",
+    quickwlp_request_not_found: "This Quick WLP request is no longer available.",
+    quickwlp_prescription_product_not_allowed: "One of the selected products is not allowed for Quick WLP checkout.",
+    quickwlp_prescription_product_not_found: "One of the selected products is no longer available in the catalog.",
   };
   return copy[error] || error || "Could not publish this prescription.";
 }
 
-function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, initialRefillRequestId, onSent }) {
+function PrescribeView({
+  initialPatientId,
+  initialCustomerId,
+  initialTrackKey,
+  initialRefillRequestId,
+  initialQuickWlpLeadId,
+  initialQuickWlpName,
+  initialQuickWlpPhone,
+  initialQuickWlpWhatsapp,
+  initialQuickWlpEmail,
+  onSent,
+}) {
   const { I, Avatar, Topbar } = window.DD_UI;
+  const isQuickWlpMode = Boolean(initialQuickWlpLeadId);
   const [patients, setPatients] = useStateR([]);
   const [selectedPatientKey, setSelectedPatientKey] = useStateR("");
   const [patientTrackFilter, setPatientTrackFilter] = useStateR(ALL_TRACK);
@@ -264,13 +284,45 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
 
-  const patient = patients.find((item) => item.key === selectedPatientKey) || null;
+  const quickWlpPatient = useMemoR(() => {
+    if (!isQuickWlpMode) return null;
+    const name = initialQuickWlpName || "Quick WLP customer";
+    const phone = initialQuickWlpPhone || initialQuickWlpWhatsapp || "";
+    return {
+      key: `quickwlp:${initialQuickWlpLeadId}`,
+      id: initialQuickWlpLeadId,
+      customerId: "",
+      name,
+      initials: patientInitials(name),
+      age: null,
+      sex: "",
+      phone,
+      email: initialQuickWlpEmail || "",
+      whatsapp: initialQuickWlpWhatsapp || "",
+      trackKey: "weight-loss",
+      doctorId: DOCTOR_ID,
+      subscriptionStatus: "Quick WLP",
+      latestCompletedAt: null,
+      canPrescribe: true,
+    };
+  }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode]);
+
+  const rxPatient = patients.find((item) => item.key === selectedPatientKey) || null;
+  const patient = isQuickWlpMode ? quickWlpPatient : rxPatient;
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
+  const productCatalogs = isQuickWlpMode ? [...TRACKS, SUPPLEMENTS_CATALOG] : [activeTrack, SUPPLEMENTS_CATALOG];
+  const canPublish = Boolean(cart.length && !publishing && patient && (isQuickWlpMode || patient.customerId));
 
   const loadPatients = React.useCallback(async () => {
+    if (isQuickWlpMode) {
+      setPatients([]);
+      setPatientsLoading(false);
+      setError("");
+      return;
+    }
     setPatientsLoading(true);
     setError("");
     try {
@@ -301,15 +353,15 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
     } finally {
       setPatientsLoading(false);
     }
-  }, [initialCustomerId, initialPatientId, initialTrackKey, patientQuery, patientTrackFilter]);
+  }, [initialCustomerId, initialPatientId, initialTrackKey, isQuickWlpMode, patientQuery, patientTrackFilter]);
 
   useEffectR(() => {
     loadPatients();
   }, [loadPatients]);
 
   useEffectR(() => {
-    if (!initialPatientId && !initialCustomerId) setSelectedPatientKey("");
-  }, [initialCustomerId, initialPatientId]);
+    if (!isQuickWlpMode && !initialPatientId && !initialCustomerId) setSelectedPatientKey("");
+  }, [initialCustomerId, initialPatientId, isQuickWlpMode]);
 
   useEffectR(() => {
     if (!patient) return;
@@ -327,7 +379,18 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
       setProductsLoading(true);
       setError("");
       try {
-        if (productCatalogKey === SUPPLEMENTS_CATALOG.key) {
+        if (isQuickWlpMode) {
+          const params = new URLSearchParams({
+            doctor_id: DOCTOR_ID,
+            seller_id: SUPPLEMENT_SELLER_ID,
+            catalog: productCatalogKey,
+            limit: "100",
+            offset: "0",
+          });
+          if (query.trim()) params.set("q", query.trim());
+          const data = await fetchJson(`${API_BASE}/doctor/quickwlp/products?${params.toString()}`);
+          if (!cancelled) setProducts(data.products || []);
+        } else if (productCatalogKey === SUPPLEMENTS_CATALOG.key) {
           const params = new URLSearchParams({
             seller_id: SUPPLEMENT_SELLER_ID,
             product_type: "SKU",
@@ -364,7 +427,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
       setProductsLoading(false);
     }
     return () => { cancelled = true; };
-  }, [patient, productCatalogKey, query]);
+  }, [isQuickWlpMode, patient, productCatalogKey, query]);
 
   const visibleProducts = useMemoR(() => {
     return products
@@ -468,20 +531,29 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
     setError("");
     setSentToast("");
     try {
-      const payload = {
-        doctor_id: DOCTOR_ID,
-        customer_id: patient.customerId,
-        title: `${activeTrack.label} Rx plan`,
-        summary: activeTrack.summary,
-        items: cart.map((item) => ({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          doctor_instructions: item.doctor_instructions,
-        })),
-      };
-      const endpoint = initialRefillRequestId
-        ? `${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(initialRefillRequestId)}/prescriptions`
-        : `${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`;
+      const items = cart.map((item) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        doctor_instructions: item.doctor_instructions,
+      }));
+      const endpoint = isQuickWlpMode
+        ? `${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(patient.id)}/prescriptions`
+        : initialRefillRequestId
+          ? `${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(initialRefillRequestId)}/prescriptions`
+          : `${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`;
+      const payload = isQuickWlpMode
+        ? {
+          doctor_id: DOCTOR_ID,
+          seller_id: SUPPLEMENT_SELLER_ID,
+          items,
+        }
+        : {
+          doctor_id: DOCTOR_ID,
+          customer_id: patient.customerId,
+          title: `${activeTrack.label} Rx plan`,
+          summary: activeTrack.summary,
+          items,
+        };
       const data = await fetchJson(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -489,9 +561,16 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
       });
       setCart([]);
       setSelectedProduct(null);
-      setSentToast(data.care_plan?.title || `${activeTrack.label} care plan published`);
+      const quickWlpExpiry = formatDateTime(data.prescription?.checkout_expires_at);
+      setSentToast(
+        isQuickWlpMode
+          ? quickWlpExpiry
+            ? `Checkout link sent · expires ${quickWlpExpiry}`
+            : "Checkout link sent to customer"
+          : data.care_plan?.title || `${activeTrack.label} care plan published`
+      );
       setTimeout(() => setSentToast(""), 2600);
-      await loadPatients();
+      if (!isQuickWlpMode) await loadPatients();
       if (onSent) onSent();
     } catch (err) {
       setError(errorCopy(err.message, err.payload));
@@ -503,8 +582,8 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
   return (
     <>
       <Topbar
-        title={initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
-        subtitle={patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
+        title={isQuickWlpMode ? "Prescribe Quick WLP" : initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
+        subtitle={isQuickWlpMode ? "Create a checkout intent and send it to the customer" : patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
       />
       <div className="rx-layout">
         <div className="rx-main">
@@ -572,15 +651,17 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
                   <div>
                     <div className="nm">{patient.name}</div>
                     <div className="me">
-                      {[patient.age, patient.sex, activeTrack.label, `Completed ${formatDateTime(patient.latestCompletedAt)}`].filter(Boolean).join(" · ")}
+                      {isQuickWlpMode
+                        ? [patient.phone, patient.email, "Quick WLP"].filter(Boolean).join(" · ")
+                        : [patient.age, patient.sex, activeTrack.label, `Completed ${formatDateTime(patient.latestCompletedAt)}`].filter(Boolean).join(" · ")}
                     </div>
                   </div>
-                  <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>
+                  {!isQuickWlpMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
 
                 <div className="section-hdr"><div className="label">Prescribable products</div></div>
                 <div className="rx-track-tabs rx-product-source-tabs">
-                  {[activeTrack, SUPPLEMENTS_CATALOG].map((catalog) => (
+                  {productCatalogs.map((catalog) => (
                     <button
                       key={catalog.key}
                       className={productCatalogKey === catalog.key ? "active" : ""}
@@ -696,7 +777,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
           <div className="section-hdr"><div className="label">Care plan</div></div>
           <div className="rx-cart">
             {!patient ? (
-              <div className="empty">Choose a patient with a completed consultation to begin.</div>
+              <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>
             ) : cart.length === 0 ? (
               <div className="empty">No products added yet.<br/>Select catalog products to build the plan.</div>
             ) : cart.map((item) => (
@@ -706,7 +787,7 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
                 <div className="ds">
                   {item.autoAdded
                     ? "Auto-added needles"
-                    : item.catalogKey === SUPPLEMENTS_CATALOG.key ? "Supplements" : activeTrack.label} · Qty {item.quantity} · {formatPrice((item.price_fils || 0) * item.quantity)}
+                    : item.catalogKey === SUPPLEMENTS_CATALOG.key ? "Supplements" : TRACKS.find((track) => track.key === item.catalogKey)?.label || activeTrack.label} · Qty {item.quantity} · {formatPrice((item.price_fils || 0) * item.quantity)}
                 </div>
                 <div className="ds" style={{ marginTop: 2 }}>{item.doctor_instructions}</div>
               </div>
@@ -722,20 +803,29 @@ function PrescribeView({ initialPatientId, initialCustomerId, initialTrackKey, i
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
             <button
               className="dd-btn-block"
-              disabled={!cart.length || publishing || !patient?.customerId}
-              style={{ opacity: cart.length && !publishing ? 1 : 0.4, cursor: cart.length && !publishing ? "pointer" : "not-allowed" }}
+              disabled={!canPublish}
+              style={{ opacity: canPublish ? 1 : 0.4, cursor: canPublish ? "pointer" : "not-allowed" }}
               onClick={publishPrescription}
             >
-              {publishing ? "Publishing..." : "Publish care plan"}
+              {publishing ? "Sending..." : isQuickWlpMode ? "Create and send checkout" : "Publish care plan"}
             </button>
           </div>
 
           {patient && (
             <>
-              <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>Eligibility</h4>
-              <div className="kv-row"><div className="k">Track</div><div className="v">{activeTrack.label}</div></div>
-              <div className="kv-row"><div className="k">Subscription</div><div className="v">{titleCase(patient.subscriptionStatus)}</div></div>
-              <div className="kv-row"><div className="k">Completed</div><div className="v">{formatDateTime(patient.latestCompletedAt)}</div></div>
+              <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>{isQuickWlpMode ? "Customer" : "Eligibility"}</h4>
+              <div className="kv-row"><div className="k">Track</div><div className="v">{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</div></div>
+              {isQuickWlpMode ? (
+                <>
+                  <div className="kv-row"><div className="k">Phone</div><div className="v">{patient.phone || "Not provided"}</div></div>
+                  <div className="kv-row"><div className="k">Email</div><div className="v">{patient.email || "Not provided"}</div></div>
+                </>
+              ) : (
+                <>
+                  <div className="kv-row"><div className="k">Subscription</div><div className="v">{titleCase(patient.subscriptionStatus)}</div></div>
+                  <div className="kv-row"><div className="k">Completed</div><div className="v">{formatDateTime(patient.latestCompletedAt)}</div></div>
+                </>
+              )}
             </>
           )}
         </div>

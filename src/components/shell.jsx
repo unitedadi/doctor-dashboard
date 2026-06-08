@@ -120,6 +120,7 @@ function Sidebar({ active, onNav, appointmentCount, unreadChats }) {
     { id: "patients", label: "Patients", icon: I.user, count: null },
     { id: "chat", label: "Chat", icon: I.message, count: unreadChats },
     { id: "refills", label: "Refills", icon: I.drop, count: null },
+    { id: "quickwlp", label: "Quick WLP", icon: I.stethoscope, count: null },
     { id: "prescribe", label: "Prescribe", icon: I.pill, count: null },
   ];
   const D = window.DD_DATA.DOCTOR;

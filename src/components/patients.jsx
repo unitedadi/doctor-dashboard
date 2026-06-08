@@ -30,6 +30,17 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Dubai",
+  }).format(new Date(value));
+}
+
 function formatAppointmentDate(date, time) {
   if (!date) return time || "";
   const [year, month, day] = date.split("-").map(Number);
@@ -56,6 +67,17 @@ function firstUsefulAnswer(answers) {
   return {
     label: titleCase(key),
     value: Array.isArray(value) ? value.join(", ") : String(value),
+  };
+}
+
+function mapPrescriptionHistoryItem(item) {
+  return {
+    id: item.prescription_id,
+    checkoutUrl: item.checkout_url || "",
+    checkoutExpiresAt: item.checkout_expires_at || "",
+    itemLabel: item.item_label || "Prescription checkout",
+    status: item.status || "ACTIVE",
+    createdAt: item.created_at || "",
   };
 }
 
@@ -86,6 +108,7 @@ function mapPatient(item) {
     medications: asArray(item.medications),
     latestLabs: asArray(item.latest_labs),
     visitHistory: asArray(item.visit_history),
+    prescriptionHistory: asArray(item.prescription_history).map(mapPrescriptionHistoryItem),
     upcoming: item.upcoming_appointment || null,
     chat: item.chat || { available: false, unavailable_reason: "chat_locked" },
   };
@@ -201,6 +224,37 @@ function EmptyInline({ children }) {
   return <div className="inline-empty">{children}</div>;
 }
 
+function PatientPrescriptionHistory({ prescriptions }) {
+  const list = Array.isArray(prescriptions) ? prescriptions : [];
+  if (!list.length) return <EmptyInline>No prescription checkout history yet.</EmptyInline>;
+
+  return (
+    <div className="patient-prescription-history">
+      {list.map((prescription) => {
+        const status = String(prescription.status || "ACTIVE").toLowerCase();
+        return (
+          <div key={prescription.id} className="patient-prescription-row">
+            <div>
+              <div className="patient-prescription-title">{prescription.itemLabel}</div>
+              <div className="patient-prescription-meta">
+                {[prescription.checkoutExpiresAt ? `Expires ${formatDateTime(prescription.checkoutExpiresAt)}` : "", prescription.createdAt ? `Created ${formatDateTime(prescription.createdAt)}` : ""].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+            <div className="patient-prescription-actions">
+              <span className={`quickwlp-prescription-status ${status}`}>{titleCase(prescription.status)}</span>
+              {prescription.checkoutUrl && (
+                <a className="quickwlp-prescription-open" href={prescription.checkoutUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PatientDetail({ p, onMessage, onPrescribe }) {
   const { I, Avatar } = window.DD_UI;
   const latestSubmission = p.assessment.submissions[0];
@@ -272,6 +326,11 @@ function PatientDetail({ p, onMessage, onPrescribe }) {
                 {m.since && <div className="v">Since {formatDate(m.since)}</div>}
               </div>
             )) : <EmptyInline>No active Rx medications.</EmptyInline>}
+          </div>
+
+          <div className="detail-block">
+            <h3>Prescription history</h3>
+            <PatientPrescriptionHistory prescriptions={p.prescriptionHistory} />
           </div>
 
           <div className="detail-block">

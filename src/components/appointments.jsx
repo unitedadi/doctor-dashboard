@@ -94,7 +94,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/doctor/dashboard/appointments?date=${selectedDate}`);
+      const response = await fetch(`${API_BASE}/doctor/dashboard/appointments?date=${selectedDate}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`);
       if (!response.ok) throw new Error(`appointments_request_failed_${response.status}`);
       const data = await response.json();
       const nextToday = (data.today || []).map(mapAppointment).sort((a, b) => a.time.localeCompare(b.time));

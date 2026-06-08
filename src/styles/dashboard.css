@@ -24,6 +24,88 @@ body {
   overflow-x: auto;
 }
 
+.doctor-auth-page {
+  min-height: 100%;
+  min-width: var(--dd-desktop-min-width);
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(234, 202, 153, 0.32), transparent 32%),
+    radial-gradient(circle at 86% 18%, rgba(23, 59, 61, 0.14), transparent 28%),
+    var(--dd-bg);
+}
+
+.doctor-auth-card {
+  width: 430px;
+  min-height: 360px;
+  border: 1px solid var(--dd-divider);
+  border-radius: 24px;
+  background: var(--dd-card);
+  box-shadow: 0 24px 70px rgba(31, 45, 46, 0.12);
+  padding: 30px;
+}
+
+.doctor-auth-card img {
+  height: 28px;
+  width: auto;
+  margin-bottom: 24px;
+}
+
+.doctor-auth-kicker {
+  margin: 0 0 10px;
+  font: 600 11px/1 var(--dd-font);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--dd-text-tertiary);
+}
+
+.doctor-auth-card h1 {
+  margin: 0;
+  font: 500 28px/1.12 var(--dd-font);
+  letter-spacing: 0;
+  color: var(--dd-text-primary);
+}
+
+.doctor-auth-copy {
+  margin: 10px 0 22px;
+  font: 400 13px/1.5 var(--dd-font);
+  color: var(--dd-text-secondary);
+}
+
+.doctor-auth-copy code {
+  font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color: var(--dd-accent);
+}
+
+.doctor-session-pill {
+  position: fixed;
+  top: 18px;
+  right: 24px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid var(--dd-divider);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dd-card) 88%, transparent);
+  box-shadow: 0 12px 32px rgba(31, 45, 46, 0.1);
+  backdrop-filter: blur(14px);
+}
+
+.doctor-session-pill span {
+  font: 600 10px/1 var(--dd-font);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--dd-text-tertiary);
+}
+
+.doctor-session-pill strong {
+  font: 500 12px/1 var(--dd-font);
+  color: var(--dd-text-primary);
+}
+
 /* Hide native scrollbars but keep scrolling */
 .dd-scroll {
   overflow-y: auto;
@@ -1547,6 +1629,299 @@ body {
   margin: 10px 0 0;
   font: 400 14px/1.55 var(--dd-font);
   color: var(--dd-text-primary);
+}
+
+.quickwlp-tabs {
+  flex-wrap: wrap;
+}
+.quickwlp-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.quickwlp-outcome-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.quickwlp-medication {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.quickwlp-medication.compact {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.quickwlp-maker-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 3px 8px;
+  border: 1px solid rgba(23, 59, 61, 0.14);
+  border-radius: 999px;
+  background: rgba(23, 59, 61, 0.06);
+  color: var(--dd-accent);
+  font: 500 10px/1 var(--dd-font);
+  white-space: nowrap;
+}
+.quickwlp-link-input {
+  width: 100%;
+  border: 1px solid var(--dd-divider);
+  border-radius: var(--dd-radius-md);
+  background: var(--dd-cell);
+  color: var(--dd-text-primary);
+  font: 400 13px/1.4 var(--dd-font);
+  padding: 12px 14px;
+  outline: none;
+}
+.quickwlp-link-input:focus {
+  border-color: rgba(23,59,61,0.35);
+  box-shadow: 0 0 0 3px rgba(23,59,61,0.08);
+}
+.quickwlp-prescription-empty {
+  border: 1px dashed rgba(23, 59, 61, 0.16);
+  border-radius: var(--dd-radius-md);
+  padding: 12px 14px;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+}
+.quickwlp-prescription-list,
+.patient-prescription-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.quickwlp-prescription-row,
+.patient-prescription-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(23, 59, 61, 0.08);
+  border-radius: var(--dd-radius-md);
+  background: rgba(255,255,255,0.42);
+  padding: 12px;
+}
+.quickwlp-prescription-title,
+.patient-prescription-title {
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+}
+.quickwlp-prescription-meta,
+.patient-prescription-meta {
+  margin-top: 4px;
+  color: var(--dd-text-secondary);
+  font: 400 11px/1.35 var(--dd-font);
+}
+.quickwlp-prescription-actions,
+.patient-prescription-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.quickwlp-prescription-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(23, 59, 61, 0.06);
+  color: var(--dd-text-secondary);
+  font: 500 10px/1 var(--dd-font);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.quickwlp-prescription-status.active {
+  background: rgba(20, 125, 99, 0.11);
+  color: var(--dd-accent);
+}
+.quickwlp-prescription-status.expired {
+  background: rgba(159, 45, 45, 0.1);
+  color: #9f2d2d;
+}
+.quickwlp-prescription-status.recreated {
+  background: rgba(92, 73, 40, 0.1);
+  color: #6f5a34;
+}
+.quickwlp-prescription-open {
+  border: 1px solid rgba(23, 59, 61, 0.12);
+  border-radius: 999px;
+  color: var(--dd-accent);
+  font: 500 11px/1 var(--dd-font);
+  padding: 6px 10px;
+  text-decoration: none;
+}
+.quickwlp-prescription-recreate {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.quickwlp-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.quickwlp-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(254,249,239,0.68);
+  backdrop-filter: blur(14px);
+}
+.quickwlp-dialog {
+  width: min(720px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid var(--dd-divider);
+  border-radius: var(--dd-radius-lg);
+  background: var(--dd-bg);
+  box-shadow: var(--dd-shadow-medium);
+  padding: 22px;
+}
+.quickwlp-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.quickwlp-dialog-title {
+  color: var(--dd-text-primary);
+  font: 500 18px/1.2 var(--dd-font);
+}
+.quickwlp-dialog-head p {
+  margin: 6px 0 0;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+}
+.quickwlp-dialog-fields,
+.quickwlp-dialog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.quickwlp-dialog-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  margin-top: 14px;
+}
+.quickwlp-dialog label {
+  display: grid;
+  gap: 7px;
+}
+.quickwlp-dialog label span,
+.quickwlp-dialog-section .label {
+  color: var(--dd-text-tertiary);
+  font: 500 10px/1 var(--dd-font);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+.quickwlp-dialog input {
+  min-height: 44px;
+  border: 1px solid var(--dd-divider);
+  border-radius: var(--dd-radius-md);
+  background: var(--dd-cell);
+  color: var(--dd-text-primary);
+  font: 400 13px/1.3 var(--dd-font);
+  outline: none;
+  padding: 0 13px;
+}
+.quickwlp-dialog input:focus {
+  border-color: rgba(23,59,61,0.35);
+  box-shadow: 0 0 0 3px rgba(23,59,61,0.08);
+}
+.quickwlp-dialog-primary {
+  min-height: 44px;
+}
+.quickwlp-customer-card {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  border: 1px solid var(--dd-divider);
+  border-radius: var(--dd-radius-md);
+  background: var(--dd-cell);
+  padding: 13px 14px;
+}
+.quickwlp-customer-card span {
+  color: var(--dd-text-tertiary);
+  font: 500 10px/1 var(--dd-font);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+.quickwlp-customer-card strong {
+  color: var(--dd-text-primary);
+  font: 500 14px/1.2 var(--dd-font);
+}
+.quickwlp-customer-card small {
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+.quickwlp-dialog-section {
+  margin-top: 18px;
+}
+.quickwlp-slot-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.quickwlp-slot-button,
+.quickwlp-tag-button {
+  min-height: 38px;
+  border: 1px solid var(--dd-divider);
+  border-radius: var(--dd-radius-md);
+  background: var(--dd-cell);
+  color: var(--dd-text-primary);
+  font: 400 12px/1 var(--dd-font);
+}
+.quickwlp-slot-button.selected,
+.quickwlp-tag-button.selected {
+  border-color: var(--dd-accent);
+  background: var(--dd-fill-light);
+  color: var(--dd-accent);
+  font-weight: 500;
+}
+.quickwlp-tag-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.quickwlp-tag-button {
+  padding: 0 14px;
+}
+.quickwlp-dialog-empty,
+.quickwlp-dialog-error {
+  border-radius: var(--dd-radius-md);
+  padding: 12px 14px;
+  font: 400 12px/1.45 var(--dd-font);
+}
+.quickwlp-dialog-empty {
+  grid-column: 1 / -1;
+  background: var(--dd-cell);
+  color: var(--dd-text-secondary);
+}
+.quickwlp-dialog-error {
+  margin-top: 14px;
+  background: rgba(159, 45, 45, 0.1);
+  color: #9f2d2d;
+}
+.quickwlp-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.btn-ghost.danger {
+  color: #9f2d2d;
 }
 
 .rx-patient-card {
