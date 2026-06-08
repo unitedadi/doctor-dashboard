@@ -116,6 +116,7 @@ function mapQuickWlpRequest(item) {
     id: item.lead_id || item.request_id,
     leadId: item.lead_id || item.request_id,
     consultationId: item.consultation_id,
+    doctorId: item.doctor_id || "",
     status: item.status || "PENDING",
     scheduledAt: item.scheduled_start_at,
     scheduledEnd: item.scheduled_end_at,
@@ -212,7 +213,7 @@ function QuickWlpRequestDetail({ request, onFinalize, onPrescribe, onRecreate, r
   const submit = async (value, label) => {
     setSaving(label);
     try {
-      await onFinalize(request.leadId, value);
+      await onFinalize(request, value);
     } finally {
       setSaving("");
     }
@@ -252,7 +253,7 @@ function QuickWlpRequestDetail({ request, onFinalize, onPrescribe, onRecreate, r
         <p>Create the cart here and DarDoc will send the checkout link to the customer on WhatsApp and email.</p>
         <QuickWlpPrescriptionHistory
           prescriptions={request.prescriptions}
-          onRecreate={onRecreate}
+          onRecreate={(prescriptionId) => onRecreate?.(prescriptionId, request.doctorId)}
           recreatingId={recreatingId}
         />
         <button className="dd-btn-block" disabled={Boolean(saving)} onClick={() => onPrescribe?.(request)}>
@@ -508,7 +509,6 @@ function QuickWlpView({ onPrescribe }) {
     setError("");
     try {
       const params = new URLSearchParams({
-        doctor_id: DOCTOR_ID,
         status,
         from: QUICK_WLP_LIST_FROM_DATE,
         limit: "100",
@@ -538,19 +538,20 @@ function QuickWlpView({ onPrescribe }) {
   const selected = requests.find((request) => request.id === selectedId) || null;
   const requestCount = useMemoQ(() => requests.length, [requests]);
 
-  const finalizeRequest = async (leadId, value) => {
-    await fetchJson(`${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(leadId)}/finalize`, {
+  const finalizeRequest = async (request, value) => {
+    const doctorId = request?.doctorId || DOCTOR_ID;
+    await fetchJson(`${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(request.leadId)}/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        doctor_id: DOCTOR_ID,
+        doctor_id: doctorId,
         value,
       }),
     });
     await loadRequests();
   };
 
-  const recreatePrescription = async (prescriptionId) => {
+  const recreatePrescription = async (prescriptionId, doctorId = DOCTOR_ID) => {
     if (!prescriptionId) return;
     setRecreatingId(prescriptionId);
     setError("");
@@ -558,7 +559,7 @@ function QuickWlpView({ onPrescribe }) {
       await fetchJson(`${API_BASE}/doctor/quickwlp/prescriptions/${encodeURIComponent(prescriptionId)}/recreate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doctor_id: DOCTOR_ID }),
+        body: JSON.stringify({ doctor_id: doctorId || DOCTOR_ID }),
       });
       await loadRequests();
     } catch (err) {

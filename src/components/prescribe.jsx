@@ -261,6 +261,7 @@ function PrescribeView({
   initialQuickWlpPhone,
   initialQuickWlpWhatsapp,
   initialQuickWlpEmail,
+  initialQuickWlpDoctorId,
   onSent,
 }) {
   const { I, Avatar, Topbar } = window.DD_UI;
@@ -283,6 +284,7 @@ function PrescribeView({
   const [publishing, setPublishing] = useStateR(false);
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
+  const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
 
   const quickWlpPatient = useMemoR(() => {
     if (!isQuickWlpMode) return null;
@@ -300,12 +302,12 @@ function PrescribeView({
       email: initialQuickWlpEmail || "",
       whatsapp: initialQuickWlpWhatsapp || "",
       trackKey: "weight-loss",
-      doctorId: DOCTOR_ID,
+      doctorId: quickWlpDoctorId,
       subscriptionStatus: "Quick WLP",
       latestCompletedAt: null,
       canPrescribe: true,
     };
-  }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode]);
+  }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode, quickWlpDoctorId]);
 
   const rxPatient = patients.find((item) => item.key === selectedPatientKey) || null;
   const patient = isQuickWlpMode ? quickWlpPatient : rxPatient;
@@ -381,7 +383,7 @@ function PrescribeView({
       try {
         if (isQuickWlpMode) {
           const params = new URLSearchParams({
-            doctor_id: DOCTOR_ID,
+            doctor_id: patient.doctorId || quickWlpDoctorId,
             seller_id: SUPPLEMENT_SELLER_ID,
             catalog: productCatalogKey,
             limit: "100",
@@ -427,7 +429,7 @@ function PrescribeView({
       setProductsLoading(false);
     }
     return () => { cancelled = true; };
-  }, [isQuickWlpMode, patient, productCatalogKey, query]);
+  }, [isQuickWlpMode, patient, productCatalogKey, query, quickWlpDoctorId]);
 
   const visibleProducts = useMemoR(() => {
     return products
@@ -543,7 +545,7 @@ function PrescribeView({
           : `${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`;
       const payload = isQuickWlpMode
         ? {
-          doctor_id: DOCTOR_ID,
+          doctor_id: patient.doctorId || quickWlpDoctorId,
           seller_id: SUPPLEMENT_SELLER_ID,
           items,
         }

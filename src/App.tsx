@@ -145,6 +145,7 @@ function App() {
               quickWlpPhone: request?.patient?.userPhone || request?.patient?.phone || '',
               quickWlpWhatsapp: request?.patient?.whatsapp || '',
               quickWlpEmail: request?.patient?.email || '',
+              quickWlpDoctorId: request?.doctorId || '',
             })}
           />
         )}
@@ -159,6 +160,7 @@ function App() {
             initialQuickWlpPhone={routeContext.quickWlpPhone}
             initialQuickWlpWhatsapp={routeContext.quickWlpWhatsapp}
             initialQuickWlpEmail={routeContext.quickWlpEmail}
+            initialQuickWlpDoctorId={routeContext.quickWlpDoctorId}
             onSent={() => undefined}
           />
         )}
