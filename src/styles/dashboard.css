@@ -189,7 +189,21 @@ body {
   font: 400 12px/1 var(--dd-font);
   color: var(--dd-text-tertiary);
 }
+.nav-item .count.urgent {
+  min-width: 20px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #D92D20;
+  color: #FFFFFF;
+  font: 700 11px/1 var(--dd-font);
+  box-shadow: 0 6px 14px rgba(217, 45, 32, 0.24);
+}
 .nav-item.active .count { color: var(--dd-on-dark-3); }
+.nav-item.active .count.urgent { color: #FFFFFF; }
 .nav-item svg { flex-shrink: 0; }
 
 .sidebar-doctor {

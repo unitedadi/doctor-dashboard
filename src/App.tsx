@@ -40,6 +40,7 @@ function App() {
   const [routeContext, setRouteContext] = useState<Record<string, string>>({})
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
+  const [pendingRefills, setPendingRefills] = useState<number | null>(null)
 
   const Sidebar = window.DD_UI.Sidebar
   const AppointmentsView = window.DD_AppointmentsView
@@ -71,6 +72,38 @@ function App() {
 
     return () => {
       cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPendingRefills() {
+      try {
+        const params = new URLSearchParams({
+          doctor_id: DOCTOR_ID,
+          status: 'pending',
+          limit: '100',
+          offset: '0',
+        })
+        const data = await fetchJson(`${API_BASE}/doctor/rx/refill-requests?${params.toString()}`)
+        const requests = Array.isArray(data.requests)
+          ? data.requests
+          : Array.isArray(data.refill_requests)
+            ? data.refill_requests
+            : []
+        if (!cancelled) setPendingRefills(requests.length)
+      } catch {
+        if (!cancelled) setPendingRefills(null)
+      }
+    }
+
+    loadPendingRefills()
+    const interval = window.setInterval(loadPendingRefills, 60000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
     }
   }, [])
 
@@ -109,7 +142,13 @@ function App() {
 
   return (
     <div className="app" data-screen-label={route}>
-      <Sidebar active={route} onNav={(id: string) => go(id)} appointmentCount={appointmentCount} unreadChats={unreadChats} />
+      <Sidebar
+        active={route}
+        onNav={(id: string) => go(id)}
+        appointmentCount={appointmentCount}
+        unreadChats={unreadChats}
+        pendingRefills={pendingRefills}
+      />
       <main className="main">
         {route === 'appointments' && (
           <AppointmentsView
