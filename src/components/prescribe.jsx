@@ -227,10 +227,10 @@ function makeAutoNeedlesCartItem(needlesProduct, quantity) {
   };
 }
 
-function syncAutoNeedles(items, needlesProduct) {
+function syncAutoNeedles(items, needlesProduct, dismissed = false) {
   const withoutAutoNeedles = items.filter((item) => item.id !== AUTO_NEEDLES_CART_ID);
   const quantity = requiredNeedlesQuantity(withoutAutoNeedles);
-  if (!quantity || !needlesProduct) return withoutAutoNeedles;
+  if (!quantity || !needlesProduct || dismissed) return withoutAutoNeedles;
   return [...withoutAutoNeedles, makeAutoNeedlesCartItem(needlesProduct, quantity)];
 }
 
@@ -281,6 +281,7 @@ function PrescribeView({
   const [patientsLoading, setPatientsLoading] = useStateR(true);
   const [productsLoading, setProductsLoading] = useStateR(false);
   const [needlesProduct, setNeedlesProduct] = useStateR(null);
+  const [autoNeedlesDismissed, setAutoNeedlesDismissed] = useStateR(false);
   const [publishing, setPublishing] = useStateR(false);
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
@@ -370,6 +371,7 @@ function PrescribeView({
     setTrackKey(patient.trackKey);
     setProductCatalogKey(patient.trackKey);
     setCart([]);
+    setAutoNeedlesDismissed(false);
     setSelectedProduct(null);
     setInstructions("");
     setQuery("");
@@ -442,6 +444,7 @@ function PrescribeView({
     setPatientTrackFilter(nextTrack);
     setSelectedPatientKey("");
     setCart([]);
+    setAutoNeedlesDismissed(false);
     setSelectedProduct(null);
     setInstructions("");
   };
@@ -497,7 +500,7 @@ function PrescribeView({
       return;
     }
     let nextNeedlesProduct = needlesProduct;
-    if (isMounjaroProduct(selectedProduct) && !nextNeedlesProduct) {
+    if (isMounjaroProduct(selectedProduct) && !autoNeedlesDismissed && !nextNeedlesProduct) {
       try {
         nextNeedlesProduct = await loadNeedlesProduct();
       } catch {
@@ -518,14 +521,27 @@ function PrescribeView({
     };
     setCart((current) => {
       const withoutCurrent = current.filter((entry) => entry.id !== item.id);
-      return syncAutoNeedles([...withoutCurrent, item], nextNeedlesProduct);
+      return syncAutoNeedles([...withoutCurrent, item], nextNeedlesProduct, autoNeedlesDismissed);
     });
     setSelectedProduct(null);
     setInstructions("");
     setQuery("");
   };
 
-  const removeCart = (id) => setCart((current) => syncAutoNeedles(current.filter((item) => item.id !== id), needlesProduct));
+  const removeCart = (id) => {
+    if (id === AUTO_NEEDLES_CART_ID) {
+      setAutoNeedlesDismissed(true);
+      setCart((current) => current.filter((item) => item.id !== id));
+      return;
+    }
+
+    setCart((current) => {
+      const nextItems = current.filter((item) => item.id !== id);
+      const hasMounjaro = requiredNeedlesQuantity(nextItems) > 0;
+      if (!hasMounjaro && autoNeedlesDismissed) setAutoNeedlesDismissed(false);
+      return syncAutoNeedles(nextItems, needlesProduct, hasMounjaro ? autoNeedlesDismissed : false);
+    });
+  };
 
   const publishPrescription = async () => {
     if (!patient || !cart.length) return;
@@ -562,6 +578,7 @@ function PrescribeView({
         body: JSON.stringify(payload),
       });
       setCart([]);
+      setAutoNeedlesDismissed(false);
       setSelectedProduct(null);
       const quickWlpExpiry = formatDateTime(data.prescription?.checkout_expires_at);
       setSentToast(
@@ -784,7 +801,7 @@ function PrescribeView({
               <div className="empty">No products added yet.<br/>Select catalog products to build the plan.</div>
             ) : cart.map((item) => (
               <div key={item.id} className="rx-cart-item">
-                {!item.autoAdded && <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>}
+                <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
                 <div className="nm">{item.name}</div>
                 <div className="ds">
                   {item.autoAdded
