@@ -316,7 +316,7 @@ function PrescribeView({
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
-  const productCatalogs = isQuickWlpMode ? [...TRACKS, SUPPLEMENTS_CATALOG] : [activeTrack, SUPPLEMENTS_CATALOG];
+  const productCatalogs = [...TRACKS, SUPPLEMENTS_CATALOG];
   const canPublish = Boolean(cart.length && !publishing && patient && (isQuickWlpMode || patient.customerId));
 
   const loadPatients = React.useCallback(async () => {
