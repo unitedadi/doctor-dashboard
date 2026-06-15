@@ -35,6 +35,16 @@ function formatSectionDate(date) {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
+function addDays(date, amount) {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + amount));
+  return next.toISOString().slice(0, 10);
+}
+
+function isCompletable(status) {
+  return !["completed", "cancelled", "canceled", "no_show"].includes(String(status || "").toLowerCase());
+}
+
 function toTitle(value) {
   return String(value || "")
     .replace(/_/g, " ")
@@ -77,7 +87,8 @@ function mapAppointment(item) {
 
 function AppointmentsView({ onOpenPatient, onOpenChat }) {
   const { I, Avatar, Topbar } = window.DD_UI;
-  const [selectedDate] = useStateA(dubaiToday());
+  const currentDate = useMemoA(() => dubaiToday(), []);
+  const [selectedDate, setSelectedDate] = useStateA(currentDate);
   const [today, setToday] = useStateA([]);
   const [week, setWeek] = useStateA([]);
   const [selectedId, setSelectedId] = useStateA(null);
@@ -124,12 +135,14 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
   const allAppointments = useMemoA(() => [...today, ...week], [today, week]);
   const selected = allAppointments.find((appointment) => appointment.id === selectedId) || null;
   const selectedPatient = selected?.patient || null;
+  const canCompleteSelected = selected && isCompletable(selected.status);
   const upcomingCount = today.filter((appointment) => appointment.status === "upcoming").length;
   const videoCount = today.filter((appointment) => appointment.type === "Video call").length;
   const bookedMinutes = today.reduce((sum, appointment) => sum + (appointment.duration || 0), 0);
   const activeAppointmentId = today.find((appointment) => appointment.status === "upcoming")?.id || today[0]?.id;
   const dateStr = formatScreenDate(selectedDate);
   const sectionDate = formatSectionDate(selectedDate);
+  const isToday = selectedDate === currentDate;
   const joinAppointment = async (appointment, event) => {
     event.stopPropagation();
     setJoiningId(appointment.id);
@@ -202,7 +215,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
   return (
     <>
       <Topbar
-        title="Today's clinic"
+        title={isToday ? "Today's clinic" : "Clinic schedule"}
         subtitle={dateStr}
       />
       <div className="apt-layout">
@@ -216,10 +229,16 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
 
           <div className="section-hdr">
             <div className="label apt-date-label">{sectionDate}</div>
-            <div className="actions">
-              <span className="link active">Day</span>
-              <span className="link disabled">Week</span>
-              <span className="link disabled">Month</span>
+            <div className="apt-date-actions" aria-label="Appointment date navigation">
+              <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, -1))} aria-label="Previous day" title="Previous day">
+                {I.chevronLeft}
+              </button>
+              <button type="button" className="apt-today-button" onClick={() => setSelectedDate(currentDate)} disabled={isToday}>
+                Today
+              </button>
+              <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, 1))} aria-label="Next day" title="Next day">
+                {I.chevronRight}
+              </button>
             </div>
           </div>
 
@@ -311,15 +330,17 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
                     >
                       {I.phone}<span>{callingId === selected.id ? "Calling..." : "Call Patient"}</span>
                     </button>
-                    <button
-                      className="btn-ghost"
-                      style={{ width: "100%", justifyContent: "center" }}
-                      onClick={() => setCompleteConfirm(selected)}
-                      disabled={completingId === selected.id}
-                    >
-                      {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete Consultation"}</span>
-                    </button>
                   </>
+                )}
+                {canCompleteSelected && (
+                  <button
+                    className="btn-ghost"
+                    style={{ width: "100%", justifyContent: "center" }}
+                    onClick={() => setCompleteConfirm(selected)}
+                    disabled={completingId === selected.id}
+                  >
+                    {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete Consultation"}</span>
+                  </button>
                 )}
                 <button className="btn-ghost" style={{ width: "100%", justifyContent: "center" }} onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
                 <button

@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ClerkProvider, SignIn, UserButton, useAuth } from '@clerk/react'
+import { ClerkProvider, SignIn, useAuth } from '@clerk/react'
 import './index.css'
 import App from './App.tsx'
 import {
@@ -11,6 +11,10 @@ import {
 } from './config.js'
 
 setActiveDoctorAccount(resolveDoctorAccountFromLocation())
+
+const SKIP_CLERK =
+  import.meta.env.VITE_SKIP_CLERK === '1' ||
+  import.meta.env.VITE_SKIP_CLERK === 'true'
 
 function MissingClerkConfig() {
   return (
@@ -74,21 +78,14 @@ function DoctorAuthShell() {
     )
   }
 
-  return (
-    <>
-      <div className="doctor-session-pill">
-        <span>{account.accountId}</span>
-        <strong>{account.profile.name}</strong>
-        <UserButton />
-      </div>
-      <App />
-    </>
-  )
+  return <App />
 }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {CLERK_PUBLISHABLE_KEY ? (
+    {SKIP_CLERK ? (
+      <App />
+    ) : CLERK_PUBLISHABLE_KEY ? (
       <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl={window.location.href}>
         <DoctorAuthShell />
       </ClerkProvider>

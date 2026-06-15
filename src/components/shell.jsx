@@ -128,7 +128,6 @@ function Sidebar({ active, onNav, appointmentCount, unreadChats, pendingRefills 
     <aside className="sidebar">
       <div className="sidebar-brand">
         <img src="assets/logo-dardoc-teal.svg" alt="DarDoc" />
-        <span className="pill">For Doctors</span>
       </div>
 
       <div className="nav-section-label">Workspace</div>
