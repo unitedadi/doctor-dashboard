@@ -256,7 +256,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
               <div />
             </div>
           ) : today.length === 0 ? (
-            <div className="empty-state apt-empty">No appointments for this date.</div>
+            <div className="empty-state apt-empty">No appointments scheduled for this date</div>
           ) : (
             <div className="timeline">
               {today.map((a) => {

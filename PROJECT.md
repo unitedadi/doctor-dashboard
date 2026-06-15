@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-06-15 14:47 +04 - DAR-1766 empty appointment text
+
+- Source: Linear DAR-1766 requested changing the empty appointment copy.
+- Changed the appointments empty-state text to `No appointments scheduled for this date`.
+- Verification: local `npm run build` passed.
+- Follow-up: none.
+
 ### 2026-06-15 14:34 +04 - DAR-1765 appointments date navigation
 
 - Source: doctor reported they could not prescribe for a yesterday client because the consultation had not been marked complete and the appointments view only showed today.
