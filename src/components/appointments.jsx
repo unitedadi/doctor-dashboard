@@ -63,6 +63,8 @@ function mapAppointment(item) {
   const patient = item.patient || {};
   return {
     id: item.id,
+    source: item.source || "rx",
+    quickWlpLeadId: item.quickwlp_lead_id,
     patientId: item.patient_id,
     time: item.time,
     duration: item.duration_minutes,
@@ -76,16 +78,20 @@ function mapAppointment(item) {
       initials: patient.initials || "P",
       age: patient.age,
       sex: toTitle(patient.sex),
+      phone: patient.phone,
+      email: patient.email,
+      whatsapp: patient.whatsapp,
       chat: patient.chat || item.chat || { available: false, unavailable_reason: "chat_locked" },
     },
     chat: item.chat || patient.chat || { available: false, unavailable_reason: "chat_locked" },
     date: item.date,
     meetingLink: item.meeting_link,
     trackKey: item.track_key,
+    doctorId: item.doctor_id,
   };
 }
 
-function AppointmentsView({ onOpenPatient, onOpenChat }) {
+function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeQuickWlp }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const currentDate = useMemoA(() => dubaiToday(), []);
   const [selectedDate, setSelectedDate] = useStateA(currentDate);
@@ -135,6 +141,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
   const allAppointments = useMemoA(() => [...today, ...week], [today, week]);
   const selected = allAppointments.find((appointment) => appointment.id === selectedId) || null;
   const selectedPatient = selected?.patient || null;
+  const selectedIsQuickWlp = selected?.source === "quickwlp";
   const canCompleteSelected = selected && isCompletable(selected.status);
   const upcomingCount = today.filter((appointment) => appointment.status === "upcoming").length;
   const videoCount = today.filter((appointment) => appointment.type === "Video call").length;
@@ -315,6 +322,12 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
               <div className="kv-row"><div className="k">Mode</div><div className="v">{selected.type}</div></div>
               <div className="kv-row"><div className="k">Location</div><div className="v">{selected.location}</div></div>
               <div className="kv-row"><div className="k">Status</div><div className="v" style={{ textTransform: "capitalize" }}>{selected.status}</div></div>
+              {selectedIsQuickWlp && selectedPatient.phone && (
+                <div className="kv-row"><div className="k">Phone</div><div className="v">{selectedPatient.phone}</div></div>
+              )}
+              {selectedIsQuickWlp && selectedPatient.whatsapp && (
+                <div className="kv-row"><div className="k">WhatsApp</div><div className="v">{selectedPatient.whatsapp}</div></div>
+              )}
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 22 }}>
                 {selected.meetingLink && selected.status === "upcoming" && (
@@ -342,16 +355,27 @@ function AppointmentsView({ onOpenPatient, onOpenChat }) {
                     {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete Consultation"}</span>
                   </button>
                 )}
-                <button className="btn-ghost" style={{ width: "100%", justifyContent: "center" }} onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
-                <button
-                  className="btn-ghost"
-                  style={{ width: "100%", justifyContent: "center", opacity: selected.chat?.available ? 1 : 0.45, cursor: selected.chat?.available ? "pointer" : "not-allowed" }}
-                  onClick={() => onOpenChat(selectedPatient.id)}
-                  disabled={!selected.chat?.available}
-                  title={selected.chat?.available ? `Message ${selectedPatient.name}` : "Chat is locked for this patient"}
-                >
-                  {I.message}<span>Message {selectedPatient.name.split(" ")[0]}</span>
-                </button>
+                {selectedIsQuickWlp ? (
+                  <button
+                    className="dd-btn-block"
+                    onClick={() => onPrescribeQuickWlp?.(selected)}
+                  >
+                    Prescribe Quick WLP
+                  </button>
+                ) : (
+                  <>
+                    <button className="btn-ghost" style={{ width: "100%", justifyContent: "center" }} onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
+                    <button
+                      className="btn-ghost"
+                      style={{ width: "100%", justifyContent: "center", opacity: selected.chat?.available ? 1 : 0.45, cursor: selected.chat?.available ? "pointer" : "not-allowed" }}
+                      onClick={() => onOpenChat(selectedPatient.id)}
+                      disabled={!selected.chat?.available}
+                      title={selected.chat?.available ? `Message ${selectedPatient.name}` : "Chat is locked for this patient"}
+                    >
+                      {I.message}<span>Message {selectedPatient.name.split(" ")[0]}</span>
+                    </button>
+                  </>
+                )}
               </div>
 
             </div>

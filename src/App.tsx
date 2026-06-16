@@ -154,6 +154,14 @@ function App() {
           <AppointmentsView
             onOpenPatient={(id: string) => go('patients', { patientId: id })}
             onOpenChat={(id: string) => go('chat', { patientId: id })}
+            onPrescribeQuickWlp={(appointment: any) => go('prescribe', {
+              quickWlpLeadId: appointment?.quickWlpLeadId || appointment?.patientId || '',
+              quickWlpName: appointment?.patient?.name || '',
+              quickWlpPhone: appointment?.patient?.phone || '',
+              quickWlpWhatsapp: appointment?.patient?.whatsapp || '',
+              quickWlpEmail: appointment?.patient?.email || '',
+              quickWlpDoctorId: appointment?.doctorId || DOCTOR_ID,
+            })}
           />
         )}
         {route === 'patients' && (
