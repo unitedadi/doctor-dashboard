@@ -509,6 +509,7 @@ function QuickWlpView({ onPrescribe }) {
     setError("");
     try {
       const params = new URLSearchParams({
+        doctor_id: DOCTOR_ID,
         status,
         from: QUICK_WLP_LIST_FROM_DATE,
         limit: "100",

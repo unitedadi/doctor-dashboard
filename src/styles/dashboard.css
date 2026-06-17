@@ -512,9 +512,41 @@ body {
   letter-spacing: 1.2px;
   color: var(--dd-text-tertiary);
 }
-.apt-actions { display: flex; gap: 8px; align-items: center; }
+.apt-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
 .dot-sep { width: 3px; height: 3px; border-radius: 999px; background: currentColor; opacity: 0.5; }
+
+.apt-source-tags,
+.apt-detail-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.apt-source-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dd-divider);
+  font: 400 11px/1 var(--dd-font);
+  color: var(--dd-text-secondary);
+  background: rgba(255,255,255,0.42);
+  white-space: nowrap;
+}
+
+.apt-source-tag.primary {
+  border-color: rgba(16, 75, 72, 0.18);
+  color: var(--dd-accent);
+  background: rgba(16, 75, 72, 0.08);
+}
+
+.apt-source-tag.soft {
+  color: var(--dd-text-primary);
+  background: var(--dd-bg-elevated);
+}
 
 .svc-tag {
   display: inline-flex; align-items: center;

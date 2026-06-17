@@ -59,6 +59,30 @@ function formatDuration(minutes) {
   return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
 }
 
+function sourceTagLabel(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "JUSTLIFE") return "Justlife";
+  if (normalized === "NOVO_NORDISK") return "Novo Nordisk";
+  if (normalized === "REGULAR") return "Regular";
+  return toTitle(normalized);
+}
+
+function appointmentTags(appointment) {
+  const tags = [];
+  if (appointment.source === "quickwlp") {
+    tags.push({ key: "quickwlp", label: "Quick WLP", tone: "primary" });
+    if (appointment.sourceTag) {
+      tags.push({ key: "source", label: sourceTagLabel(appointment.sourceTag), tone: "soft" });
+    }
+  } else {
+    tags.push({ key: "rx", label: "Rx Video", tone: "primary" });
+    if (appointment.trackKey) {
+      tags.push({ key: "track", label: appointment.trackKey === "weight-loss" ? "Weight Loss" : toTitle(appointment.trackKey), tone: "soft" });
+    }
+  }
+  return tags;
+}
+
 function mapAppointment(item) {
   const patient = item.patient || {};
   return {
@@ -87,6 +111,7 @@ function mapAppointment(item) {
     date: item.date,
     meetingLink: item.meeting_link,
     trackKey: item.track_key,
+    sourceTag: item.source_tag,
     doctorId: item.doctor_id,
   };
 }
@@ -286,6 +311,11 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeQuickWlp }) {
                         </div>
                       </div>
                       <div className="apt-actions">
+                        <div className="apt-source-tags">
+                          {appointmentTags(a).map((tag) => (
+                            <span key={tag.key} className={`apt-source-tag ${tag.tone}`}>{tag.label}</span>
+                          ))}
+                        </div>
                         <span className="svc-tag">{a.service}</span>
                         {a.meetingLink && a.status === "upcoming" && (
                           <button className="btn-ghost apt-join-btn" onClick={(event) => joinAppointment(a, event)} disabled={joiningId === a.id}>
@@ -318,6 +348,14 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeQuickWlp }) {
               </div>
 
               <div className="kv-row"><div className="k">Service</div><div className="v">{selected.service}</div></div>
+              <div className="kv-row">
+                <div className="k">Type</div>
+                <div className="v apt-detail-tags">
+                  {appointmentTags(selected).map((tag) => (
+                    <span key={tag.key} className={`apt-source-tag ${tag.tone}`}>{tag.label}</span>
+                  ))}
+                </div>
+              </div>
               <div className="kv-row"><div className="k">Time</div><div className="v">{selected.time} · {selected.duration} min</div></div>
               <div className="kv-row"><div className="k">Mode</div><div className="v">{selected.type}</div></div>
               <div className="kv-row"><div className="k">Location</div><div className="v">{selected.location}</div></div>
