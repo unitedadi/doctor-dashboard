@@ -30,9 +30,21 @@ export const DOCTOR_ACCOUNTS = {
   },
 };
 
+const DOCTOR_ACCOUNT_EMAILS = {
+  "dr.sami@dardoc.com": "mp_sami",
+  "sami@dardoc.com": "mp_sami",
+  "aditya.yadav@dardoc.com": "mp_sami",
+  "dr.marwa@dardoc.com": "mp_marwa",
+};
+
 function normalizeDoctorAccountId(accountId) {
   const normalized = String(accountId || "").trim().toLowerCase();
   return DOCTOR_ACCOUNTS[normalized] ? normalized : DEFAULT_DOCTOR_ACCOUNT_ID;
+}
+
+function normalizeDoctorAccountOverride(accountId) {
+  const normalized = String(accountId || "").trim().toLowerCase();
+  return DOCTOR_ACCOUNTS[normalized] ? normalized : "";
 }
 
 export let ACTIVE_DOCTOR_ACCOUNT_ID = normalizeDoctorAccountId(DEFAULT_DOCTOR_ACCOUNT_ID);
@@ -62,7 +74,12 @@ export function getActiveDoctorAccount() {
 
 export function resolveDoctorAccountFromLocation(location = window.location) {
   const params = new URLSearchParams(location.search);
-  return normalizeDoctorAccountId(params.get("account_id") || params.get("doctor_account_id"));
+  return normalizeDoctorAccountOverride(params.get("account_id") || params.get("doctor_account_id"));
+}
+
+export function resolveDoctorAccountFromEmail(email) {
+  const normalized = String(email || "").trim().toLowerCase();
+  return DOCTOR_ACCOUNT_EMAILS[normalized] || "";
 }
 
 if (!API_BASE) {

@@ -18,3 +18,4 @@ export const DOCTOR_ACCOUNTS: Record<string, {
 export function setActiveDoctorAccount(accountId?: string | null): typeof DOCTOR_ACCOUNTS[string]
 export function getActiveDoctorAccount(): typeof DOCTOR_ACCOUNTS[string]
 export function resolveDoctorAccountFromLocation(location?: Location): string
+export function resolveDoctorAccountFromEmail(email?: string | null): string

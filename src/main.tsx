@@ -1,16 +1,17 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ClerkProvider, SignIn, useAuth } from '@clerk/react'
+import { ClerkProvider, SignIn, useAuth, useUser } from '@clerk/react'
 import './index.css'
 import App from './App.tsx'
 import {
   CLERK_PUBLISHABLE_KEY,
   getActiveDoctorAccount,
+  resolveDoctorAccountFromEmail,
   resolveDoctorAccountFromLocation,
   setActiveDoctorAccount,
 } from './config.js'
 
-setActiveDoctorAccount(resolveDoctorAccountFromLocation())
+setActiveDoctorAccount(resolveDoctorAccountFromLocation() || undefined)
 
 const SKIP_CLERK =
   import.meta.env.VITE_SKIP_CLERK === '1' ||
@@ -33,8 +34,11 @@ function MissingClerkConfig() {
 
 function DoctorAuthShell() {
   const { isLoaded, isSignedIn } = useAuth()
+  const { user } = useUser()
   const [loadTimedOut, setLoadTimedOut] = useState(false)
-  const account = getActiveDoctorAccount()
+  const [workspaceError, setWorkspaceError] = useState('')
+  const [workspaceReady, setWorkspaceReady] = useState(false)
+  const [account, setAccount] = useState(getActiveDoctorAccount())
 
   useEffect(() => {
     if (isLoaded) {
@@ -44,6 +48,31 @@ function DoctorAuthShell() {
     const timer = window.setTimeout(() => setLoadTimedOut(true), 6000)
     return () => window.clearTimeout(timer)
   }, [isLoaded])
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) {
+      setWorkspaceReady(false)
+      return
+    }
+
+    const locationAccountId = resolveDoctorAccountFromLocation()
+    const primaryEmail =
+      user?.primaryEmailAddress?.emailAddress ||
+      user?.emailAddresses?.[0]?.emailAddress ||
+      ''
+    const emailAccountId = resolveDoctorAccountFromEmail(primaryEmail)
+    const resolvedAccountId = locationAccountId || emailAccountId
+
+    if (!resolvedAccountId) {
+      setWorkspaceError(primaryEmail ? `No doctor workspace is linked to ${primaryEmail}.` : 'No doctor workspace is linked to this login.')
+      setWorkspaceReady(true)
+      return
+    }
+
+    setWorkspaceError('')
+    setAccount(setActiveDoctorAccount(resolvedAccountId))
+    setWorkspaceReady(true)
+  }, [isLoaded, isSignedIn, user])
 
   if (!isLoaded) {
     return (
@@ -73,6 +102,32 @@ function DoctorAuthShell() {
             Workspace: <strong>{account.profile.name}</strong>
           </p>
           <SignIn routing="hash" />
+        </div>
+      </div>
+    )
+  }
+
+  if (workspaceError) {
+    return (
+      <div className="doctor-auth-page">
+        <div className="doctor-auth-card">
+          <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
+          <p className="doctor-auth-kicker">For Doctors</p>
+          <h1>Workspace not linked</h1>
+          <p className="doctor-auth-copy">{workspaceError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!workspaceReady) {
+    return (
+      <div className="doctor-auth-page">
+        <div className="doctor-auth-card">
+          <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
+          <p className="doctor-auth-kicker">For Doctors</p>
+          <h1>Loading</h1>
+          <p className="doctor-auth-copy">Opening your doctor workspace.</p>
         </div>
       </div>
     )
