@@ -154,6 +154,10 @@ function App() {
           <AppointmentsView
             onOpenPatient={(id: string) => go('patients', { patientId: id })}
             onOpenChat={(id: string) => go('chat', { patientId: id })}
+            onPrescribeRx={(appointment: any) => go('prescribe', {
+              patientId: appointment?.patientId || appointment?.patient?.id || '',
+              trackKey: appointment?.trackKey || 'weight-loss',
+            })}
             onPrescribeQuickWlp={(appointment: any) => go('prescribe', {
               quickWlpLeadId: appointment?.quickWlpLeadId || appointment?.patientId || '',
               quickWlpName: appointment?.patient?.name || '',

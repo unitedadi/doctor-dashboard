@@ -234,6 +234,54 @@ function syncAutoNeedles(items, needlesProduct, dismissed = false) {
   return [...withoutAutoNeedles, makeAutoNeedlesCartItem(needlesProduct, quantity)];
 }
 
+function cartItemCatalogLabel(item, fallbackTrackLabel) {
+  if (item.autoAdded) return "Auto-added needles";
+  if (item.catalogKey === SUPPLEMENTS_CATALOG.key) return "Supplements";
+  if (item.catalogKey === NEEDLES_CATALOG.key) return "Needles";
+  return TRACKS.find((track) => track.key === item.catalogKey)?.label || fallbackTrackLabel;
+}
+
+function publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing) {
+  if (publishing) return "Publishing...";
+  if (isQuickWlpMode) return "Publish Quick WLP prescription";
+  if (initialRefillRequestId) return "Publish refill prescription";
+  return "Publish care plan";
+}
+
+function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, initialRefillRequestId }) {
+  if (!patient) {
+    return (
+      <div className="rx-review-empty">
+        Choose a completed consultation before building a prescription.
+      </div>
+    );
+  }
+  return (
+    <div className="rx-review">
+      <div className="rx-review-row">
+        <span>Member</span>
+        <strong>{patient.name}</strong>
+      </div>
+      <div className="rx-review-row">
+        <span>Track</span>
+        <strong>{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</strong>
+      </div>
+      <div className="rx-review-row">
+        <span>Type</span>
+        <strong>{isQuickWlpMode ? "One-off prescription" : initialRefillRequestId ? "Refill prescription" : "Care plan"}</strong>
+      </div>
+      <div className="rx-review-row">
+        <span>Items</span>
+        <strong>{cart.length ? `${cart.length} item${cart.length === 1 ? "" : "s"}` : "None selected"}</strong>
+      </div>
+      <div className="rx-review-row">
+        <span>Total</span>
+        <strong>{cart.length ? formatPrice(cartTotal) : "Not ready"}</strong>
+      </div>
+    </div>
+  );
+}
+
 function errorCopy(error, payload) {
   const copy = {
     doctor_not_found: "Doctor profile is missing or inactive.",
@@ -584,8 +632,8 @@ function PrescribeView({
       setSentToast(
         isQuickWlpMode
           ? quickWlpExpiry
-            ? `Checkout link sent · expires ${quickWlpExpiry}`
-            : "Checkout link sent to customer"
+            ? `Prescription published · checkout expires ${quickWlpExpiry}`
+            : "Prescription published"
           : data.care_plan?.title || `${activeTrack.label} care plan published`
       );
       setTimeout(() => setSentToast(""), 2600);
@@ -602,7 +650,7 @@ function PrescribeView({
     <>
       <Topbar
         title={isQuickWlpMode ? "Prescribe Quick WLP" : initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
-        subtitle={isQuickWlpMode ? "Create a checkout intent and send it to the customer" : patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
+        subtitle={isQuickWlpMode ? "Select medication, quantity, and instructions, then publish the prescription" : patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
       />
       <div className="rx-layout">
         <div className="rx-main">
@@ -678,7 +726,7 @@ function PrescribeView({
                   {!isQuickWlpMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
 
-                <div className="section-hdr"><div className="label">Prescribable products</div></div>
+                <div className="section-hdr"><div className="label">Medication catalog</div></div>
                 <div className="rx-track-tabs rx-product-source-tabs">
                   {productCatalogs.map((catalog) => (
                     <button
@@ -773,7 +821,7 @@ function PrescribeView({
                 </div>
                 <div className="field-block">
                   <label>Doctor instructions</label>
-                  <input value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Use as directed by your DarDoc physician." />
+                  <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Use as directed by your DarDoc physician." />
                 </div>
               </div>
 
@@ -783,7 +831,7 @@ function PrescribeView({
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
                 <button className="btn-ghost" onClick={() => setSelectedProduct(null)}>Cancel</button>
-                <button className="btn-primary" onClick={addToCart} disabled={blocked}>{I.plus}<span>Add to plan</span></button>
+                <button className="btn-primary" onClick={addToCart} disabled={blocked}>{I.plus}<span>Add to review</span></button>
               </div>
                   </>
                 );
@@ -793,22 +841,30 @@ function PrescribeView({
         </div>
 
         <div className="rx-side dd-scroll">
-          <div className="section-hdr"><div className="label">Care plan</div></div>
+          <div className="section-hdr"><div className="label">Review & publish</div></div>
+          <ReviewChecklist
+            patient={patient}
+            cart={cart}
+            cartTotal={cartTotal}
+            activeTrack={activeTrack}
+            isQuickWlpMode={isQuickWlpMode}
+            initialRefillRequestId={initialRefillRequestId}
+          />
           <div className="rx-cart">
             {!patient ? (
               <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>
             ) : cart.length === 0 ? (
-              <div className="empty">No products added yet.<br/>Select catalog products to build the plan.</div>
+              <div className="empty">No medication added yet.<br/>Select products from the catalog to build the prescription.</div>
             ) : cart.map((item) => (
               <div key={item.id} className="rx-cart-item">
                 <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
                 <div className="nm">{item.name}</div>
-                <div className="ds">
-                  {item.autoAdded
-                    ? "Auto-added needles"
-                    : item.catalogKey === SUPPLEMENTS_CATALOG.key ? "Supplements" : TRACKS.find((track) => track.key === item.catalogKey)?.label || activeTrack.label} · Qty {item.quantity} · {formatPrice((item.price_fils || 0) * item.quantity)}
+                <div className="rx-cart-meta">
+                  <span>{cartItemCatalogLabel(item, activeTrack.label)}</span>
+                  <span>Qty {item.quantity}</span>
+                  <span>{formatPrice((item.price_fils || 0) * item.quantity)}</span>
                 </div>
-                <div className="ds" style={{ marginTop: 2 }}>{item.doctor_instructions}</div>
+                <div className="ds">{item.doctor_instructions}</div>
               </div>
             ))}
             {cart.length > 0 && (
@@ -826,13 +882,13 @@ function PrescribeView({
               style={{ opacity: canPublish ? 1 : 0.4, cursor: canPublish ? "pointer" : "not-allowed" }}
               onClick={publishPrescription}
             >
-              {publishing ? "Sending..." : isQuickWlpMode ? "Create and send checkout" : "Publish care plan"}
+              {publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing)}
             </button>
           </div>
 
           {patient && (
             <>
-              <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>{isQuickWlpMode ? "Customer" : "Eligibility"}</h4>
+              <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>{isQuickWlpMode ? "Customer" : "Clinical guardrails"}</h4>
               <div className="kv-row"><div className="k">Track</div><div className="v">{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</div></div>
               {isQuickWlpMode ? (
                 <>

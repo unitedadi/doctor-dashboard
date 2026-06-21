@@ -297,6 +297,344 @@ body {
   background: var(--dd-bg);
 }
 
+.consult-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.workbench-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  position: relative;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.workbench-identity {
+  min-width: 0;
+  padding-right: 84px;
+}
+
+.workbench-name {
+  color: var(--dd-text-primary);
+  font: 400 20px/1.15 var(--dd-font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-meta {
+  color: var(--dd-text-secondary);
+  font: 400 13px/1.45 var(--dd-font);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+
+.workbench-status {
+  position: absolute;
+  right: 0;
+  top: 2px;
+  border: 1px solid var(--dd-divider);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--dd-text-secondary);
+  font: 500 11px/1 var(--dd-font);
+  white-space: nowrap;
+}
+
+.workbench-status.active {
+  border-color: rgba(16, 75, 72, 0.2);
+  color: var(--dd-accent);
+  background: rgba(16, 75, 72, 0.06);
+}
+
+.workbench-status.done {
+  border-color: rgba(47, 109, 69, 0.22);
+  color: #2F6D45;
+  background: rgba(47, 109, 69, 0.08);
+}
+
+.workbench-status.risk {
+  border-color: rgba(159, 45, 45, 0.2);
+  color: #9f2d2d;
+  background: rgba(159, 45, 45, 0.08);
+}
+
+.workbench-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workbench-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--dd-divider);
+  border-radius: var(--dd-radius-md);
+  overflow: hidden;
+  background: rgba(247,238,224,0.36);
+}
+
+.workbench-metric {
+  min-width: 0;
+  padding: 11px 12px;
+  border-right: 1px solid var(--dd-divider);
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.workbench-metric:nth-child(2n) {
+  border-right: 0;
+}
+
+.workbench-metric:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.workbench-metric span {
+  display: block;
+  color: var(--dd-text-tertiary);
+  font: 500 10px/1 var(--dd-font);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.workbench-metric strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+  margin-top: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-metric.done strong {
+  color: #2F6D45;
+}
+
+.workbench-metric.current strong {
+  color: var(--dd-accent);
+}
+
+.workbench-next {
+  border-top: 1px solid var(--dd-divider);
+  border-bottom: 1px solid var(--dd-divider);
+  padding: 13px 0;
+}
+
+.workbench-next span,
+.workbench-section-title {
+  display: block;
+  color: var(--dd-text-tertiary);
+  font: 500 10px/1 var(--dd-font);
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+}
+
+.workbench-next strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 14px/1.45 var(--dd-font);
+  margin-top: 7px;
+}
+
+.workbench-next.current {
+  border-color: rgba(16, 75, 72, 0.22);
+}
+
+.workbench-next.done {
+  border-color: rgba(47, 109, 69, 0.24);
+}
+
+.workbench-next.risk {
+  border-color: rgba(159, 45, 45, 0.22);
+}
+
+.workbench-section {
+  padding-top: 2px;
+}
+
+.workbench-section-actions {
+  padding-top: 0;
+}
+
+.workbench-section-title {
+  margin-bottom: 8px;
+}
+
+.workbench-checklist {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--dd-divider);
+}
+
+.workbench-check-step {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.workbench-check-step:last-child {
+  border-bottom: 0;
+}
+
+.workbench-check-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  background: var(--dd-divider);
+}
+
+.workbench-check-step.done .workbench-check-dot {
+  background: #2F6D45;
+}
+
+.workbench-check-step.current .workbench-check-dot {
+  background: var(--dd-accent);
+}
+
+.workbench-check-step.risk .workbench-check-dot {
+  background: #9f2d2d;
+}
+
+.workbench-check-step strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+}
+
+.workbench-check-step em {
+  display: block;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+  font-style: normal;
+  margin-top: 3px;
+}
+
+.workbench-info-row {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.workbench-info-row:last-child {
+  border-bottom: 0;
+}
+
+.workbench-info-row span {
+  color: var(--dd-text-secondary);
+  font: 400 13px/1.4 var(--dd-font);
+}
+
+.workbench-info-row strong {
+  color: var(--dd-text-primary);
+  font: 400 13px/1.4 var(--dd-font);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.workbench-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.workbench-empty {
+  border-top: 1px solid var(--dd-divider);
+  padding: 10px 0 0;
+  color: var(--dd-text-tertiary);
+  font: 400 13px/1.45 var(--dd-font);
+}
+
+.workbench-item-list {
+  border-top: 1px solid var(--dd-divider);
+}
+
+.workbench-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.workbench-item-row strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+}
+
+.workbench-item-row span {
+  display: block;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+  margin-top: 3px;
+}
+
+.workbench-item-row em {
+  color: var(--dd-text-secondary);
+  font: 500 11px/1.2 var(--dd-font);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.workbench-history-list {
+  border-top: 1px solid var(--dd-divider);
+}
+
+.workbench-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.workbench-history-row:last-child {
+  border-bottom: 0;
+}
+
+.workbench-history-row strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+}
+
+.workbench-history-row span {
+  display: block;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+  margin-top: 3px;
+}
+
+.workbench-history-row em {
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.workbench-link {
+  display: inline-flex;
+  margin-top: 10px;
+  color: var(--dd-accent);
+  font: 500 13px/1.3 var(--dd-font);
+  text-decoration: none;
+}
+
+.workbench-link:hover {
+  text-decoration: underline;
+}
+
 .section-hdr {
   display: flex;
   align-items: baseline;
@@ -546,6 +884,36 @@ body {
 .apt-source-tag.soft {
   color: var(--dd-text-primary);
   background: var(--dd-bg-elevated);
+}
+
+.apt-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dd-divider);
+  color: var(--dd-text-secondary);
+  font: 500 11px/1 var(--dd-font);
+  white-space: nowrap;
+}
+
+.apt-status.active {
+  border-color: rgba(16, 75, 72, 0.18);
+  color: var(--dd-accent);
+  background: rgba(16, 75, 72, 0.06);
+}
+
+.apt-status.done {
+  border-color: rgba(47, 109, 69, 0.22);
+  color: #2F6D45;
+  background: rgba(47, 109, 69, 0.08);
+}
+
+.apt-status.risk {
+  border-color: rgba(159, 45, 45, 0.2);
+  color: #9f2d2d;
+  background: rgba(159, 45, 45, 0.08);
 }
 
 .svc-tag {
@@ -2297,6 +2665,46 @@ body {
   border-radius: var(--dd-radius-md);
   padding: 18px 20px;
 }
+
+.rx-review {
+  border-top: 1px solid var(--dd-divider);
+  border-bottom: 1px solid var(--dd-divider);
+  margin-bottom: 16px;
+}
+
+.rx-review-empty {
+  border-top: 1px solid var(--dd-divider);
+  border-bottom: 1px solid var(--dd-divider);
+  color: var(--dd-text-tertiary);
+  font: 400 13px/1.45 var(--dd-font);
+  margin-bottom: 16px;
+  padding: 14px 0;
+}
+
+.rx-review-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.rx-review-row:last-child {
+  border-bottom: 0;
+}
+
+.rx-review-row span {
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+
+.rx-review-row strong {
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .rx-cart .empty {
   text-align: center;
   padding: 40px 20px;
@@ -2312,6 +2720,19 @@ body {
 .rx-cart-item .ds { font: 400 13px/1.5 var(--dd-font); color: var(--dd-text-secondary); margin-top: 4px; }
 .rx-cart-item .x { float: right; cursor: pointer; color: var(--dd-text-tertiary); }
 .rx-cart-item .x:hover { color: var(--dd-accent); }
+.rx-cart-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+.rx-cart-meta span {
+  border: 1px solid var(--dd-divider);
+  border-radius: 999px;
+  color: var(--dd-text-secondary);
+  font: 400 11px/1 var(--dd-font);
+  padding: 5px 8px;
+}
 
 .rx-summary {
   margin-top: 18px;
@@ -2375,6 +2796,350 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+/* ============================================================
+   Ops Portal convergence pass
+   ============================================================ */
+:root {
+  --dd-cell: #F7EEE0;
+  --dd-card: #FEF9EF;
+  --dd-divider: rgba(23,59,61,0.10);
+  --dd-fill-subtle: rgba(23,59,61,0.045);
+  --dd-fill-light: rgba(247,238,224,0.82);
+  --dd-radius-sm: 8px;
+  --dd-radius-md: 8px;
+  --dd-radius-lg: 10px;
+  --dd-radius-cta: 8px;
+  --dd-shadow-subtle: none;
+  --dd-shadow-medium: none;
+  --dd-shadow-prominent: none;
+}
+
+.app {
+  grid-template-columns: 276px 1fr;
+}
+
+.sidebar {
+  padding: 24px 10px 16px;
+  background: rgba(254,249,239,0.96);
+  box-shadow: inset -1px 0 0 rgba(23,59,61,0.04);
+}
+
+.sidebar-brand {
+  padding: 0 10px 18px;
+}
+
+.sidebar-brand img {
+  height: 28px;
+}
+
+.nav-section-label {
+  padding: 16px 12px 8px;
+  color: rgba(23,59,61,0.30);
+}
+
+.nav-item {
+  min-height: 40px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--dd-accent);
+}
+
+.nav-item:hover {
+  background: rgba(247,238,224,0.70);
+}
+
+.nav-item.active {
+  background: var(--dd-cell);
+  color: var(--dd-accent);
+  box-shadow: inset 0 0 0 1px rgba(23,59,61,0.08);
+}
+
+.nav-item.active .count {
+  color: rgba(23,59,61,0.45);
+}
+
+.nav-item .count.urgent {
+  box-shadow: none;
+}
+
+.sidebar-doctor {
+  margin: auto 2px 0;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 12px;
+  background: rgba(247,238,224,0.70);
+  padding: 10px;
+}
+
+.topbar {
+  min-height: 72px;
+  padding: 16px 28px;
+  background: rgba(254,249,239,0.98);
+}
+
+.topbar h1 {
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.search,
+.rx-search-input {
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(247,238,224,0.74);
+}
+
+.icon-btn,
+.apt-date-actions .btn-icon,
+.apt-today-button {
+  border-radius: 8px;
+  background: transparent;
+}
+
+.btn-ghost,
+.btn-primary,
+.dd-btn,
+.dd-btn-block,
+.quickwlp-slot-button,
+.quickwlp-tag-button,
+.rx-track-tabs button,
+.tag,
+.apt-source-tag,
+.svc-tag,
+.rx-cart-meta span {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.btn-ghost {
+  border-color: rgba(23,59,61,0.10);
+  min-height: 36px;
+  padding: 9px 13px;
+}
+
+.btn-primary,
+.dd-btn {
+  min-height: 36px;
+  padding: 9px 14px;
+}
+
+.dd-btn-block {
+  min-height: 42px;
+  padding: 13px 14px;
+}
+
+.apt-layout {
+  grid-template-columns: minmax(0, 1fr) 460px;
+}
+
+.apt-main {
+  padding: 24px 28px 36px;
+}
+
+.apt-side {
+  padding: 22px 22px 32px;
+  background: rgba(254,249,239,0.98);
+}
+
+.today-stat-row {
+  margin-bottom: 24px;
+}
+
+.stat {
+  padding: 14px 16px 13px;
+}
+
+.stat .v {
+  font-size: 24px;
+}
+
+.stat .l {
+  font-size: 11px;
+}
+
+.timeline {
+  border-top-color: rgba(23,59,61,0.10);
+}
+
+.tl-row {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.tl-row .time {
+  padding-top: 20px;
+}
+
+.apt-card {
+  min-height: 74px;
+  padding: 14px 0 14px 18px;
+  gap: 12px;
+}
+
+.apt-card:hover,
+.rx-product-row:hover,
+.rx-patient-row:hover,
+.p-row:hover,
+.chat-list-item:hover,
+.refill-row:hover {
+  background: rgba(247,238,224,0.54);
+  box-shadow: inset 2px 0 0 rgba(23,59,61,0.14);
+}
+
+.apt-card.selected,
+.apt-card.now-card,
+.rx-patient-row.selected,
+.refill-row.selected,
+.p-row.active,
+.chat-list-item.active {
+  background: rgba(247,238,224,0.82);
+  box-shadow: inset 2px 0 0 var(--dd-accent);
+}
+
+.apt-name {
+  font-size: 15px;
+}
+
+.apt-meta {
+  font-size: 12px;
+}
+
+.apt-source-tag {
+  min-height: 22px;
+  padding: 0 7px;
+  background: transparent;
+}
+
+.apt-source-tag.primary {
+  background: rgba(23,59,61,0.07);
+}
+
+.workbench-head {
+  padding-bottom: 14px;
+}
+
+.workbench-name {
+  font-size: 19px;
+}
+
+.workbench-status {
+  border-radius: 8px;
+  padding: 5px 7px;
+}
+
+.workbench-next {
+  border: 1px solid rgba(23,59,61,0.10);
+  border-left: 3px solid var(--dd-accent);
+  padding: 12px 12px;
+  background: rgba(247,238,224,0.36);
+}
+
+.workbench-section {
+  border-left: 1px solid rgba(23,59,61,0.10);
+  padding: 1px 0 0 12px;
+}
+
+.workbench-section-title,
+.workbench-next span,
+.section-hdr .label {
+  color: rgba(23,59,61,0.34);
+  font-weight: 400;
+  letter-spacing: 1.5px;
+}
+
+.workbench-info-row {
+  grid-template-columns: 118px minmax(0, 1fr);
+  padding: 9px 0;
+}
+
+.workbench-check-step,
+.workbench-item-row,
+.workbench-history-row {
+  padding: 9px 0;
+}
+
+.workbench-check-dot {
+  border-radius: 2px;
+}
+
+.patient-list,
+.chat-list,
+.rx-side,
+.refills-side {
+  background: rgba(254,249,239,0.98);
+}
+
+.p-row,
+.chat-list-item,
+.refill-row {
+  border-radius: 8px;
+}
+
+.patient-pane,
+.rx-main-scroll {
+  padding: 24px 32px 40px;
+}
+
+.patient-hero,
+.rx-patient-card {
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+}
+
+.patient-hero h2 {
+  font-size: 24px;
+}
+
+.detail-block {
+  margin-bottom: 26px;
+}
+
+.lab,
+.rx-cart,
+.rx-form,
+.dd-card-tan,
+.dd-card-white,
+.quickwlp-dialog,
+.confirm-dialog {
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.rx-selection-tray {
+  background: rgba(247,238,224,0.88);
+  box-shadow: none;
+  padding: 14px 36px 16px;
+}
+
+.field-block input,
+.field-block select,
+.field-block textarea,
+.rx-stepper,
+.rx-cart,
+.rx-review-row,
+.rx-review-empty {
+  border-radius: 8px;
+}
+
+.rx-cart {
+  background: rgba(247,238,224,0.72);
+}
+
+.rx-track-tabs {
+  gap: 6px;
+}
+
+.rx-track-tabs button.active {
+  background: var(--dd-cell);
+  border-color: rgba(23,59,61,0.10);
+  color: var(--dd-accent);
+  box-shadow: inset 0 0 0 1px rgba(23,59,61,0.04);
+}
+
+.toast {
+  border-radius: 10px;
+  box-shadow: none;
 }
 
 /* ============================================================
