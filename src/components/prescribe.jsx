@@ -335,6 +335,104 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
   );
 }
 
+function prescriptionItemLabel(items) {
+  return listItems(items)
+    .map((item) => {
+      const name = item?.name || item?.title || item?.product_name || "Medication";
+      const quantity = Math.max(1, Number(item?.quantity || 1));
+      return `${name}${quantity > 1 ? ` x${quantity}` : ""}`;
+    })
+    .join(", ");
+}
+
+function safetyList(value) {
+  return listItems(value)
+    .map((item) => {
+      if (typeof item === "string" || typeof item === "number") return String(item);
+      if (item && typeof item === "object") return item.name || item.label || item.value || "";
+      return "";
+    })
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function PrescriptionSafetyPanel({ loading, chart, error }) {
+  if (loading) {
+    return (
+      <div className="rx-safety-panel">
+        <div className="rx-safety-head">
+          <span>Safety check</span>
+          <strong>Loading chart...</strong>
+        </div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="rx-safety-panel muted">
+        <div className="rx-safety-head">
+          <span>Safety check</span>
+          <strong>Chart unavailable</strong>
+        </div>
+        <p>{errorCopy(error)}</p>
+      </div>
+    );
+  }
+  if (!chart) return null;
+
+  const clinical = chart.clinical || {};
+  const prescriptions = listItems(chart.prescriptions);
+  const deliveries = listItems(chart.medication_delivery);
+  const allergies = safetyList(clinical.allergies);
+  const conditions = safetyList(clinical.conditions);
+  const activeMedication = chart.current_medication?.name || safetyList(clinical.current_medications);
+  const latestPrescription = prescriptions[0];
+  const latestDelivery = deliveries[0];
+  const latestAssessment = listItems(clinical.assessment?.submissions)[0];
+  const rows = [
+    { label: "Allergies", value: allergies || "None reported", tone: allergies ? "warn" : "clear" },
+    { label: "Conditions", value: conditions || "None reported", tone: conditions ? "warn" : "clear" },
+    { label: "Current medication", value: activeMedication || "Not listed", tone: activeMedication ? "review" : "clear" },
+    {
+      label: "Last prescription",
+      value: latestPrescription
+        ? [prescriptionItemLabel(latestPrescription.items), formatDateTime(latestPrescription.issued_at)].filter(Boolean).join(" · ")
+        : "No prescription history",
+      tone: latestPrescription ? "review" : "clear",
+    },
+    {
+      label: "Medication order",
+      value: latestDelivery
+        ? [latestDelivery.status ? titleCase(latestDelivery.status) : "", formatDateTime(latestDelivery.delivered_at || latestDelivery.paid_at)].filter(Boolean).join(" · ")
+        : "No paid medication order",
+      tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : "clear",
+    },
+    {
+      label: "Latest assessment",
+      value: latestAssessment?.submitted_at ? formatDateTime(latestAssessment.submitted_at) : "Not available",
+      tone: latestAssessment ? "review" : "clear",
+    },
+  ];
+
+  return (
+    <div className="rx-safety-panel">
+      <div className="rx-safety-head">
+        <span>Safety check</span>
+        <strong>Review before issuing</strong>
+      </div>
+      <div className="rx-safety-grid">
+        {rows.map((row) => (
+          <div className={`rx-safety-row ${row.tone}`} key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function amendmentLineLabel(item) {
   const name = item?.name || item?.product_name || item?.productName || "Medication";
   const quantity = Math.max(1, Number(item?.quantity || 1));
@@ -491,6 +589,9 @@ function PrescribeView({
   const [sentToast, setSentToast] = useStateR("");
   const [amendReason, setAmendReason] = useStateR("");
   const [amendPrefilled, setAmendPrefilled] = useStateR(false);
+  const [patientChart, setPatientChart] = useStateR(null);
+  const [patientChartLoading, setPatientChartLoading] = useStateR(false);
+  const [patientChartError, setPatientChartError] = useStateR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
   const amendSource = initialAmendSource || "";
   const amendItems = useMemoR(() => parseAmendItems(initialAmendItems), [initialAmendItems]);
@@ -619,6 +720,32 @@ function PrescribeView({
     setInstructions("");
     setQuery("");
   }, [patient?.key]);
+
+  useEffectR(() => {
+    let cancelled = false;
+    if (!patient || isQuickWlpMode || !patient.id) {
+      setPatientChart(null);
+      setPatientChartError("");
+      setPatientChartLoading(false);
+      return () => { cancelled = true; };
+    }
+    setPatientChartLoading(true);
+    setPatientChartError("");
+    fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patient.id)}/chart?doctor_id=${DOCTOR_ID}`)
+      .then((data) => {
+        if (!cancelled) setPatientChart(data.chart || data.patient || data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPatientChart(null);
+          setPatientChartError(err.message || "Could not load patient chart.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPatientChartLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [isQuickWlpMode, patient?.id, patient?.key]);
 
   useEffectR(() => {
     setAmendPrefilled(false);
@@ -1120,6 +1247,13 @@ function PrescribeView({
                 isQuickWlpMode={isQuickWlpMode}
                 typeLabel={workflowCopy.typeLabel}
               />
+              {!isQuickWlpMode && (
+                <PrescriptionSafetyPanel
+                  loading={patientChartLoading}
+                  chart={patientChart}
+                  error={patientChartError}
+                />
+              )}
               <div className="rx-cart">
                 {!patient ? (
                   <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>

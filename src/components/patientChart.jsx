@@ -154,6 +154,28 @@ function assessmentAnswerPairs(submission) {
     .slice(0, 12);
 }
 
+function assessmentAnswerGroup(key) {
+  const normalized = String(key || "").toLowerCase();
+  if (/(goal|target|motivation|barrier|reason)/.test(normalized)) return "Goals";
+  if (/(allerg|condition|medical|contra|pregnan|breast|thyroid|pancrea|cancer)/.test(normalized)) return "Safety";
+  if (/(activity|exercise|diet|meal|sleep|alcohol|smok|body|shape|lifestyle)/.test(normalized)) return "Lifestyle";
+  if (/(preferred|medication|medicine|drug|dose|mounjaro|wegovy|peptide)/.test(normalized)) return "Medication Preference";
+  if (/(side|symptom|risk|history|surgery)/.test(normalized)) return "Risk Flags";
+  return "Other";
+}
+
+function groupedAssessmentPairs(pairs) {
+  const order = ["Goals", "Safety", "Lifestyle", "Medication Preference", "Risk Flags", "Other"];
+  const groups = new Map(order.map((label) => [label, []]));
+  pairs.forEach((pair) => {
+    const label = assessmentAnswerGroup(pair.key);
+    groups.get(label).push(pair);
+  });
+  return order
+    .map((label) => ({ label, items: groups.get(label) || [] }))
+    .filter((group) => group.items.length);
+}
+
 function EmptyInline({ children }) {
   return <div className="inline-empty">{children}</div>;
 }
@@ -446,6 +468,7 @@ function AssessmentReader({ assessment }) {
   const submissions = asArray(assessment?.submissions);
   const latest = submissions[0];
   const pairs = assessmentAnswerPairs(latest);
+  const groups = groupedAssessmentPairs(pairs);
   const basic = assessment?.basic || {};
 
   return (
@@ -459,12 +482,19 @@ function AssessmentReader({ assessment }) {
             </div>
             {submissions.length > 1 ? <em>{submissions.length} submissions</em> : null}
           </div>
-          {pairs.length ? (
-            <div className="patient-assessment-grid">
-              {pairs.map((item) => (
-                <div key={item.key}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
+          {groups.length ? (
+            <div className="patient-assessment-groups">
+              {groups.map((group) => (
+                <div className="patient-assessment-group" key={group.label}>
+                  <h4>{group.label}</h4>
+                  <div className="patient-assessment-grid">
+                    {group.items.map((item) => (
+                      <div key={item.key}>
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

@@ -2103,6 +2103,19 @@ body {
   overflow-wrap: anywhere;
 }
 
+.patient-assessment-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.patient-assessment-group h4 {
+  margin: 0 0 8px;
+  color: var(--dd-text-secondary);
+  font: 400 11px/1 var(--dd-font);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 .patient-emr-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.42fr);
@@ -5672,6 +5685,83 @@ body {
   font: 400 13px/1.35 var(--dd-font);
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+.rx-safety-panel {
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(255,252,246,0.86);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.rx-safety-panel.muted {
+  padding: 14px 16px;
+}
+
+.rx-safety-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(23,59,61,0.08);
+}
+
+.rx-safety-head span {
+  color: var(--dd-text-secondary);
+  font: 400 11px/1 var(--dd-font);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.rx-safety-head strong {
+  color: var(--dd-text-primary);
+  font: 400 13px/1.25 var(--dd-font);
+}
+
+.rx-safety-panel p {
+  margin: 0;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+}
+
+.rx-safety-grid {
+  display: grid;
+}
+
+.rx-safety-row {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.55fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(23,59,61,0.07);
+}
+
+.rx-safety-row:last-child {
+  border-bottom: 0;
+}
+
+.rx-safety-row span {
+  color: rgba(23,59,61,0.48);
+  font: 400 10px/1.25 var(--dd-font);
+  letter-spacing: 0.85px;
+  text-transform: uppercase;
+}
+
+.rx-safety-row strong {
+  min-width: 0;
+  color: var(--dd-text-primary);
+  font: 400 12px/1.38 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.rx-safety-row.warn {
+  background: rgba(178,85,49,0.08);
+}
+
+.rx-safety-row.warn strong {
+  color: #8f3f24;
 }
 
 .rx-cart .empty {
