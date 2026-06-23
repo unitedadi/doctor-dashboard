@@ -1,5 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID, NEEDLES_PRODUCT_ID, SUPPLEMENT_SELLER_ID } from "../config.js";
+import { fetchJson } from "../lib/authFetch.js";
 
 /* global React */
 const { useEffect: useEffectR, useMemo: useMemoR, useState: useStateR } = React;
@@ -19,17 +20,6 @@ const NEEDLES_CATALOG = {
 };
 const AUTO_NEEDLES_CART_ID = `auto-needles:${NEEDLES_PRODUCT_ID}`;
 const ALL_TRACK = "all";
-
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.error || data.detail || `request_failed_${response.status}`);
-    error.payload = data;
-    throw error;
-  }
-  return data;
-}
 
 function titleCase(value) {
   return String(value || "")
@@ -360,6 +350,7 @@ function PrescribeView({
 
   const rxPatient = patients.find((item) => item.key === selectedPatientKey) || null;
   const patient = isQuickWlpMode ? quickWlpPatient : rxPatient;
+  const contextualRxMode = !isQuickWlpMode && Boolean(initialPatientId || initialCustomerId || initialRefillRequestId);
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
@@ -377,12 +368,15 @@ function PrescribeView({
     setPatientsLoading(true);
     setError("");
     try {
+      const exactContext = Boolean(initialPatientId || initialCustomerId);
       const params = new URLSearchParams({
         doctor_id: DOCTOR_ID,
-        limit: "100",
+        limit: exactContext ? "10" : "100",
         offset: "0",
       });
       if (patientTrackFilter !== ALL_TRACK) params.set("track_key", patientTrackFilter);
+      if (initialPatientId) params.set("patient_id", initialPatientId);
+      if (initialCustomerId) params.set("customer_id", initialCustomerId);
       if (patientQuery.trim()) params.set("q", patientQuery.trim());
       const data = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?${params.toString()}`);
       const nextPatients = (data.patients || []).map(mapPrescribablePatient);
@@ -662,7 +656,17 @@ function PrescribeView({
               </div>
             )}
 
-            {!patient ? (
+            {!patient && contextualRxMode ? (
+              <div className="rx-context-empty">
+                <div className="rx-context-empty-icon">{I.pill}</div>
+                <h3>Prescription not ready for this patient</h3>
+                <p>
+                  This button was opened from a patient context, but the backend did not return this patient in the ready-to-prescribe queue.
+                  Complete the consultation first, then prescribe from the same patient or appointment.
+                </p>
+                <button type="button" className="btn-ghost" onClick={loadPatients}>Check again</button>
+              </div>
+            ) : !patient ? (
               <>
                 <div className="section-hdr"><div className="label">Prescribable patients</div></div>
                 <div className="rx-track-tabs">

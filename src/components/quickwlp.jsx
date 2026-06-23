@@ -1,5 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
+import { fetchJson } from "../lib/authFetch.js";
 
 /* global React */
 const { useEffect: useEffectQ, useMemo: useMemoQ, useState: useStateQ } = React;
@@ -18,17 +19,6 @@ const QUICK_WLP_SOURCE_TAGS = [
   { key: "NOVO_NORDISK", label: "Novo Nordisk" },
   { key: "REGULAR", label: "Regular" },
 ];
-
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.detail || data.error || `request_failed_${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-  return data;
-}
 
 function titleCase(value) {
   return String(value || "")

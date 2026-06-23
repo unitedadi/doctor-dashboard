@@ -10,6 +10,25 @@ import './components/refills.jsx'
 import './components/quickwlp.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
+import { fetchJson } from './lib/authFetch.js'
+
+type AppointmentCountPayload = {
+  today?: unknown[]
+}
+
+type RefillRequestsPayload = {
+  requests?: unknown[]
+  refill_requests?: unknown[]
+}
+
+type ChatTokenPayload = {
+  api_key: string
+  user_id: string
+  user_token: string
+  user?: {
+    name?: string
+  }
+}
 
 function dubaiToday() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -20,15 +39,8 @@ function dubaiToday() {
   }).format(new Date())
 }
 
-async function fetchJson(url: string, options?: RequestInit) {
-  const response = await fetch(url, options)
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data.detail || data.error || `request_failed_${response.status}`)
-  return data
-}
-
 async function fetchChatToken() {
-  return fetchJson(`${API_BASE}/doctor/chat/token`, {
+  return fetchJson<ChatTokenPayload>(`${API_BASE}/doctor/chat/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ doctor_id: DOCTOR_ID }),
@@ -61,7 +73,7 @@ function App() {
 
     async function loadAppointmentCount() {
       try {
-        const data = await fetchJson(`${API_BASE}/doctor/dashboard/appointments?date=${dubaiToday()}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`)
+        const data = await fetchJson<AppointmentCountPayload>(`${API_BASE}/doctor/dashboard/appointments?date=${dubaiToday()}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`)
         if (!cancelled) setAppointmentCount(Array.isArray(data.today) ? data.today.length : 0)
       } catch {
         if (!cancelled) setAppointmentCount(null)
@@ -86,7 +98,7 @@ function App() {
           limit: '100',
           offset: '0',
         })
-        const data = await fetchJson(`${API_BASE}/doctor/rx/refill-requests?${params.toString()}`)
+        const data = await fetchJson<RefillRequestsPayload>(`${API_BASE}/doctor/rx/refill-requests?${params.toString()}`)
         const requests = Array.isArray(data.requests)
           ? data.requests
           : Array.isArray(data.refill_requests)
@@ -173,7 +185,7 @@ function App() {
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
             onMessage={(id: string) => go('chat', { patientId: id })}
-            onPrescribe={(id: string) => go('prescribe', { patientId: id })}
+            onPrescribe={(id: string, customerId?: string, trackKey?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '' })}
           />
         )}
         {route === 'chat' && (

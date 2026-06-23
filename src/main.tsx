@@ -10,6 +10,7 @@ import {
   resolveDoctorAccountFromLocation,
   setActiveDoctorAccount,
 } from './config.js'
+import { setApiTokenProvider } from './lib/authFetch.js'
 
 setActiveDoctorAccount(resolveDoctorAccountFromLocation() || undefined)
 
@@ -33,7 +34,7 @@ function MissingClerkConfig() {
 }
 
 function DoctorAuthShell() {
-  const { isLoaded, isSignedIn } = useAuth()
+  const { getToken, isLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
   const [loadTimedOut, setLoadTimedOut] = useState(false)
   const [workspaceError, setWorkspaceError] = useState('')
@@ -48,6 +49,16 @@ function DoctorAuthShell() {
     const timer = window.setTimeout(() => setLoadTimedOut(true), 6000)
     return () => window.clearTimeout(timer)
   }, [isLoaded])
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setApiTokenProvider(null)
+      return
+    }
+
+    setApiTokenProvider(() => getToken())
+    return () => setApiTokenProvider(null)
+  }, [getToken, isSignedIn])
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) {

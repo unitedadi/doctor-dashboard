@@ -1,5 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
+import { fetchJson } from "../lib/authFetch.js";
 
 /* global React */
 const { useEffect: useEffectF, useMemo: useMemoF, useState: useStateF } = React;
@@ -36,18 +37,6 @@ const ANSWER_LABELS = {
     SEVERE: "Severe (persistent vomiting/stomach pain)",
   },
 };
-
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.detail || data.error || `request_failed_${response.status}`);
-    error.payload = data;
-    error.status = response.status;
-    throw error;
-  }
-  return data;
-}
 
 function titleCase(value) {
   return String(value || "")

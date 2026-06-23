@@ -1,5 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
+import { authFetch, fetchJson } from "../lib/authFetch.js";
 
 /* global React */
 const { useEffect: useEffectA, useMemo: useMemoA, useState: useStateA } = React;
@@ -118,17 +119,27 @@ function prescriptionIssued(appointment) {
   return appointment?.workbench?.prescription?.status === "ISSUED";
 }
 
-function consultationChecklist(appointment) {
+function consultationChecklist(appointment, nowMs) {
   const workbench = appointment?.workbench || {};
   const consultation = workbench.consultation || {};
   const prescription = workbench.prescription || {};
+  const fulfillment = workbench.fulfillment || {};
   const normalized = String(appointment?.status || consultation.status || "").toLowerCase();
   const scheduled = Boolean(appointment?.time);
   const noShow = normalized === "no_show" || String(consultation.status || "").toLowerCase() === "no_show";
   const completed = Boolean(consultation.completed_at) || normalized === "completed";
   const issued = prescription.status === "ISSUED";
+  const live = appointmentIsLiveNow(appointment, nowMs);
+  const hasMedicationState = Boolean(
+    issued ||
+    fulfillment.status ||
+    fulfillment.order_id ||
+    fulfillment.paid_at ||
+    fulfillment.delivered_at ||
+    fulfillment.amount_fils
+  );
 
-  return [
+  const steps = [
     {
       label: "Consultation scheduled",
       meta: appointment?.time ? `${appointment.time} · ${appointment.duration || 0} min` : "",
@@ -137,22 +148,27 @@ function consultationChecklist(appointment) {
     {
       label: noShow ? "Marked no-show" : "Consultation completed",
       meta: noShow ? formatDateTime(consultation.no_show_at) : formatDateTime(consultation.completed_at),
-      state: noShow ? "risk" : completed ? "done" : "current"
+      state: noShow ? "risk" : completed ? "done" : live ? "current" : "pending"
     },
     {
       label: "Prescription issued",
       meta: formatDateTime(prescription.issued_at),
       state: issued ? "done" : completed ? "current" : "pending"
-    },
-    {
+    }
+  ];
+
+  if (hasMedicationState) {
+    steps.push({
       label: "Medication order",
       meta: medicationOrderState(appointment),
       state: workbench.fulfillment?.delivered_at ? "done" : issued ? "current" : "pending"
-    }
-  ];
+    });
+  }
+
+  return steps;
 }
 
-function actionState(appointment) {
+function actionState(appointment, nowMs) {
   if (!appointment) {
     return {
       label: "",
@@ -202,7 +218,11 @@ function actionState(appointment) {
     };
   }
   return {
-    label: appointment.meetingLink ? "Join consultation, then complete or mark no-show." : "Review appointment and update outcome.",
+    label: appointment.meetingLink
+      ? appointmentOutcomeActionsAvailable(appointment, nowMs)
+        ? "Join consultation, then complete or mark no-show."
+        : "Join at the scheduled time. Outcome actions unlock when the slot starts."
+      : "Review appointment and update outcome.",
     tone: "current",
     canPrescribe: false,
     canComplete: isCompletable(appointment.status),
@@ -247,6 +267,13 @@ function appointmentIsLiveNow(appointment, nowMs) {
   const endMs = new Date(appointment?.scheduledEndAt || "").getTime();
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
   return nowMs >= startMs && nowMs <= endMs;
+}
+
+function appointmentOutcomeActionsAvailable(appointment, nowMs) {
+  if (appointmentStatusBucket(appointment?.status) !== "upcoming") return false;
+  const startMs = new Date(appointment?.scheduledStartAt || "").getTime();
+  if (!Number.isFinite(startMs)) return true;
+  return nowMs >= startMs;
 }
 
 function nextStepLabel(appointment) {
@@ -365,10 +392,10 @@ function HistoryRows({ rows, emptyText, renderTitle, renderMeta }) {
   );
 }
 
-function OperationalChecklist({ appointment }) {
+function OperationalChecklist({ appointment, nowMs }) {
   return (
     <div className="workbench-checklist">
-      {consultationChecklist(appointment).map((step) => (
+      {consultationChecklist(appointment, nowMs).map((step) => (
         <div key={step.label} className={`workbench-check-step ${step.state}`}>
           <span className="workbench-check-dot" />
           <div>
@@ -444,9 +471,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/doctor/dashboard/appointments?date=${selectedDate}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`);
-      if (!response.ok) throw new Error(`appointments_request_failed_${response.status}`);
-      const data = await response.json();
+      const data = await fetchJson(`${API_BASE}/doctor/dashboard/appointments?date=${selectedDate}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`);
       const nextToday = (data.today || []).map(mapAppointment).sort((a, b) => a.time.localeCompare(b.time));
       const nextWeek = (data.week || []).map(mapAppointment).sort((a, b) => {
         const dateCompare = String(a.date).localeCompare(String(b.date));
@@ -475,9 +500,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     if (profilesLoaded || profilesLoading) return;
     setProfilesLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`);
-      if (!response.ok) throw new Error(`patients_request_failed_${response.status}`);
-      const data = await response.json();
+      const data = await fetchJson(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`);
       setPatientProfiles(Array.isArray(data.patients) ? data.patients : []);
       setProfilesLoaded(true);
     } catch {
@@ -507,15 +530,35 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedFulfillment.delivered_at ||
     selectedFulfillment.amount_fils
   );
-  const selectedActionState = actionState(selected);
+  const selectedActionState = actionState(selected, nowMs);
   const selectedProfile = selected && !selectedIsQuickWlp
     ? patientProfiles.find((profile) => profile.id === selected.patientId || profile.id === selectedPatient?.id)
     : null;
   const selectedHistory = selectedProfile?.visit_history || [];
-  const canCompleteSelected = selectedActionState.canComplete;
-  const canNoShowSelected = selectedActionState.canNoShow;
+  const selectedOutcomeUnlocked = selected ? appointmentOutcomeActionsAvailable(selected, nowMs) : false;
+  const canCompleteSelected = selectedActionState.canComplete && selectedOutcomeUnlocked;
+  const canNoShowSelected = selectedActionState.canNoShow && selectedOutcomeUnlocked;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
   const canPrescribeSelectedQuickWlp = selectedIsQuickWlp && selectedActionState.canPrescribe && !blocksQuickWlpPrescription(selected.status);
+  const selectedHasJoinOrCall = Boolean(selected?.meetingLink && appointmentStatusBucket(selected.status) === "upcoming");
+  const selectedHasClinicalActions = Boolean(
+    selectedHasJoinOrCall ||
+    canCompleteSelected ||
+    canNoShowSelected ||
+    canPrescribeSelectedRx ||
+    canPrescribeSelectedQuickWlp
+  );
+  const selectedHasLockedOutcomeNote = Boolean(
+    selectedActionState.canComplete &&
+    !selectedOutcomeUnlocked &&
+    appointmentStatusBucket(selected?.status) === "upcoming"
+  );
+  const selectedConsultationHistoryRows = Array.isArray(selectedHistory)
+    ? selectedHistory.filter((item) => item.id !== selected?.id)
+    : [];
+  const selectedPrescriptionHistoryRows = Array.isArray(selectedProfile?.rx_prescription_history) ? selectedProfile.rx_prescription_history : [];
+  const selectedDeliveredMedicationRows = Array.isArray(selectedProfile?.delivered_medications) ? selectedProfile.delivered_medications : [];
+  const selectedRefillHistoryRows = Array.isArray(selectedProfile?.refill_history) ? selectedProfile.refill_history : [];
   const statusCounts = useMemoA(() => {
     return today.reduce((counts, appointment) => {
       const bucket = appointmentStatusBucket(appointment.status);
@@ -556,7 +599,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     event.stopPropagation();
     setJoiningId(appointment.id);
     try {
-      const response = await fetch(`${API_BASE}/doctor/appointments/${appointment.id}/session`, {
+      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -577,7 +620,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     setCallConfirm(null);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/doctor/appointments/${appointment.id}/call`, {
+      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ doctor_id: DOCTOR_ID }),
@@ -599,7 +642,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     setCompleteConfirm(null);
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/doctor/appointments/${appointment.id}/complete`, {
+      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -627,7 +670,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     setNoShowConfirm(null);
     setError("");
     try {
-      const response = await fetch(
+      const response = await authFetch(
         appointment.source === "quickwlp"
           ? `${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(appointment.quickWlpLeadId || appointment.patientId)}/finalize`
           : `${API_BASE}/doctor/appointments/${appointment.id}/no-show`,
@@ -772,11 +815,13 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 <span className={`workbench-status ${statusTone(selected.status)}`}>{humanizeStatus(selected.status)}</span>
               </div>
 
-              <div className="workbench-overview">
+              <div className={`workbench-overview${hasMedicationOrderDetails ? "" : " compact"}`}>
                 <WorkbenchMetric label="Slot" value={`${selected.time} · ${selected.duration} min`} />
                 <WorkbenchMetric label="Source" value={selectedIsQuickWlp ? "Quick WLP" : "Lifestyle Rx"} />
                 <WorkbenchMetric label="Track" value={selected.trackKey === "weight-loss" ? "Weight Loss" : toTitle(selected.trackKey || "Rx")} />
-                <WorkbenchMetric label="Order" value={medicationOrderState(selected)} tone={selectedFulfillment.delivered_at ? "done" : selectedPrescription.status === "ISSUED" ? "current" : ""} />
+                {hasMedicationOrderDetails && (
+                  <WorkbenchMetric label="Order" value={medicationOrderState(selected)} tone={selectedFulfillment.delivered_at ? "done" : selectedPrescription.status === "ISSUED" ? "current" : ""} />
+                )}
               </div>
 
               <div className={`workbench-next ${selectedActionState.tone}`}>
@@ -784,77 +829,81 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 <strong>{selectedActionState.label || nextStepLabel(selected)}</strong>
               </div>
 
-              <section className="workbench-section workbench-section-actions">
-                <div className="workbench-section-title">Actions</div>
-                <div className="workbench-actions">
-                  {selected.meetingLink && selected.status === "upcoming" && (
-                    <>
-                      <button className="dd-btn-block" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
-                        {joiningId === selected.id ? "Opening session..." : "Join video consultation"}
-                      </button>
+              {(selectedHasClinicalActions || selectedHasLockedOutcomeNote) && (
+                <section className="workbench-section workbench-section-actions">
+                  <div className="workbench-section-title">Actions</div>
+                  <div className="workbench-actions">
+                    {selected.meetingLink && appointmentStatusBucket(selected.status) === "upcoming" && (
+                      <>
+                        <button className="dd-btn-block" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
+                          {joiningId === selected.id ? "Opening session..." : "Join video consultation"}
+                        </button>
+                        <button
+                          className="btn-ghost"
+                          style={{ width: "100%", justifyContent: "center" }}
+                          onClick={() => setCallConfirm(selected)}
+                          disabled={callingId === selected.id}
+                        >
+                          {I.phone}<span>{callingId === selected.id ? "Calling..." : "Call Patient"}</span>
+                        </button>
+                      </>
+                    )}
+                    {canCompleteSelected && (
                       <button
                         className="btn-ghost"
                         style={{ width: "100%", justifyContent: "center" }}
-                        onClick={() => setCallConfirm(selected)}
-                        disabled={callingId === selected.id}
+                        onClick={() => setCompleteConfirm(selected)}
+                        disabled={completingId === selected.id}
                       >
-                        {I.phone}<span>{callingId === selected.id ? "Calling..." : "Call Patient"}</span>
+                        {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete Consultation"}</span>
                       </button>
-                    </>
-                  )}
-                  {canCompleteSelected && (
-                    <button
-                      className="btn-ghost"
-                      style={{ width: "100%", justifyContent: "center" }}
-                      onClick={() => setCompleteConfirm(selected)}
-                      disabled={completingId === selected.id}
-                    >
-                      {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete Consultation"}</span>
-                    </button>
-                  )}
-                  {canNoShowSelected && (
-                    <button
-                      className="btn-ghost danger"
-                      style={{ width: "100%", justifyContent: "center" }}
-                      onClick={() => setNoShowConfirm(selected)}
-                      disabled={noShowingId === selected.id}
-                    >
-                      {I.warn}<span>{noShowingId === selected.id ? "Saving..." : "Mark No-show"}</span>
-                    </button>
-                  )}
-                  {selectedIsQuickWlp ? (
-                    <button
-                      className="dd-btn-block"
-                      onClick={() => onPrescribeQuickWlp?.(selected)}
-                      disabled={!canPrescribeSelectedQuickWlp}
-                    >
-                      {prescriptionIssued(selected) ? "Prescription issued" : "Issue Quick WLP prescription"}
-                    </button>
-                  ) : (
-                    <>
-                      {canPrescribeSelectedRx && (
-                        <button className="dd-btn-block" onClick={() => onPrescribeRx?.(selected)}>
-                          {I.pill}<span>Issue RX prescription</span>
-                        </button>
-                      )}
-                      <button className="btn-ghost" style={{ width: "100%", justifyContent: "center" }} onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
+                    )}
+                    {canNoShowSelected && (
                       <button
-                        className="btn-ghost"
-                        style={{ width: "100%", justifyContent: "center", opacity: selected.chat?.available ? 1 : 0.45, cursor: selected.chat?.available ? "pointer" : "not-allowed" }}
-                        onClick={() => onOpenChat(selectedPatient.id)}
-                        disabled={!selected.chat?.available}
-                        title={selected.chat?.available ? `Message ${selectedPatient.name}` : "Chat is locked for this patient"}
+                        className="btn-ghost danger"
+                        style={{ width: "100%", justifyContent: "center" }}
+                        onClick={() => setNoShowConfirm(selected)}
+                        disabled={noShowingId === selected.id}
                       >
+                        {I.warn}<span>{noShowingId === selected.id ? "Saving..." : "Mark No-show"}</span>
+                      </button>
+                    )}
+                    {canPrescribeSelectedQuickWlp && (
+                      <button className="dd-btn-block" onClick={() => onPrescribeQuickWlp?.(selected)}>
+                        {I.pill}<span>Issue Quick WLP prescription</span>
+                      </button>
+                    )}
+                    {canPrescribeSelectedRx && (
+                      <button className="dd-btn-block" onClick={() => onPrescribeRx?.(selected)}>
+                        {I.pill}<span>Issue RX prescription</span>
+                      </button>
+                    )}
+                    {selectedHasLockedOutcomeNote && (
+                      <div className="workbench-note">Outcome actions unlock when the scheduled slot starts.</div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {!selectedIsQuickWlp && (
+                <section className="workbench-section workbench-section-access">
+                  <div className="workbench-section-title">Patient access</div>
+                  <div className="workbench-access-actions">
+                    <button className="btn-ghost" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
+                    {selected.chat?.available ? (
+                      <button className="btn-ghost" onClick={() => onOpenChat(selectedPatient.id)}>
                         {I.message}<span>Message {selectedPatient.name.split(" ")[0]}</span>
                       </button>
-                    </>
-                  )}
-                </div>
-              </section>
+                    ) : (
+                      <div className="workbench-note">Chat unlocks after consultation completion.</div>
+                    )}
+                  </div>
+                </section>
+              )}
 
               <section className="workbench-section">
-                <div className="workbench-section-title">Operational progress</div>
-                <OperationalChecklist appointment={selected} />
+                <div className="workbench-section-title">Consultation flow</div>
+                <OperationalChecklist appointment={selected} nowMs={nowMs} />
               </section>
 
               <section className="workbench-section">
@@ -863,7 +912,6 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 <InfoRow label="Mode" value={selected.type} />
                 <InfoRow label="Member" value={[selectedPatient.age ? `${selectedPatient.age}y` : "", selectedPatient.sex].filter(Boolean).join(" · ")} />
                 {selectedPatient.whatsapp && <InfoRow label="WhatsApp" value={selectedPatient.whatsapp} />}
-                {!selectedIsQuickWlp && <InfoRow label="Chat" value={selected.chat?.available ? "Available" : "Locked until consult completion"} />}
               </section>
 
               <section className="workbench-section">
@@ -898,14 +946,14 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 </section>
               )}
 
-              {!selectedIsQuickWlp && (
+              {!selectedIsQuickWlp && ((profilesLoading && !profilesLoaded) || selectedConsultationHistoryRows.length > 0) && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Consultation history</div>
                   <ConsultationHistory history={selectedHistory} loading={profilesLoading && !profilesLoaded} currentId={selected.id} />
                 </section>
               )}
 
-              {!selectedIsQuickWlp && (
+              {!selectedIsQuickWlp && selectedPrescriptionHistoryRows.length > 0 && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Prescription history</div>
                   <HistoryRows
@@ -921,7 +969,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 </section>
               )}
 
-              {!selectedIsQuickWlp && (
+              {!selectedIsQuickWlp && selectedDeliveredMedicationRows.length > 0 && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Delivered medication</div>
                   <HistoryRows
@@ -937,7 +985,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 </section>
               )}
 
-              {!selectedIsQuickWlp && (
+              {!selectedIsQuickWlp && selectedRefillHistoryRows.length > 0 && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Refill history</div>
                   <HistoryRows

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
+import { fetchJson } from "../lib/authFetch.js";
 import { StreamChat } from "stream-chat";
 import {
   Channel,
@@ -16,11 +17,8 @@ import "stream-chat-react/dist/css/index.css";
 /* global React */
 const { useEffect: useEffectC, useMemo: useMemoC, useState: useStateC } = React;
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || data.error || `request_failed_${response.status}`);
-  return data;
+function asArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
 function fetchChatToken() {
@@ -39,6 +37,8 @@ function titleCase(value) {
 }
 
 function mapPatientForChannel(item) {
+  const demographics = item.demographics || {};
+  const assessment = item.assessment || {};
   return {
     id: item.id,
     customer_id: item.customer_id,
@@ -46,9 +46,25 @@ function mapPatientForChannel(item) {
     initials: item.initials || "P",
     age: item.age,
     sex: titleCase(item.sex),
-    conditions: Array.isArray(item.conditions) ? item.conditions : [],
-    allergies: Array.isArray(item.allergies) ? item.allergies : [],
-    medications: Array.isArray(item.medications) ? item.medications : [],
+    phone: item.phone || item.customer_phone || "",
+    email: item.email || "",
+    address: item.address || "",
+    demographics: {
+      height_cm: demographics.height_cm ?? demographics.heightCm ?? assessment.basic?.height_cm,
+      weight_kg: demographics.weight_kg ?? demographics.weightKg ?? assessment.basic?.weight_kg,
+      bmi: demographics.bmi ?? assessment.basic?.bmi,
+    },
+    assessment: {
+      basic: assessment.basic || {},
+      submissions: asArray(assessment.submissions),
+    },
+    conditions: asArray(item.conditions),
+    allergies: asArray(item.allergies),
+    medications: asArray(item.medications),
+    visit_history: asArray(item.visit_history || item.visitHistory),
+    rx_prescription_history: asArray(item.rx_prescription_history || item.prescriptionHistory),
+    delivered_medications: asArray(item.delivered_medications || item.deliveredMedications),
+    refill_history: asArray(item.refill_history || item.refillHistory),
     track_key: item.track_key || item.trackKey || "",
   };
 }
@@ -105,6 +121,7 @@ function channelPatient(channel, currentUserId, patientDirectory = []) {
     customer_id: customerId || memberPatient?.id || "",
     name: memberPatient?.name || data.name || "Patient",
     initials: memberPatient?.name?.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "P",
+    phone: data.phone || data.customer_phone || "",
     track_key: data.track_key || data.trackKey || "",
   };
 }
@@ -149,8 +166,284 @@ function disabledReasonCopy(reason) {
   return copy[reason] || "Prescription not available";
 }
 
+function formatTrackKey(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "weight-loss" || normalized === "weight_loss") return "Weight Loss Rx";
+  if (normalized === "peptides" || normalized === "peptide") return "Peptides";
+  if (normalized === "quickwlp" || normalized === "quick-wlp") return "Quick Consult";
+  return value ? titleCase(value) : "Rx";
+}
+
+function formatSubscriptionStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "TRIALING") return "Trial";
+  if (normalized === "ACTIVE") return "Active";
+  if (normalized === "PAST_DUE") return "Past due";
+  if (normalized === "CANCELS_AT_PERIOD_END") return "Cancelling";
+  if (normalized === "CANCELLED" || normalized === "CANCELED") return "Cancelled";
+  return value ? titleCase(value) : "Not available";
+}
+
+function formatContextDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Dubai",
+  }).format(date);
+}
+
+function chatContextPatient(context, fallbackPatient) {
+  return context?.patient ? mapPatientForChannel({ ...context.patient, track_key: context.rx?.track_key }) : fallbackPatient;
+}
+
+function compactPatientSubtitle(patient) {
+  return [
+    patient?.phone,
+    patient?.age ? `${patient.age}y` : "",
+    patient?.sex,
+  ].filter(Boolean).join(" · ");
+}
+
+function clinicalFactList(patient) {
+  const facts = [];
+  if (Array.isArray(patient?.conditions) && patient.conditions.length) {
+    facts.push({ label: "Conditions", value: patient.conditions.slice(0, 3).join(", ") });
+  }
+  if (Array.isArray(patient?.allergies) && patient.allergies.length) {
+    facts.push({ label: "Allergies", value: patient.allergies.slice(0, 3).join(", ") });
+  }
+  if (Array.isArray(patient?.medications) && patient.medications.length) {
+    facts.push({ label: "Medication", value: patient.medications.slice(0, 3).map(medicationName).join(", ") });
+  }
+  return facts;
+}
+
+function medicationName(item) {
+  if (!item) return "";
+  if (typeof item === "string") return item;
+  return item.name || item.title || item.itemLabel || "Medication";
+}
+
+function prescriptionTitle(item) {
+  if (!item) return "Prescription";
+  const items = asArray(item.items);
+  if (items.length) {
+    return items.map((line) => `${line.name || "Medication"}${line.quantity ? ` x${line.quantity}` : ""}`).join(", ");
+  }
+  return item.title || item.item_label || item.itemLabel || "Prescription";
+}
+
+function firstUsefulAssessmentAnswer(submission) {
+  const answers = submission?.answers || {};
+  const entry = Object.entries(answers).find(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== null && value !== undefined && value !== "";
+  });
+  if (!entry) return null;
+  const [key, value] = entry;
+  return {
+    label: titleCase(key),
+    value: Array.isArray(value) ? value.join(", ") : String(value),
+  };
+}
+
+function valueOrText(value, fallback = "Not available") {
+  return value || fallback;
+}
+
+function formatMedicationItems(items) {
+  const lines = asArray(items);
+  if (!lines.length) return "No medication items";
+  return lines.map((line) => `${line.name || "Medication"}${line.quantity ? ` x${line.quantity}` : ""}`).join(", ");
+}
+
+function multilineToList(value) {
+  return String(value || "")
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function numberOrNull(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  const number = Number(trimmed);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function prescriptionMeta(item) {
+  return [
+    item.status ? titleCase(item.status) : "",
+    formatContextDateTime(item.issued_at || item.createdAt || item.created_at),
+  ].filter(Boolean).join(" · ");
+}
+
+function deliveryMeta(item) {
+  return [
+    item.status ? titleCase(item.status) : "",
+    item.delivered_at ? `Delivered ${formatContextDateTime(item.delivered_at)}` : "",
+    !item.delivered_at && item.paid_at ? `Ordered ${formatContextDateTime(item.paid_at)}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
 function fetchChannelContext(channelId) {
   return fetchJson(`${API_BASE}/doctor/chat/channels/${encodeURIComponent(channelId)}/context?doctor_id=${DOCTOR_ID}`);
+}
+
+function fetchPatientFile(patientId) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/file?doctor_id=${DOCTOR_ID}`);
+}
+
+function updateClinicalProfile(patientId, body) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/clinical-profile?doctor_id=${DOCTOR_ID}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function mapPatientFileForPanel(patientFile, fallbackPatient) {
+  if (!patientFile?.patient) return fallbackPatient;
+  const clinical = patientFile.clinical || {};
+  return {
+    ...fallbackPatient,
+    id: patientFile.patient.id || fallbackPatient?.id || "",
+    customer_id: patientFile.patient.customer_id || fallbackPatient?.customer_id || "",
+    name: patientFile.patient.name || fallbackPatient?.name || "Patient",
+    initials: patientFile.patient.initials || fallbackPatient?.initials || "P",
+    age: patientFile.patient.age ?? fallbackPatient?.age,
+    sex: titleCase(patientFile.patient.sex || fallbackPatient?.sex),
+    phone: patientFile.patient.phone || fallbackPatient?.phone || "",
+    email: patientFile.patient.email || fallbackPatient?.email || "",
+    address: patientFile.patient.address || fallbackPatient?.address || "",
+    demographics: clinical.demographics || fallbackPatient?.demographics || {},
+    assessment: clinical.assessment || fallbackPatient?.assessment || { basic: {}, submissions: [] },
+    conditions: asArray(clinical.conditions || fallbackPatient?.conditions),
+    allergies: asArray(clinical.allergies || fallbackPatient?.allergies),
+    medications: asArray(clinical.current_medications || fallbackPatient?.medications),
+    visit_history: asArray(patientFile.consultations).map((item) => ({
+      id: item.id,
+      date: item.scheduled_at,
+      title: item.title,
+      note: item.doctor_notes,
+    })),
+    rx_prescription_history: asArray(patientFile.prescriptions),
+    delivered_medications: asArray(patientFile.medication_delivery),
+    refill_history: asArray(patientFile.refills),
+    track_key: patientFile.program?.track_keys?.[0] || fallbackPatient?.track_key || "",
+  };
+}
+
+function ClinicalProfileModal({ patient, onClose, onSaved }) {
+  const regularMedications = patient?.assessment?.basic?.regular_medications || "";
+  const [draft, setDraft] = useStateC({
+    height_cm: patient?.demographics?.height_cm ?? "",
+    current_weight_kg: patient?.demographics?.weight_kg ?? "",
+    allergies_text: asArray(patient?.allergies).join("\n"),
+    conditions_text: asArray(patient?.conditions).join("\n"),
+    regular_medications_text: regularMedications,
+  });
+  const [saving, setSaving] = useStateC(false);
+  const [error, setError] = useStateC("");
+
+  const setField = (field, value) => {
+    setDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const save = async () => {
+    if (!patient?.id) return;
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        height_cm: numberOrNull(draft.height_cm),
+        current_weight_kg: numberOrNull(draft.current_weight_kg),
+        allergies_json: { types: multilineToList(draft.allergies_text) },
+        medical_conditions_json: { selected: multilineToList(draft.conditions_text) },
+        regular_medications_text: String(draft.regular_medications_text || "").trim() || null,
+      };
+      const result = await updateClinicalProfile(patient.id, payload);
+      onSaved(result.patient_file);
+      onClose();
+    } catch (err) {
+      setError(err.message || "Could not update clinical profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="quickwlp-dialog-backdrop clinical-profile-dialog-backdrop">
+      <div className="quickwlp-dialog clinical-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="clinical-profile-title">
+        <div className="quickwlp-dialog-head">
+          <div>
+            <div id="clinical-profile-title" className="quickwlp-dialog-title">Update clinical profile</div>
+            <p>Update doctor-editable facts only. Prescriptions, delivery, visits, and refills stay system generated.</p>
+          </div>
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Close</button>
+        </div>
+
+        <div className="clinical-profile-form">
+          <label>
+            <span>Height</span>
+            <input
+              inputMode="decimal"
+              value={draft.height_cm}
+              onChange={(event) => setField("height_cm", event.target.value)}
+              placeholder="cm"
+            />
+          </label>
+          <label>
+            <span>Weight</span>
+            <input
+              inputMode="decimal"
+              value={draft.current_weight_kg}
+              onChange={(event) => setField("current_weight_kg", event.target.value)}
+              placeholder="kg"
+            />
+          </label>
+          <label>
+            <span>Allergies</span>
+            <textarea
+              value={draft.allergies_text}
+              onChange={(event) => setField("allergies_text", event.target.value)}
+              placeholder="One per line"
+            />
+          </label>
+          <label>
+            <span>Conditions</span>
+            <textarea
+              value={draft.conditions_text}
+              onChange={(event) => setField("conditions_text", event.target.value)}
+              placeholder="One per line"
+            />
+          </label>
+          <label className="clinical-profile-form-wide">
+            <span>Current meds</span>
+            <textarea
+              value={draft.regular_medications_text}
+              onChange={(event) => setField("regular_medications_text", event.target.value)}
+              placeholder="Non-DarDoc medications or supplements"
+            />
+          </label>
+        </div>
+
+        {error ? <div className="quickwlp-dialog-error">{error}</div> : null}
+
+        <div className="quickwlp-dialog-actions">
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Saving" : "Save profile"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function formatChannelTime(channel) {
@@ -182,9 +475,12 @@ function StreamChannelRows({ channels, patientDirectory }) {
   return (
     <div className="stream-kit-row-list">
       {channels.map((item) => {
-        const patientName = channelPatient(item, client.userID, patientDirectory).name;
+        const patient = channelPatient(item, client.userID, patientDirectory);
+        const patientName = patient.name;
         const unread = item.countUnread?.() || 0;
         const isActive = item.cid === activeChannel?.cid;
+        const service = channelServiceName(item, patientName);
+        const track = patient.track_key || item?.data?.track_key || item?.data?.trackKey || "";
 
         return (
           <button
@@ -193,12 +489,17 @@ function StreamChannelRows({ channels, patientDirectory }) {
             className={"stream-kit-row" + (isActive ? " active" : "") + (unread ? " unread" : "")}
             onClick={() => setActiveChannel(item)}
           >
+            <span className="stream-kit-row-avatar">{patient.initials || "P"}</span>
             <span className="stream-kit-row-main">
               <span className="stream-kit-row-top">
                 <span className="stream-kit-row-name">{patientName}</span>
                 <span className="stream-kit-row-time">{formatChannelTime(item)}</span>
               </span>
-              <span className="stream-kit-row-service">{channelServiceName(item, patientName)}</span>
+              {patient.phone ? <span className="stream-kit-row-phone">{patient.phone}</span> : null}
+              <span className="stream-kit-row-tags">
+                <span>{formatTrackKey(track || service)}</span>
+                {service && service !== "Rx chat" ? <span>{service}</span> : null}
+              </span>
               <span className="stream-kit-row-preview">{latestMessagePreview(item, client.userID)}</span>
             </span>
             {unread ? <span className="stream-kit-row-badge">{unread}</span> : null}
@@ -209,33 +510,75 @@ function StreamChannelRows({ channels, patientDirectory }) {
   );
 }
 
+function ClinicalStateStrip({ context, canPrescribe }) {
+  const latestCompleted = context?.rx?.latest_completed_at;
+  const steps = [
+    {
+      label: "Consult",
+      state: latestCompleted ? "done" : "pending",
+      value: latestCompleted ? formatContextDateTime(latestCompleted) : "Not completed",
+    },
+    {
+      label: "Prescription",
+      state: canPrescribe ? "ready" : "pending",
+      value: canPrescribe ? "Ready" : disabledReasonCopy(context?.rx?.can_prescribe_reason),
+    },
+    {
+      label: "Follow-up",
+      state: "neutral",
+      value: context?.patient?.phone ? "Chat open" : "Confirm details",
+    },
+  ];
+
+  return (
+    <div className="clinical-state-strip" aria-label="Clinical state">
+      {steps.map((step) => (
+        <div key={step.label} className={`clinical-state-step ${step.state}`}>
+          <span className="clinical-state-dot" />
+          <span className="clinical-state-copy">
+            <span className="clinical-state-label">{step.label}</span>
+            <span className="clinical-state-value">{step.value}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ClinicalChatHeader({ channel, context, contextLoading, contextError, fallbackPatient, prescribablePatient, onOpenPatient, onPrescribe }) {
-  const contextPatient = context?.patient ? mapPatientForChannel({ ...context.patient, track_key: context.rx?.track_key }) : null;
-  const patient = contextPatient || fallbackPatient;
-  const patientId = prescribablePatient?.id || context?.actions?.prescribe_patient_id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
+  const patient = chatContextPatient(context, fallbackPatient);
   const chartPatientId = context?.patient?.id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
   const patientCustomerId = prescribablePatient?.customer_id || context?.patient?.customer_id || patient?.customer_id || channel?.data?.customer_id || channel?.data?.customerId;
-  const prescribeTrackKey = prescribablePatient?.track_key || context?.actions?.prescribe_track_key || context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || "";
   const service = channelServiceName(channel, patient?.name);
+  const trackLabel = formatTrackKey(context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || service);
+  const latestCompletedAt = formatContextDateTime(context?.rx?.latest_completed_at);
   const meta = [
-    patient?.age && `${patient.age}`,
-    patient?.sex,
-    context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || service,
+    compactPatientSubtitle(patient),
+    trackLabel,
   ].filter(Boolean).join(" · ");
   const canOpenChart = context?.actions?.can_open_chart ?? Boolean(chartPatientId || patientCustomerId);
   const canPrescribe = context?.actions?.can_prescribe ?? Boolean(prescribablePatient?.can_prescribe);
-  const prescribeDisabledReason = context?.rx?.can_prescribe_reason ? disabledReasonCopy(context.rx.can_prescribe_reason) : "Patient is not ready to prescribe";
 
   return (
     <div className="clinical-chat-header">
       <div className="clinical-chat-main">
-        <div className="clinical-chat-eyebrow">{service}</div>
-        <div className="clinical-chat-name">{patient?.name || "Patient"}</div>
-        <div className="clinical-chat-meta">
-          {contextLoading ? "Checking Rx eligibility..." : contextError ? "Patient context from chat" : meta || "Patient context from chat"}
+        <div className="clinical-chat-avatar">{patient?.initials || "P"}</div>
+        <div className="clinical-chat-identity">
+          <div className="clinical-chat-name">{patient?.name || "Patient"}</div>
+          <div className="clinical-chat-meta">
+            {contextLoading ? "Checking Rx eligibility..." : contextError ? "Patient context from chat" : meta || "Patient context from chat"}
+          </div>
+        </div>
+      </div>
+      <div className="clinical-chat-header-center">
+        <div className="clinical-memory-line">
+          <strong>{trackLabel}</strong>
+          <span>{latestCompletedAt ? `Last consult ${latestCompletedAt}` : "No completed consult found"}</span>
+          <span>{canPrescribe ? "Prescription ready" : disabledReasonCopy(context?.rx?.can_prescribe_reason)}</span>
         </div>
       </div>
       <div className="clinical-chat-actions">
+        <span className="clinical-chat-service">{trackLabel}</span>
         <button
           type="button"
           className="btn-ghost"
@@ -243,19 +586,215 @@ function ClinicalChatHeader({ channel, context, contextLoading, contextError, fa
           title={canOpenChart ? "Open patient chart" : "Waiting for patient mapping from backend"}
           onClick={() => canOpenChart && onOpenPatient(chartPatientId, patientCustomerId)}
         >
-          Patient chart
+          Patient
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatient, patientFile, patientFileLoading, prescribablePatient, onOpenPatient, onPatientFileUpdated, onPrescribe }) {
+  const [editingProfile, setEditingProfile] = useStateC(false);
+  const patient = mapPatientFileForPanel(patientFile, chatContextPatient(context, fallbackPatient));
+  const service = channelServiceName(channel, patient?.name);
+  const track = context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || service;
+  const patientId = prescribablePatient?.id || context?.actions?.prescribe_patient_id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
+  const chartPatientId = context?.patient?.id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
+  const patientCustomerId = prescribablePatient?.customer_id || context?.patient?.customer_id || patient?.customer_id || channel?.data?.customer_id || channel?.data?.customerId;
+  const prescribeTrackKey = prescribablePatient?.track_key || context?.actions?.prescribe_track_key || context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || "";
+  const canOpenChart = context?.actions?.can_open_chart ?? Boolean(chartPatientId || patientCustomerId);
+  const canPrescribe = context?.actions?.can_prescribe ?? Boolean(prescribablePatient?.can_prescribe);
+  const latestCompletedAt = formatContextDateTime(context?.rx?.latest_completed_at);
+  const facts = clinicalFactList(patient);
+  const latestAssessment = patient.assessment?.submissions?.[0];
+  const latestAssessmentAnswer = firstUsefulAssessmentAnswer(latestAssessment);
+  const prescriptions = asArray(patient.rx_prescription_history);
+  const deliveredMedications = asArray(patient.delivered_medications);
+  const refills = asArray(patient.refill_history);
+  const visits = asArray(patient.visit_history);
+  const prescriptionState = canPrescribe ? "Ready to prescribe" : disabledReasonCopy(context?.rx?.can_prescribe_reason);
+  const primaryAction = canPrescribe ? "Publish clinical prescription" : "Review patient file";
+
+  return (
+    <aside className="clinical-context-panel">
+      <section className="clinical-context-hero">
+        <span className="clinical-context-avatar">{patient?.initials || "P"}</span>
+        <div>
+          <h3>{patient?.name || "Patient"}</h3>
+          <p>{compactPatientSubtitle(patient) || "Identity details not available"}</p>
+        </div>
+      </section>
+
+      <section className="clinical-next-card">
+        <span>Clinical next</span>
+        <strong>{primaryAction}</strong>
+        <p>{prescriptionState}</p>
+      </section>
+
+      <section className="clinical-context-recall">
+        <div>
+          <span>Program</span>
+          <strong>{formatTrackKey(track)}</strong>
+        </div>
+        <div>
+          <span>Membership</span>
+          <strong>{formatSubscriptionStatus(context?.rx?.subscription_status)}</strong>
+        </div>
+        <div>
+          <span>Last consult</span>
+          <strong>{contextLoading || patientFileLoading ? "Checking" : latestCompletedAt || "Not completed"}</strong>
+        </div>
+        <div>
+          <span>Prescription</span>
+          <strong>{prescriptionState}</strong>
+        </div>
+      </section>
+
+      <section className="clinical-context-section">
+        <h4>Patient dossier</h4>
+        <div className="clinical-context-grid">
+          <div className="clinical-context-row">
+            <span>Phone</span>
+            <strong>{valueOrText(patient.phone)}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Email</span>
+            <strong>{valueOrText(patient.email)}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Member</span>
+            <strong>{[patient.age ? `${patient.age}y` : "", patient.sex].filter(Boolean).join(" · ") || "Not available"}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Address</span>
+            <strong>{valueOrText(patient.address)}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="clinical-context-section">
+        <div className="clinical-section-head">
+          <h4>Clinical profile</h4>
+          <button type="button" onClick={() => setEditingProfile(true)}>Update</button>
+        </div>
+        <div className="clinical-context-grid">
+          <div className="clinical-context-row">
+            <span>Height / weight</span>
+            <strong>{[
+              patient.demographics?.height_cm ? `${patient.demographics.height_cm} cm` : "",
+              patient.demographics?.weight_kg ? `${patient.demographics.weight_kg} kg` : "",
+            ].filter(Boolean).join(" · ") || "Not provided"}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>BMI</span>
+            <strong>{patient.demographics?.bmi || "Not provided"}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Allergies</span>
+            <strong>{patient.allergies?.length ? patient.allergies.join(", ") : "None reported"}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Conditions</span>
+            <strong>{patient.conditions?.length ? patient.conditions.join(", ") : "None reported"}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Current meds</span>
+            <strong>{patient.medications?.length ? patient.medications.map(medicationName).join(", ") : "None listed"}</strong>
+          </div>
+          <div className="clinical-context-row">
+            <span>Assessment</span>
+            <strong>{latestAssessment?.submitted_at ? formatContextDateTime(latestAssessment.submitted_at) : "Not available"}</strong>
+          </div>
+        </div>
+        {latestAssessmentAnswer ? (
+          <div className="clinical-context-note">
+            <span>{latestAssessmentAnswer.label}</span>
+            <strong>{latestAssessmentAnswer.value}</strong>
+          </div>
+        ) : null}
+      </section>
+
+      {facts.length ? (
+        <section className="clinical-context-section">
+          <h4>Known clinical facts</h4>
+          <div className="clinical-context-grid">
+            {facts.map((fact) => (
+              <div className="clinical-context-row" key={fact.label}>
+                <span>{fact.label}</span>
+                <strong>{fact.value}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="clinical-context-section">
+        <h4>Prescriptions</h4>
+        {prescriptions.length ? prescriptions.slice(0, 6).map((item, index) => (
+          <div className="clinical-file-item" key={item.id || index}>
+            <strong>{prescriptionTitle(item)}</strong>
+            <span>{prescriptionMeta(item) || "Prescription details not available"}</span>
+          </div>
+        )) : <p className="clinical-file-empty">No prescription history found.</p>}
+      </section>
+
+      <section className="clinical-context-section">
+        <h4>Medication and delivery</h4>
+        {deliveredMedications.length ? deliveredMedications.slice(0, 5).map((item, index) => (
+          <div className="clinical-file-item" key={item.order_id || index}>
+            <strong>{formatMedicationItems(item.items)}</strong>
+            <span>{deliveryMeta(item) || "Delivery status not available"}</span>
+          </div>
+        )) : <p className="clinical-file-empty">No delivered medication found.</p>}
+      </section>
+
+      <section className="clinical-context-section">
+        <h4>Visit history</h4>
+        {visits.length ? visits.slice(0, 6).map((item, index) => (
+          <div className="clinical-file-item" key={item.id || index}>
+            <strong>{item.title || "Visit"}</strong>
+            <span>{[formatContextDateTime(item.date) || item.date, item.note].filter(Boolean).join(" · ")}</span>
+          </div>
+        )) : <p className="clinical-file-empty">No visit history found.</p>}
+      </section>
+
+      <section className="clinical-context-section">
+        <h4>Refill history</h4>
+        {refills.length ? refills.slice(0, 6).map((item, index) => (
+          <div className="clinical-file-item" key={item.id || index}>
+            <strong>{formatSubscriptionStatus(item.status || "Refill")}</strong>
+            <span>{formatContextDateTime(item.submitted_at || item.reviewed_at) || "Date not available"}</span>
+          </div>
+        )) : <p className="clinical-file-empty">No refill history found.</p>}
+      </section>
+
+      <section className="clinical-context-actions">
         <button
           type="button"
           className="btn-primary"
           disabled={!canPrescribe}
-          title={canPrescribe ? "Create or update prescription" : prescribeDisabledReason}
           onClick={() => canPrescribe && onPrescribe(patientId, prescribeTrackKey, patientCustomerId)}
         >
           Prescribe
         </button>
-      </div>
-    </div>
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={!canOpenChart}
+          onClick={() => canOpenChart && onOpenPatient(chartPatientId, patientCustomerId)}
+        >
+          Open patient
+        </button>
+      </section>
+
+      {editingProfile ? (
+        <ClinicalProfileModal
+          patient={patient}
+          onClose={() => setEditingProfile(false)}
+          onSaved={onPatientFileUpdated}
+        />
+      ) : null}
+    </aside>
   );
 }
 
@@ -267,8 +806,11 @@ function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, pres
   const [channelContext, setChannelContext] = useStateC(null);
   const [contextLoading, setContextLoading] = useStateC(false);
   const [contextError, setContextError] = useStateC("");
+  const [patientFile, setPatientFile] = useStateC(null);
+  const [patientFileLoading, setPatientFileLoading] = useStateC(false);
 
   const prescribablePatient = activePrescribablePatient || directoryPrescribablePatient;
+  const patientFileId = channelContext?.patient?.id || fallbackPatient?.id || channel?.data?.patient_id || channel?.data?.patientId || "";
 
   useEffectC(() => {
     let cancelled = false;
@@ -278,9 +820,20 @@ function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, pres
         return;
       }
       try {
-        const data = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?doctor_id=${DOCTOR_ID}&limit=100&offset=0`);
+        const fallbackPatient = channelPatient(channel, client.userID);
+        const params = new URLSearchParams({
+          doctor_id: DOCTOR_ID,
+          limit: fallbackPatient?.id || fallbackPatient?.customer_id ? "10" : "100",
+          offset: "0",
+        });
+        if (fallbackPatient?.id) params.set("patient_id", fallbackPatient.id);
+        if (fallbackPatient?.customer_id) params.set("customer_id", fallbackPatient.customer_id);
+        const data = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?${params.toString()}`);
         const mappedPatients = (data.patients || []).map(mapPrescribablePatient);
-        if (!cancelled) setActivePrescribablePatient(findChannelPatient(channel, client.userID, mappedPatients) || null);
+        if (!cancelled) {
+          const exactMatch = fallbackPatient?.id || fallbackPatient?.customer_id ? mappedPatients[0] || null : null;
+          setActivePrescribablePatient(exactMatch || findChannelPatient(channel, client.userID, mappedPatients) || null);
+        }
       } catch {
         if (!cancelled) setActivePrescribablePatient(null);
       }
@@ -317,28 +870,66 @@ function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, pres
     return () => { cancelled = true; };
   }, [channel?.id]);
 
+  useEffectC(() => {
+    let cancelled = false;
+    const loadPatientFile = async () => {
+      if (!patientFileId) {
+        setPatientFile(null);
+        return;
+      }
+      setPatientFileLoading(true);
+      try {
+        const data = await fetchPatientFile(patientFileId);
+        if (!cancelled) setPatientFile(data);
+      } catch {
+        if (!cancelled) setPatientFile(null);
+      } finally {
+        if (!cancelled) setPatientFileLoading(false);
+      }
+    };
+
+    loadPatientFile();
+    return () => { cancelled = true; };
+  }, [patientFileId]);
+
   if (!channel) return <EmptyChatPanel />;
 
   return (
     <div className="stream-kit-conversation">
       <Channel channel={channel}>
-        <Window>
-          <div className="stream-kit-header">
-            <ClinicalChatHeader
-              channel={channel}
-              context={channelContext}
-              contextError={contextError}
-              contextLoading={contextLoading}
-              fallbackPatient={fallbackPatient}
-              onOpenPatient={onOpenPatient}
-              onPrescribe={onPrescribe}
-              prescribablePatient={prescribablePatient}
-            />
+        <div className="stream-kit-chat-workspace">
+          <div className="stream-kit-thread-pane">
+            <Window>
+              <div className="stream-kit-header">
+                <ClinicalChatHeader
+                  channel={channel}
+                  context={channelContext}
+                  contextError={contextError}
+                  contextLoading={contextLoading}
+                  fallbackPatient={fallbackPatient}
+                  onOpenPatient={onOpenPatient}
+                  onPrescribe={onPrescribe}
+                  prescribablePatient={prescribablePatient}
+                />
+              </div>
+              <MessageList />
+              <MessageComposer focus />
+            </Window>
+            <Thread />
           </div>
-          <MessageList />
-          <MessageComposer focus />
-        </Window>
-        <Thread />
+          <ClinicalContextPanel
+            channel={channel}
+            context={channelContext}
+            contextLoading={contextLoading}
+            fallbackPatient={fallbackPatient}
+            onOpenPatient={onOpenPatient}
+            onPatientFileUpdated={setPatientFile}
+            onPrescribe={onPrescribe}
+            patientFile={patientFile}
+            patientFileLoading={patientFileLoading}
+            prescribablePatient={prescribablePatient}
+          />
+        </div>
       </Channel>
     </div>
   );
