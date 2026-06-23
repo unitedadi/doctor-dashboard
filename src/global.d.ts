@@ -18,6 +18,7 @@ declare global {
     DD_UI: {
       Sidebar: ComponentType<Record<string, unknown>>
     }
+    DD_ClinicalInboxView: ComponentType<Record<string, unknown>>
     DD_AppointmentsView: ComponentType<Record<string, unknown>>
     DD_PatientsView: ComponentType<Record<string, unknown>>
     DD_ChatView: ComponentType<Record<string, unknown>>

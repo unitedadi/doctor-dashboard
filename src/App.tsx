@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { StreamChat } from 'stream-chat'
 import './data.js'
 import './components/shell.jsx'
+import './components/clinicalInbox.jsx'
 import './components/appointments.jsx'
 import './components/patients.jsx'
 import './components/chat.jsx'
@@ -51,10 +52,12 @@ function App() {
   const [route, setRoute] = useState('appointments')
   const [routeContext, setRouteContext] = useState<Record<string, string>>({})
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
+  const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
   const [pendingRefills, setPendingRefills] = useState<number | null>(null)
 
   const Sidebar = window.DD_UI.Sidebar
+  const ClinicalInboxView = window.DD_ClinicalInboxView
   const AppointmentsView = window.DD_AppointmentsView
   const PatientsView = window.DD_PatientsView
   const ChatView = window.DD_ChatView
@@ -185,10 +188,32 @@ function App() {
         active={route}
         onNav={(id: string) => go(id)}
         appointmentCount={appointmentCount}
+        clinicalInboxCount={clinicalInboxCount}
         unreadChats={unreadChats}
         pendingRefills={pendingRefills}
       />
       <main className="main">
+        {route === 'clinical-inbox' && (
+          <ClinicalInboxView
+            onCountChange={setClinicalInboxCount}
+            onOpenPatient={(id: string, customerId?: string) => go('patients', { patientId: id || '', customerId: customerId || '' })}
+            onOpenChat={(id: string) => go('chat', { patientId: id || '' })}
+            onPrescribeRx={(task: any) => go('prescribe', {
+              patientId: task?.patientId || '',
+              customerId: task?.customerId || '',
+              trackKey: task?.trackKey || 'weight-loss',
+              refillRequestId: task?.refillRequestId || '',
+            })}
+            onPrescribeQuickWlp={(task: any) => go('prescribe', {
+              quickWlpLeadId: task?.quickWlpLeadId || task?.patientId || '',
+              quickWlpName: task?.patientName || '',
+              quickWlpPhone: task?.phone || '',
+              quickWlpWhatsapp: task?.phone || '',
+              quickWlpEmail: task?.email || '',
+              quickWlpDoctorId: task?.doctorId || DOCTOR_ID,
+            })}
+          />
+        )}
         {route === 'appointments' && (
           <AppointmentsView
             onOpenPatient={(id: string) => go('patients', { patientId: id })}
