@@ -835,12 +835,11 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   <div className="workbench-actions">
                     {selected.meetingLink && appointmentStatusBucket(selected.status) === "upcoming" && (
                       <>
-                        <button className="dd-btn-block" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
-                          {joiningId === selected.id ? "Opening session..." : "Join video consultation"}
+                        <button className="workbench-action-button primary" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
+                          {I.video}<span>{joiningId === selected.id ? "Opening session..." : "Join video consultation"}</span>
                         </button>
                         <button
-                          className="btn-ghost"
-                          style={{ width: "100%", justifyContent: "center" }}
+                          className="workbench-action-button secondary"
                           onClick={() => setCallConfirm(selected)}
                           disabled={callingId === selected.id}
                         >
@@ -850,8 +849,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     )}
                     {canCompleteSelected && (
                       <button
-                        className="btn-ghost"
-                        style={{ width: "100%", justifyContent: "center" }}
+                        className="workbench-action-button secondary"
                         onClick={() => setCompleteConfirm(selected)}
                         disabled={completingId === selected.id}
                       >
@@ -860,8 +858,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     )}
                     {canNoShowSelected && (
                       <button
-                        className="btn-ghost danger"
-                        style={{ width: "100%", justifyContent: "center" }}
+                        className="workbench-action-button danger"
                         onClick={() => setNoShowConfirm(selected)}
                         disabled={noShowingId === selected.id}
                       >
@@ -869,12 +866,12 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                       </button>
                     )}
                     {canPrescribeSelectedQuickWlp && (
-                      <button className="dd-btn-block" onClick={() => onPrescribeQuickWlp?.(selected)}>
+                      <button className="workbench-action-button primary" onClick={() => onPrescribeQuickWlp?.(selected)}>
                         {I.pill}<span>Issue Quick WLP prescription</span>
                       </button>
                     )}
                     {canPrescribeSelectedRx && (
-                      <button className="dd-btn-block" onClick={() => onPrescribeRx?.(selected)}>
+                      <button className="workbench-action-button primary" onClick={() => onPrescribeRx?.(selected)}>
                         {I.pill}<span>Issue RX prescription</span>
                       </button>
                     )}
@@ -889,9 +886,9 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 <section className="workbench-section workbench-section-access">
                   <div className="workbench-section-title">Patient access</div>
                   <div className="workbench-access-actions">
-                    <button className="btn-ghost" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
+                    <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
                     {selected.chat?.available ? (
-                      <button className="btn-ghost" onClick={() => onOpenChat(selectedPatient.id)}>
+                      <button className="workbench-action-button secondary" onClick={() => onOpenChat(selectedPatient.id)}>
                         {I.message}<span>Message {selectedPatient.name.split(" ")[0]}</span>
                       </button>
                     ) : (

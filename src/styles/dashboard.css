@@ -561,18 +561,72 @@ body {
 .workbench-actions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 7px;
 }
 
 .workbench-access-actions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 7px;
 }
 
-.workbench-access-actions .btn-ghost {
+.workbench-action-button {
   width: 100%;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(23,59,61,0.11);
+  background: rgba(255,255,255,0.38);
+  color: var(--dd-text-primary);
+  cursor: pointer;
+  font: 400 13px/1 var(--dd-font);
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.workbench-action-button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.workbench-action-button:hover {
+  background: rgba(247,238,224,0.54);
+  border-color: rgba(23,59,61,0.18);
+}
+
+.workbench-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.workbench-action-button.primary {
+  border-color: rgba(23,59,61,0.18);
+  background: var(--dd-accent);
+  color: var(--dd-on-dark-1);
+}
+
+.workbench-action-button.primary:hover {
+  background: #0f3335;
+  border-color: rgba(23,59,61,0.18);
+}
+
+.workbench-action-button.secondary {
+  color: var(--dd-text-primary);
+}
+
+.workbench-action-button.danger {
+  border-color: rgba(159,45,45,0.15);
+  background: rgba(159,45,45,0.045);
+  color: #8f2b2b;
+}
+
+.workbench-action-button.danger:hover {
+  border-color: rgba(159,45,45,0.24);
+  background: rgba(159,45,45,0.075);
 }
 
 .workbench-note {
