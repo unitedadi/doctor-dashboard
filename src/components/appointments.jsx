@@ -213,10 +213,10 @@ function actionState(appointment) {
 function humanizeStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "no_show") return "No show";
-  if (normalized === "upcoming" || normalized === "booked") return "Scheduled";
+  if (normalized === "upcoming" || normalized === "booked") return "Upcoming";
   if (normalized === "completed") return "Completed";
   if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
-  return toTitle(status || "Scheduled");
+  return toTitle(status || "Upcoming");
 }
 
 function statusTone(status) {
@@ -224,6 +224,21 @@ function statusTone(status) {
   if (normalized === "completed") return "done";
   if (normalized === "no_show" || normalized === "cancelled" || normalized === "canceled") return "risk";
   return "active";
+}
+
+const APPOINTMENT_STATUS_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "completed", label: "Completed" },
+  { key: "no_show", label: "No-show" },
+];
+
+function appointmentStatusBucket(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "completed") return "completed";
+  if (normalized === "no_show") return "no_show";
+  if (normalized === "cancelled" || normalized === "canceled") return "cancelled";
+  return "upcoming";
 }
 
 function nextStepLabel(appointment) {
@@ -250,20 +265,12 @@ function sourceTagLabel(value) {
   return toTitle(normalized);
 }
 
-function appointmentTags(appointment) {
-  const tags = [];
+function appointmentContextLabel(appointment) {
   if (appointment.source === "quickwlp") {
-    tags.push({ key: "quickwlp", label: "Quick WLP", tone: "primary" });
-    if (appointment.sourceTag) {
-      tags.push({ key: "source", label: sourceTagLabel(appointment.sourceTag), tone: "soft" });
-    }
-  } else {
-    tags.push({ key: "rx", label: "Rx Video", tone: "primary" });
-    if (appointment.trackKey) {
-      tags.push({ key: "track", label: appointment.trackKey === "weight-loss" ? "Weight Loss" : toTitle(appointment.trackKey), tone: "soft" });
-    }
+    return ["Quick WLP", appointment.sourceTag ? sourceTagLabel(appointment.sourceTag) : ""].filter(Boolean).join(" · ");
   }
-  return tags;
+  const track = appointment.trackKey === "weight-loss" ? "Weight Loss" : toTitle(appointment.trackKey || "Rx");
+  return `${track} · Rx`;
 }
 
 function InfoRow({ label, value }) {
@@ -420,6 +427,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [profilesLoading, setProfilesLoading] = useStateA(false);
   const [profilesLoaded, setProfilesLoaded] = useStateA(false);
   const [callToast, setCallToast] = useStateA("");
+  const [statusFilter, setStatusFilter] = useStateA("all");
 
   const loadAppointments = React.useCallback(async () => {
     setLoading(true);
@@ -487,16 +495,36 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const canNoShowSelected = selectedActionState.canNoShow;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
   const canPrescribeSelectedQuickWlp = selectedIsQuickWlp && selectedActionState.canPrescribe && !blocksQuickWlpPrescription(selected.status);
-  const upcomingCount = today.filter((appointment) => appointment.status === "upcoming").length;
-  const videoCount = today.filter((appointment) => appointment.type === "Video call").length;
-  const bookedMinutes = today.reduce((sum, appointment) => sum + (appointment.duration || 0), 0);
-  const activeAppointmentId = today.find((appointment) => appointment.status === "upcoming")?.id || today[0]?.id;
+  const statusCounts = useMemoA(() => {
+    return today.reduce((counts, appointment) => {
+      const bucket = appointmentStatusBucket(appointment.status);
+      counts.all += 1;
+      if (bucket === "upcoming" || bucket === "completed" || bucket === "no_show") {
+        counts[bucket] += 1;
+      }
+      return counts;
+    }, { all: 0, upcoming: 0, completed: 0, no_show: 0 });
+  }, [today]);
+  const visibleAppointments = useMemoA(() => {
+    if (statusFilter === "all") return today;
+    return today.filter((appointment) => appointmentStatusBucket(appointment.status) === statusFilter);
+  }, [statusFilter, today]);
+  const activeFilterLabel = APPOINTMENT_STATUS_FILTERS.find((filter) => filter.key === statusFilter)?.label || "appointments";
+  const upcomingCount = statusCounts.upcoming;
+  const activeAppointmentId = visibleAppointments.find((appointment) => appointmentStatusBucket(appointment.status) === "upcoming")?.id || null;
   const dateStr = formatScreenDate(selectedDate);
   const sectionDate = formatSectionDate(selectedDate);
   const isToday = selectedDate === currentDate;
+
   useEffectA(() => {
     if (selected && selected.source !== "quickwlp") loadPatientProfiles();
   }, [loadPatientProfiles, selected?.id, selected?.source]);
+
+  useEffectA(() => {
+    if (!visibleAppointments.length) return;
+    if (visibleAppointments.some((appointment) => appointment.id === selectedId)) return;
+    setSelectedId(visibleAppointments[0].id);
+  }, [selectedId, visibleAppointments]);
 
   const joinAppointment = async (appointment, event) => {
     event.stopPropagation();
@@ -615,8 +643,6 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
           <div className="today-stat-row">
             <div className="stat"><div className="v">{loading ? "..." : today.length}</div><div className="l">Appointments</div></div>
             <div className="stat"><div className="v">{loading ? "..." : upcomingCount}</div><div className="l">Upcoming</div></div>
-            <div className="stat"><div className="v">{loading ? "..." : videoCount}</div><div className="l">Video visits</div></div>
-            <div className="stat"><div className="v">{loading ? "..." : formatDuration(bookedMinutes)}</div><div className="l">Booked time</div></div>
           </div>
 
           <div className="section-hdr">
@@ -634,6 +660,20 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
             </div>
           </div>
 
+          <div className="apt-status-filters" aria-label="Appointment status filters">
+            {APPOINTMENT_STATUS_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                className={`apt-filter-chip ${statusFilter === filter.key ? "active" : ""} ${filter.key}`}
+                onClick={() => setStatusFilter(filter.key)}
+              >
+                <span>{filter.label}</span>
+                <strong>{loading ? "..." : statusCounts[filter.key]}</strong>
+              </button>
+            ))}
+          </div>
+
           {error && (
             <div className="api-state">
               <span>{error}</span>
@@ -649,9 +689,11 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
             </div>
           ) : today.length === 0 ? (
             <div className="empty-state apt-empty">No appointments scheduled for this date</div>
+          ) : visibleAppointments.length === 0 ? (
+            <div className="empty-state apt-empty">No {activeFilterLabel.toLowerCase()} appointments for this date</div>
           ) : (
             <div className="timeline">
-              {today.map((a) => {
+              {visibleAppointments.map((a) => {
                 const isNow = a.id === activeAppointmentId;
                 const isSel = a.id === selectedId;
                 return (
@@ -660,30 +702,25 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     <div className="dot-mark"></div>
                     <div className={"apt-card" + (isSel ? " selected" : "") + (isNow && !isSel ? " now-card" : "")}
                          onClick={() => setSelectedId(a.id)}>
-                      <Avatar initials={a.patient.initials} name={a.patient.name} size="md" />
-                      <div style={{ minWidth: 0 }}>
-                        <div className="apt-name">{a.patient.name}</div>
-                        <div className="apt-meta">
-                          {a.patient.phone && <span>{a.patient.phone}</span>}
-                          {a.patient.phone && <span className="dot-sep" />}
-                          <span>{a.duration} min</span>
-                          <span className="dot-sep" />
-                          <span>{a.location}</span>
+                      <div className="apt-row-main">
+                        <div className="apt-row-primary">
+                          <div className="apt-name">{a.patient.name}</div>
+                          <span className={`apt-status apt-row-chip ${statusTone(a.status)}`}>{humanizeStatus(a.status)}</span>
                         </div>
-                      </div>
-                      <div className="apt-actions">
-                        <div className="apt-source-tags">
-                          {appointmentTags(a).map((tag) => (
-                            <span key={tag.key} className={`apt-source-tag ${tag.tone}`}>{tag.label}</span>
-                          ))}
+                        <div className="apt-row-secondary">
+                          <div className="apt-meta">
+                            {a.patient.phone && <span>{a.patient.phone}</span>}
+                            {a.patient.phone && <span className="dot-sep" />}
+                            <span>{appointmentContextLabel(a)}</span>
+                          </div>
+                          <div className="apt-actions">
+                            {a.meetingLink && a.status === "upcoming" && (
+                              <button className="btn-ghost apt-join-btn" onClick={(event) => joinAppointment(a, event)} disabled={joiningId === a.id}>
+                                {I.video}<span>{joiningId === a.id ? "Opening" : "Join"}</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <span className={`apt-status ${statusTone(a.status)}`}>{humanizeStatus(a.status)}</span>
-                        <span className="svc-tag">{a.service}</span>
-                        {a.meetingLink && a.status === "upcoming" && (
-                          <button className="btn-ghost apt-join-btn" onClick={(event) => joinAppointment(a, event)} disabled={joiningId === a.id}>
-                            {I.video}<span>{joiningId === a.id ? "Opening" : "Join"}</span>
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
