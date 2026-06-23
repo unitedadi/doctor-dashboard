@@ -34,6 +34,7 @@ const DOCTOR_ACCOUNT_EMAILS = {
   "dr.sami@dardoc.com": "mp_sami",
   "sami@dardoc.com": "mp_sami",
   "aditya.yadav@dardoc.com": "mp_sami",
+  "keswin@dardoc.com": "mp_sami",
   "dr.marwa@dardoc.com": "mp_marwa",
 };
 
