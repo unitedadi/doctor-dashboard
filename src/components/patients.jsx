@@ -118,6 +118,19 @@ function updateClinicalProfile(patientId, body) {
   });
 }
 
+function fetchDoctorNotes(patientId) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/chart?doctor_id=${DOCTOR_ID}`)
+    .then((chart) => ({ notes: asArray(chart.notes) }));
+}
+
+function createDoctorNote(patientId, body) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/notes?doctor_id=${DOCTOR_ID}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function firstUsefulAnswer(answers) {
   if (!answers) return null;
   const entries = Object.entries(answers).filter(([, value]) => {
@@ -277,6 +290,14 @@ function prescriptionStatusLabel(prescription) {
   return titleCase(prescription?.status || "Issued");
 }
 
+function actorRoleLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "Clinical team";
+  if (normalized === "SUPER_ADMIN") return "Super admin";
+  if (normalized === "CLINICAL_ADMIN") return "Clinical admin";
+  return titleCase(normalized);
+}
+
 function orderItemsLabel(items) {
   return asArray(items)
     .map((item) => `${item.name || "Medication"}${Number(item.quantity || 1) > 1 ? ` x${Number(item.quantity || 1)}` : ""}`)
@@ -373,6 +394,7 @@ function mapPatient(item) {
 
 function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe, onAmendPrescription, embedded = false }) {
   const { I, Avatar, Topbar } = window.DD_UI;
+  const PatientChart = window.DD_PatientChart;
   const [patients, setPatients] = useStateP([]);
   const [search, setSearch] = useStateP("");
   const [filter, setFilter] = useStateP("all");
@@ -554,7 +576,23 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
         </div>
 
         <div className="patient-pane dd-scroll fade-in" key={p?.id || "empty"}>
-          {loading ? <div className="empty-state">Loading patient profile...</div> : p ? <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={loadPatients} /> : <div className="empty-state">Select a patient</div>}
+          {loading ? (
+            <div className="empty-state">Loading patient profile...</div>
+          ) : p && PatientChart ? (
+            <PatientChart
+              patientId={p.id}
+              mode="full"
+              focus="patient-hub"
+              context={{ prescribable: p.prescribe }}
+              onMessage={(id) => onMessage?.(id)}
+              onPrescribe={({ patientId, customerId, trackKey, mode }) => onPrescribe?.(patientId, customerId, trackKey, mode)}
+              onAmendPrescription={onAmendPrescription}
+            />
+          ) : p ? (
+            <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={loadPatients} />
+          ) : (
+            <div className="empty-state">Select a patient</div>
+          )}
         </div>
       </div>
     </>
@@ -943,6 +981,99 @@ function ChartTimeline({ visits, prescriptions, assessments, deliveries, refills
   );
 }
 
+function DoctorNotesSection({ patientId }) {
+  const [notes, setNotes] = useStateP([]);
+  const [draft, setDraft] = useStateP("");
+  const [loading, setLoading] = useStateP(true);
+  const [saving, setSaving] = useStateP(false);
+  const [error, setError] = useStateP("");
+
+  const loadNotes = React.useCallback(async () => {
+    if (!patientId) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await fetchDoctorNotes(patientId);
+      setNotes(asArray(data.notes));
+    } catch {
+      setError("Could not load doctor notes.");
+    } finally {
+      setLoading(false);
+    }
+  }, [patientId]);
+
+  useEffectP(() => {
+    setDraft("");
+    loadNotes();
+  }, [loadNotes]);
+
+  const save = async () => {
+    const noteText = draft.trim();
+    if (noteText.length < 2) {
+      setError("Write a note before saving.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const data = await createDoctorNote(patientId, {
+        note_text: noteText,
+        context_type: "PATIENT_HUB",
+      });
+      setNotes((current) => [data.note, ...current]);
+      setDraft("");
+    } catch {
+      setError("Could not save doctor note.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ChartSection
+      title="Doctor notes"
+      subtitle="Internal notes for clinical handover and follow-up context."
+      className="doctor-notes-section"
+    >
+      <div className="doctor-note-composer">
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Add a concise internal note for the next clinical decision..."
+          maxLength={4000}
+          rows={3}
+        />
+        <div className="doctor-note-composer-foot">
+          <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
+          <button type="button" className="btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Saving" : "Save note"}
+          </button>
+        </div>
+      </div>
+
+      {error ? <div className="doctor-note-error">{error}</div> : null}
+
+      {loading ? (
+        <EmptyInline>Loading doctor notes...</EmptyInline>
+      ) : notes.length ? (
+        <div className="doctor-note-list">
+          {notes.map((note) => (
+            <article className="doctor-note-card" key={note.note_id}>
+              <div className="doctor-note-meta">
+                <strong>{note.actor?.display_name || "Clinical team"}</strong>
+                <span>{actorRoleLabel(note.actor?.actor_type)} · {formatDateTime(note.created_at)}</span>
+              </div>
+              <p>{note.note_text}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyInline>No doctor notes yet.</EmptyInline>
+      )}
+    </ChartSection>
+  );
+}
+
 function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfileSaved }) {
   const { I, Avatar } = window.DD_UI;
   const [editingProfile, setEditingProfile] = useStateP(false);
@@ -1072,6 +1203,8 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
 
         <div className="patient-emr-grid">
           <div className="patient-emr-main">
+            <DoctorNotesSection patientId={p.id} />
+
             <ChartSection
               title="Treatment and prescribing"
               subtitle="Active medication and prescriptions that still need clinical attention."

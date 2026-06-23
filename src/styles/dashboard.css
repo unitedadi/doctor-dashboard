@@ -1447,6 +1447,356 @@ body {
   margin: 0;
 }
 
+.patient-chart-unified {
+  width: 100%;
+  min-width: 0;
+}
+
+.patient-chart-single {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.patient-chart-context-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.patient-chart-compact {
+  padding: 0;
+}
+
+.patient-chart-compact .patient-emr-head {
+  grid-template-columns: 1fr;
+  margin: 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--dd-divider);
+}
+
+.patient-chart-compact .patient-emr-identity h2 {
+  font-size: 19px;
+}
+
+.patient-chart-compact .patient-emr-identity .meta {
+  font-size: 12px;
+}
+
+.patient-chart-compact .patient-chart-section {
+  border: 0;
+  border-top: 1px solid rgba(23,59,61,0.07);
+  border-radius: 0;
+  background: transparent;
+  padding: 16px 20px;
+}
+
+.patient-chart-compact .patient-chart-section-head {
+  margin-bottom: 12px;
+}
+
+.patient-chart-compact .patient-lifecycle-strip {
+  grid-template-columns: 1fr;
+}
+
+.patient-chart-compact .patient-medication-row,
+.patient-chart-compact .patient-delivery-row {
+  grid-template-columns: 1fr;
+}
+
+.patient-chart-appointment,
+.patient-chart-task {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.patient-chart-appointment .patient-emr-head,
+.patient-chart-task .patient-emr-head {
+  margin: 0;
+  padding: 0 0 14px;
+}
+
+.patient-chart-appointment .patient-emr-actions,
+.patient-chart-task .patient-emr-actions {
+  display: none;
+}
+
+.patient-chart-appointment .patient-chart-section,
+.patient-chart-task .patient-chart-section {
+  padding: 14px;
+}
+
+.patient-chart-appointment .patient-lifecycle-strip,
+.patient-chart-task .patient-lifecycle-strip {
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+
+.appointment-clinical-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(23,59,61,0.1);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.58);
+  padding: 14px;
+}
+
+.appointment-clinical-lifecycle {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(23,59,61,0.06);
+}
+
+.appointment-lifecycle-row {
+  display: grid;
+  grid-template-columns: 10px minmax(82px, 0.62fr) minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(255,252,246,0.96);
+}
+
+.appointment-lifecycle-row + .appointment-lifecycle-row {
+  border-top: 1px solid rgba(23,59,61,0.07);
+}
+
+.appointment-lifecycle-row .workbench-check-dot {
+  margin: 0;
+}
+
+.appointment-lifecycle-row.done .workbench-check-dot {
+  background: #2F6D45;
+}
+
+.appointment-lifecycle-row.current .workbench-check-dot {
+  background: var(--dd-accent);
+}
+
+.appointment-lifecycle-row.risk .workbench-check-dot {
+  background: #9f2d2d;
+}
+
+.appointment-lifecycle-row strong {
+  min-width: 0;
+  color: var(--dd-text-primary);
+  font: 400 12px/1.3 var(--dd-font);
+}
+
+.appointment-lifecycle-row em {
+  min-width: 0;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.appointment-clinical-block {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(23,59,61,0.08);
+}
+
+.appointment-clinical-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.appointment-clinical-head span {
+  display: block;
+  color: rgba(23,59,61,0.45);
+  font: 400 10px/1 var(--dd-font);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.appointment-clinical-head strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+}
+
+.appointment-clinical-head .btn-ghost {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font: 400 12px/1 var(--dd-font);
+}
+
+.appointment-note-preview {
+  margin: 0;
+  border-radius: 10px;
+  background: rgba(23,59,61,0.045);
+  padding: 10px 11px;
+}
+
+.appointment-note-preview div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.appointment-note-preview strong {
+  color: var(--dd-text-primary);
+  font: 400 12px/1.3 var(--dd-font);
+}
+
+.appointment-note-preview span {
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.3 var(--dd-font);
+}
+
+.appointment-note-preview p {
+  margin: 7px 0 0;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+  white-space: pre-wrap;
+}
+
+.appointment-note-composer {
+  display: grid;
+  gap: 9px;
+}
+
+.appointment-note-composer textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgba(23,59,61,0.13);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.72);
+  color: var(--dd-text-primary);
+  font: 400 13px/1.45 var(--dd-font);
+  outline: none;
+  padding: 11px 12px;
+}
+
+.appointment-note-composer textarea:focus {
+  border-color: rgba(31,143,105,0.44);
+  background: rgba(255,255,255,0.92);
+}
+
+.appointment-note-composer > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.appointment-note-composer span {
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.3 var(--dd-font);
+}
+
+.appointment-note-composer .btn-primary {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font: 500 12px/1 var(--dd-font);
+}
+
+.appointment-summary-row {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border-radius: 10px;
+  background: rgba(23,59,61,0.045);
+  padding: 10px 11px;
+}
+
+.appointment-summary-row strong {
+  min-width: 0;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.appointment-summary-row span {
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.task-clinical-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(23,59,61,0.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.52);
+  padding: 14px;
+}
+
+.chat-clinical-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 0;
+  background: transparent;
+}
+
+.chat-clinical-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid rgba(23,59,61,0.08);
+}
+
+.chat-clinical-head .patient-emr-identity {
+  gap: 12px;
+}
+
+.chat-clinical-head .patient-emr-identity h2 {
+  font: 400 17px/1.2 var(--dd-font);
+}
+
+.chat-clinical-head .patient-emr-identity .meta {
+  margin-top: 4px;
+  font: 400 12px/1.35 var(--dd-font);
+}
+
+.chat-clinical-head .btn-ghost {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font: 400 12px/1 var(--dd-font);
+}
+
+.chat-clinical-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 18px;
+}
+
+.chat-clinical-facts .patient-chart-fact {
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.42);
+}
+
+.chat-clinical-card .appointment-clinical-lifecycle,
+.chat-clinical-card .appointment-clinical-block {
+  margin-inline: 18px;
+}
+
+.workbench-patient-chart .patient-chart-section,
+.clinical-detail-patient-chart .patient-chart-section {
+  background: rgba(255,255,255,0.48);
+}
+
 .patient-hero {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1555,6 +1905,10 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
 }
 
+.patient-chart-full .patient-lifecycle-strip {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .patient-chart-fact span {
   display: block;
   color: rgba(23,59,61,0.44);
@@ -1576,6 +1930,68 @@ body {
 
 .patient-emr-status .patient-chart-fact strong,
 .patient-profile-facts .patient-chart-fact strong {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.patient-care-state-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 2.1fr);
+  gap: 10px;
+  margin: 16px 0 18px;
+  align-items: stretch;
+}
+
+.patient-care-state-primary,
+.patient-care-state-grid {
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.58);
+}
+
+.patient-care-state-primary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 16px;
+}
+
+.patient-care-state-primary span {
+  color: rgba(23,59,61,0.44);
+  font: 400 10px/1 var(--dd-font);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.patient-care-state-primary strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--dd-text-primary);
+  font: 400 18px/1.28 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.patient-care-state-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.patient-care-state-grid .patient-chart-fact {
+  border-right: 1px solid rgba(23,59,61,0.08);
+  background: transparent;
+}
+
+.patient-care-state-grid .patient-chart-fact:last-child {
+  border-right: 0;
+}
+
+.patient-care-state-grid .patient-chart-fact strong,
+.patient-chart-full .patient-lifecycle-strip .rx-lifecycle-step strong,
+.patient-chart-full .patient-lifecycle-strip .rx-lifecycle-step em {
   overflow: visible;
   overflow-wrap: anywhere;
   text-overflow: clip;
@@ -1749,6 +2165,103 @@ body {
   color: var(--dd-text-tertiary);
   font: 400 12px/1.3 var(--dd-font);
   text-align: right;
+}
+
+.doctor-notes-section {
+  background: rgba(255,255,255,0.66);
+}
+
+.doctor-note-composer {
+  display: grid;
+  gap: 10px;
+}
+
+.doctor-note-composer textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  border: 1px solid rgba(23,59,61,0.13);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.72);
+  color: var(--dd-text-primary);
+  font: 400 13px/1.5 var(--dd-font);
+  outline: none;
+  padding: 12px 13px;
+}
+
+.doctor-note-composer textarea:focus {
+  border-color: rgba(31,143,105,0.44);
+  background: rgba(255,255,255,0.92);
+}
+
+.doctor-note-composer textarea::placeholder {
+  color: var(--dd-text-tertiary);
+}
+
+.doctor-note-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doctor-note-composer-foot span {
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.3 var(--dd-font);
+}
+
+.doctor-note-composer-foot .btn-primary {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 8px;
+  font: 500 12px/1 var(--dd-font);
+}
+
+.doctor-note-error {
+  margin-top: 10px;
+  color: #9f2d2d;
+  font: 400 12px/1.4 var(--dd-font);
+}
+
+.doctor-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.doctor-note-card {
+  margin: 0;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.48);
+  padding: 13px 14px;
+}
+
+.doctor-note-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.doctor-note-meta strong {
+  color: var(--dd-text-primary);
+  font: 400 13px/1.3 var(--dd-font);
+}
+
+.doctor-note-meta span {
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.3 var(--dd-font);
+}
+
+.doctor-note-card p {
+  margin: 9px 0 0;
+  color: var(--dd-text-secondary);
+  font: 400 13px/1.5 var(--dd-font);
+  white-space: pre-wrap;
 }
 
 .btn-ghost {
@@ -1997,6 +2510,10 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .patient-care-state-panel {
+    grid-template-columns: 1fr;
+  }
+
   .patient-snapshot-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2022,9 +2539,26 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .patient-care-state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-care-state-grid .patient-chart-fact {
+    border-right: 0;
+    border-bottom: 1px solid rgba(23,59,61,0.08);
+  }
+
+  .patient-care-state-grid .patient-chart-fact:last-child {
+    border-bottom: 0;
+  }
+
   .patient-care-event {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .patient-chart-full .patient-lifecycle-strip {
+    grid-template-columns: 1fr;
   }
 
   .patient-delivery-row,
@@ -3795,6 +4329,107 @@ body {
   font: 500 12px/1.35 var(--dd-font);
 }
 
+.clinical-notes-block {
+  border-top: 1px solid rgba(23,59,61,0.05);
+  padding-top: 11px;
+}
+
+.clinical-note-composer {
+  display: grid;
+  gap: 8px;
+}
+
+.clinical-note-composer textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid rgba(23,59,61,0.11);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.58);
+  color: var(--dd-text-primary);
+  font: 400 12px/1.45 var(--dd-font);
+  outline: none;
+  padding: 10px 11px;
+}
+
+.clinical-note-composer textarea:focus {
+  border-color: rgba(31,143,105,0.42);
+  background: rgba(255,255,255,0.82);
+}
+
+.clinical-note-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.clinical-note-composer-foot span {
+  color: rgba(23,59,61,0.42);
+  font: 400 10px/1.2 var(--dd-font);
+}
+
+.clinical-note-composer-foot button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--dd-accent);
+  color: #fff;
+  cursor: pointer;
+  font: 500 11px/1 var(--dd-font);
+  padding: 8px 10px;
+}
+
+.clinical-note-composer-foot button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.clinical-note-error {
+  margin-top: 8px;
+  color: #9f2d2d;
+  font: 400 11px/1.35 var(--dd-font);
+}
+
+.clinical-note-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.clinical-note-item {
+  margin: 0;
+  border: 1px solid rgba(23,59,61,0.06);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.38);
+  padding: 11px 12px;
+}
+
+.clinical-note-item div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.clinical-note-item strong {
+  color: var(--dd-text-primary);
+  font: 400 12px/1.3 var(--dd-font);
+}
+
+.clinical-note-item span {
+  color: rgba(23,59,61,0.42);
+  font: 400 10px/1.3 var(--dd-font);
+}
+
+.clinical-note-item p {
+  margin: 7px 0 0;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+  white-space: pre-wrap;
+}
+
 .clinical-file-item {
   display: flex;
   align-items: center;
@@ -5446,12 +6081,21 @@ body {
   font: 400 12px/1 var(--dd-font);
   padding: 0 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .clinical-inbox-filters button.active {
   background: var(--dd-accent);
   border-color: var(--dd-accent);
   color: white;
+}
+
+.clinical-inbox-filters button strong {
+  color: inherit;
+  font: 500 11px/1 var(--dd-font);
+  opacity: 0.72;
 }
 
 .clinical-task-list {
@@ -5672,6 +6316,62 @@ body {
   font: 400 13px/1.5 var(--dd-font);
 }
 
+.clinical-decision-summary {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 18px;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.5);
+  padding: 15px;
+}
+
+.clinical-decision-summary span,
+.clinical-decision-summary dt {
+  display: block;
+  color: var(--dd-text-tertiary);
+  font: 400 10px/1.2 var(--dd-font);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.clinical-decision-summary h3 {
+  margin: 7px 0 7px;
+  color: var(--dd-text-primary);
+  font: 400 17px/1.3 var(--dd-font);
+  letter-spacing: 0;
+}
+
+.clinical-decision-summary p {
+  margin: 0;
+  color: var(--dd-text-secondary);
+  font: 400 13px/1.5 var(--dd-font);
+}
+
+.clinical-decision-summary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 8px;
+  background: rgba(23,59,61,0.07);
+}
+
+.clinical-decision-summary dl div {
+  min-width: 0;
+  background: rgba(255,252,246,0.96);
+  padding: 11px 12px;
+}
+
+.clinical-decision-summary dd {
+  margin: 6px 0 0;
+  color: var(--dd-text-primary);
+  font: 400 12px/1.4 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
 .clinical-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5708,6 +6408,25 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.clinical-detail-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+
+.clinical-detail-meta-line span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.42);
+  padding: 6px 9px;
 }
 
 .clinical-detail-actions {

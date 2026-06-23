@@ -480,6 +480,7 @@ function mapAppointment(item) {
 function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const PatientChatDrawer = window.DD_PatientChatDrawer;
+  const PatientChart = window.DD_PatientChart;
   const currentDate = useMemoA(() => dubaiToday(), []);
   const [selectedDate, setSelectedDate] = useStateA(currentDate);
   const [today, setToday] = useStateA([]);
@@ -987,20 +988,35 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 </section>
               )}
 
-              <section className="workbench-section">
-                <div className="workbench-section-title">Prescription lifecycle</div>
-                <OperationalChecklist appointment={selected} nowMs={nowMs} />
-              </section>
+              {PatientChart && !selectedIsQuickWlp ? (
+                <section className="workbench-section workbench-patient-chart">
+                  <div className="workbench-section-title">Clinical context</div>
+                  <PatientChart
+                    patientId={selectedPatient.id}
+                    mode="appointment"
+                    focus="schedule"
+                    context={{ appointment: selected, label: "Schedule" }}
+                    onOpenPatient={onOpenPatient}
+                    onMessage={(id) => setChatTarget({ patientId: id || selectedPatient.id, patientName: selectedPatient.name })}
+                    onPrescribe={({ patientId, trackKey, mode }) => onPrescribeRx?.({ ...selected, patientId, trackKey, prescriptionMode: mode })}
+                  />
+                </section>
+              ) : (
+                <>
+                  <section className="workbench-section">
+                    <div className="workbench-section-title">Prescription lifecycle</div>
+                    <OperationalChecklist appointment={selected} nowMs={nowMs} />
+                  </section>
 
-              <section className="workbench-section">
-                <div className="workbench-section-title">Visit details</div>
-                <InfoRow label="Service" value={selected.service} />
-                <InfoRow label="Mode" value={selected.type} />
-                <InfoRow label="Member" value={selectedMemberLabel} />
-                {selectedPatient.whatsapp && <InfoRow label="WhatsApp" value={selectedPatient.whatsapp} />}
-              </section>
+                  <section className="workbench-section">
+                    <div className="workbench-section-title">Visit details</div>
+                    <InfoRow label="Service" value={selected.service} />
+                    <InfoRow label="Mode" value={selected.type} />
+                    <InfoRow label="Member" value={selectedMemberLabel} />
+                    {selectedPatient.whatsapp && <InfoRow label="WhatsApp" value={selectedPatient.whatsapp} />}
+                  </section>
 
-              {hasClinicalSummary && (
+                  {hasClinicalSummary && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Clinical summary</div>
                   {selectedIsQuickWlp && <InfoRow label="Preferred" value={selectedAssessment.preferred_medication} />}
@@ -1010,17 +1026,17 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   <InfoRow label="Conditions" value={selectedConditions} />
                   <InfoRow label="Assessment" value={formatDateTime(selectedAssessment.latest_submitted_at)} />
                 </section>
-              )}
+                  )}
 
-              {selectedPrescriptionIssued && (
+                  {selectedPrescriptionIssued && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Prescription</div>
                   <InfoRow label="Status" value="Issued" />
                   {selectedPrescription.issued_at && <InfoRow label="Issued" value={formatDateTime(selectedPrescription.issued_at)} />}
                 </section>
-              )}
+                  )}
 
-              {hasMedicationOrderDetails && (
+                  {hasMedicationOrderDetails && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Medication order</div>
                   <InfoRow label="Status" value={medicationOrderState(selected)} />
@@ -1029,16 +1045,16 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   {selectedFulfillment.delivered_at && <InfoRow label="Delivered" value={formatDateTime(selectedFulfillment.delivered_at)} />}
                   {selectedPrescriptionItems.length > 0 && <WorkbenchItems items={selectedPrescriptionItems} />}
                 </section>
-              )}
+                  )}
 
-              {!selectedIsQuickWlp && ((profilesLoading && !profilesLoaded) || selectedConsultationHistoryRows.length > 0) && (
+                  {!selectedIsQuickWlp && ((profilesLoading && !profilesLoaded) || selectedConsultationHistoryRows.length > 0) && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Consultation history</div>
                   <ConsultationHistory history={selectedHistory} loading={profilesLoading && !profilesLoaded} currentId={selected.id} />
                 </section>
-              )}
+                  )}
 
-              {!selectedIsQuickWlp && selectedPrescriptionHistoryRows.length > 0 && (
+                  {!selectedIsQuickWlp && selectedPrescriptionHistoryRows.length > 0 && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Prescription history</div>
                   <HistoryRows
@@ -1052,9 +1068,9 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     ].filter(Boolean).join(" · ")}
                   />
                 </section>
-              )}
+                  )}
 
-              {!selectedIsQuickWlp && selectedDeliveredMedicationRows.length > 0 && (
+                  {!selectedIsQuickWlp && selectedDeliveredMedicationRows.length > 0 && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Delivered medication</div>
                   <HistoryRows
@@ -1068,9 +1084,9 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     ].filter(Boolean).join(" · ")}
                   />
                 </section>
-              )}
+                  )}
 
-              {!selectedIsQuickWlp && selectedRefillHistoryRows.length > 0 && (
+                  {!selectedIsQuickWlp && selectedRefillHistoryRows.length > 0 && (
                 <section className="workbench-section">
                   <div className="workbench-section-title">Refill history</div>
                   <HistoryRows
@@ -1084,6 +1100,8 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     ].filter(Boolean).join(" · ")}
                   />
                 </section>
+                  )}
+                </>
               )}
 
             </div>

@@ -219,6 +219,15 @@ function isDoctorClinicalTask(task) {
   ].includes(action);
 }
 
+function clinicalTaskCountForFilter(tasks, key) {
+  if (key === "all") return tasks.length;
+  return tasks.filter((task) => task.category === key).length;
+}
+
+function visibleClinicalFilters(tasks) {
+  return FILTERS.filter((item) => item.key === "all" || clinicalTaskCountForFilter(tasks, item.key) > 0);
+}
+
 function TaskRow({ task, selected, onSelect }) {
   const { Avatar } = window.DD_UI;
   const copy = taskCopy(task);
@@ -240,6 +249,7 @@ function TaskRow({ task, selected, onSelect }) {
 
 function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp }) {
   const { I, Avatar } = window.DD_UI;
+  const PatientChart = window.DD_PatientChart;
   if (!task) {
     return (
       <div className="clinical-inbox-empty-detail">
@@ -290,37 +300,50 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
         <strong>Doctor action required</strong>
       </div>
 
+      {!PatientChart && (
       <section className="clinical-detail-section">
         <div className="clinical-detail-label">Prescription lifecycle</div>
         <ClinicalLifecycleStrip task={task} />
       </section>
+      )}
 
-      <section className="clinical-detail-section">
-        <div className="clinical-detail-label">Decision needed</div>
-        <h3>{task.summary || task.title}</h3>
-        <p>{task.detail || "Review the patient context and complete the clinical action."}</p>
+      <section className="clinical-decision-summary">
+        <div>
+          <span>Decision needed</span>
+          <h3>{task.summary || task.title}</h3>
+          <p>{copy.decision || task.detail || "Review the patient context and complete the clinical action."}</p>
+        </div>
+        <dl>
+          <div>
+            <dt>Why</dt>
+            <dd>{copy.reason}</dd>
+          </div>
+          <div>
+            <dt>Closes when</dt>
+            <dd>{copy.closes}</dd>
+          </div>
+        </dl>
       </section>
 
-      <section className="clinical-decision-card">
-        <div>
-          <span>Why this is here</span>
-          <strong>{copy.reason}</strong>
-        </div>
-        <div>
-          <span>Doctor decision</span>
-          <strong>{copy.decision}</strong>
-        </div>
-        <div>
-          <span>How it closes</span>
-          <strong>{copy.closes}</strong>
-        </div>
-      </section>
+      {PatientChart && task.patientId ? (
+        <section className="clinical-detail-section clinical-detail-patient-chart">
+          <PatientChart
+            patientId={task.patientId}
+            mode="task"
+            focus="clinical-inbox"
+            context={{ task, label: "Clinical Inbox" }}
+            onOpenPatient={onOpenPatient}
+            onMessage={() => onOpenContextChat?.(task)}
+            onPrescribe={({ patientId, customerId, trackKey, mode }) => onPrescribeRx?.({ ...task, patientId, customerId, trackKey, prescriptionMode: mode })}
+          />
+        </section>
+      ) : null}
 
-      <div className="clinical-detail-grid">
-        <div><span>Track</span><strong>{task.track || "Not available"}</strong></div>
-        <div><span>When</span><strong>{formatDateTime(task.occurredAt) || "Not available"}</strong></div>
-        <div><span>Source</span><strong>{sourceLabel(task)}</strong></div>
-        <div><span>Service</span><strong>{task.service || task.track || "Not available"}</strong></div>
+      <div className="clinical-detail-meta-line">
+        <span>{task.track || "Track not available"}</span>
+        <span>{formatDateTime(task.occurredAt) || "Time not available"}</span>
+        <span>{sourceLabel(task)}</span>
+        <span>{task.service || task.track || "Service not available"}</span>
       </div>
 
       <div className="clinical-detail-actions">
@@ -404,6 +427,13 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
       return [task.patientName, task.phone, task.email, task.title, task.track, task.summary].filter(Boolean).join(" ").toLowerCase().includes(query);
     });
   }, [filter, search, tasks]);
+  const availableFilters = useMemoI(() => visibleClinicalFilters(tasks), [tasks]);
+
+  useEffectI(() => {
+    if (filter === "all") return;
+    if (availableFilters.some((item) => item.key === filter)) return;
+    setFilter("all");
+  }, [availableFilters, filter]);
 
   const selected = visibleTasks.find((task) => task.id === selectedId) || visibleTasks[0] || null;
   const counts = useMemoI(() => ({
@@ -434,9 +464,10 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           </div>
 
           <div className="clinical-inbox-filters">
-            {FILTERS.map((item) => (
+            {availableFilters.map((item) => (
               <button key={item.key} className={filter === item.key ? "active" : ""} onClick={() => setFilter(item.key)}>
-                {item.label}
+                <span>{item.label}</span>
+                <strong>{clinicalTaskCountForFilter(tasks, item.key)}</strong>
               </button>
             ))}
           </div>
@@ -455,7 +486,9 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
                 <TaskRow key={task.id} task={task} selected={selected?.id === task.id} onSelect={setSelectedId} />
               ))
             ) : (
-              <div className="clinical-inbox-empty">No clinical tasks match this view.</div>
+              <div className="clinical-inbox-empty">
+                {tasks.length ? "No doctor actions match this view." : "No doctor actions pending."}
+              </div>
             )}
           </div>
         </div>

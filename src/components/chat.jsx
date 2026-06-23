@@ -211,6 +211,14 @@ function formatSubscriptionStatus(value) {
   return value ? titleCase(value) : "Not available";
 }
 
+function actorRoleLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "Clinical team";
+  if (normalized === "SUPER_ADMIN") return "Super admin";
+  if (normalized === "CLINICAL_ADMIN") return "Clinical admin";
+  return titleCase(normalized);
+}
+
 function formatContextDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -369,13 +377,26 @@ function fetchChannelContext(channelId) {
   return fetchJson(`${API_BASE}/doctor/chat/channels/${encodeURIComponent(channelId)}/context?doctor_id=${DOCTOR_ID}`);
 }
 
-function fetchPatientFile(patientId) {
-  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/file?doctor_id=${DOCTOR_ID}`);
+function fetchPatientChart(patientId) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/chart?doctor_id=${DOCTOR_ID}`);
 }
 
 function updateClinicalProfile(patientId, body) {
   return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/clinical-profile?doctor_id=${DOCTOR_ID}`, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function fetchDoctorNotes(patientId) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/chart?doctor_id=${DOCTOR_ID}`)
+    .then((chart) => ({ notes: asArray(chart.notes) }));
+}
+
+function createDoctorNote(patientId, body) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/notes?doctor_id=${DOCTOR_ID}`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -409,6 +430,9 @@ function mapPatientFileForPanel(patientFile, fallbackPatient) {
     rx_prescription_history: asArray(patientFile.prescriptions),
     delivered_medications: asArray(patientFile.medication_delivery),
     refill_history: asArray(patientFile.refills),
+    doctor_notes: asArray(patientFile.notes),
+    timeline: asArray(patientFile.timeline),
+    next_actions: asArray(patientFile.next_actions),
     track_key: patientFile.program?.track_keys?.[0] || fallbackPatient?.track_key || "",
   };
 }
@@ -691,7 +715,104 @@ function ClinicalChatHeader({ channel, context, contextLoading, contextError, fa
   );
 }
 
+function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
+  const seededNotes = asArray(initialNotes);
+  const seededNotesKey = seededNotes.map((note) => note.note_id || note.created_at || note.note_text).join("|");
+  const [notes, setNotes] = useStateC(seededNotes);
+  const [draft, setDraft] = useStateC("");
+  const [loading, setLoading] = useStateC(true);
+  const [saving, setSaving] = useStateC(false);
+  const [error, setError] = useStateC("");
+
+  const loadNotes = React.useCallback(async () => {
+    if (!patientId) return;
+    if (seededNotes.length) {
+      setNotes(seededNotes);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const data = await fetchDoctorNotes(patientId);
+      setNotes(asArray(data.notes));
+    } catch {
+      setError("Could not load notes.");
+    } finally {
+      setLoading(false);
+    }
+  }, [patientId, seededNotesKey]);
+
+  useEffectC(() => {
+    setDraft("");
+    loadNotes();
+  }, [loadNotes]);
+
+  const save = async () => {
+    const noteText = draft.trim();
+    if (noteText.length < 2) {
+      setError("Write a note before saving.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const data = await createDoctorNote(patientId, {
+        note_text: noteText,
+        context_type: "CHAT",
+      });
+      setNotes((current) => [data.note, ...current]);
+      setDraft("");
+    } catch {
+      setError("Could not save note.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!patientId) {
+    return <p className="clinical-file-empty">Patient chart not mapped yet.</p>;
+  }
+
+  return (
+    <div className="clinical-notes-block">
+      <div className="clinical-note-composer">
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Add internal note..."
+          maxLength={4000}
+          rows={3}
+        />
+        <div className="clinical-note-composer-foot">
+          <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
+          <button type="button" onClick={save} disabled={saving}>{saving ? "Saving" : "Save"}</button>
+        </div>
+      </div>
+      {error ? <div className="clinical-note-error">{error}</div> : null}
+      {loading ? (
+        <p className="clinical-file-empty">Loading notes...</p>
+      ) : notes.length ? (
+        <div className="clinical-note-list">
+          {notes.slice(0, 5).map((note) => (
+            <article key={note.note_id} className="clinical-note-item">
+              <div>
+                <strong>{note.actor?.display_name || "Clinical team"}</strong>
+                <span>{actorRoleLabel(note.actor?.actor_type)} · {formatContextDateTime(note.created_at)}</span>
+              </div>
+              <p>{note.note_text}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="clinical-file-empty">No doctor notes yet.</p>
+      )}
+    </div>
+  );
+}
+
 function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatient, patientFile, patientFileLoading, prescribablePatient, onOpenPatient, onPatientFileUpdated, onPrescribe, onAmendPrescription }) {
+  const PatientChart = window.DD_PatientChart;
   const [editingProfile, setEditingProfile] = useStateC(false);
   const patient = mapPatientFileForPanel(patientFile, chatContextPatient(context, fallbackPatient));
   const service = channelServiceName(channel, patient?.name);
@@ -715,6 +836,24 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
     canPrescribe,
     reason: context?.rx?.can_prescribe_reason,
   });
+
+  if (PatientChart) {
+    return (
+      <aside className="clinical-context-panel">
+        <PatientChart
+          patientId={chartPatientId || patient?.id || patientId}
+          initialChart={patientFile}
+          mode="compact"
+          focus="chat"
+          context={{ label: "Chat", prescribable: prescribablePatient }}
+          onOpenPatient={onOpenPatient}
+          onPrescribe={({ patientId: nextPatientId, trackKey, customerId, mode }) => onPrescribe?.(nextPatientId, trackKey, customerId, mode)}
+          onAmendPrescription={onAmendPrescription}
+          onChartLoaded={onPatientFileUpdated}
+        />
+      </aside>
+    );
+  }
 
   return (
     <aside className="clinical-context-panel">
@@ -828,6 +967,11 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
           </div>
         </section>
       ) : null}
+
+      <section className="clinical-context-section">
+        <h4>Doctor notes</h4>
+        <ClinicalDoctorNotes patientId={chartPatientId || patient?.id || patientId} initialNotes={patient.doctor_notes} />
+      </section>
 
       <section className="clinical-context-section">
         <h4>Prescriptions</h4>
@@ -999,7 +1143,7 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
       }
       setPatientFileLoading(true);
       try {
-        const data = await fetchPatientFile(patientFileId);
+        const data = await fetchPatientChart(patientFileId);
         if (!cancelled) setPatientFile(data);
       } catch {
         if (!cancelled) setPatientFile(null);
