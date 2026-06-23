@@ -1998,6 +1998,111 @@ body {
   white-space: normal;
 }
 
+.patient-guardrails-section {
+  background: rgba(255,255,255,0.66);
+}
+
+.patient-guardrail-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(23,59,61,0.06);
+}
+
+.patient-guardrail-row {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.52fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 12px;
+  background: rgba(255,252,246,0.98);
+}
+
+.patient-guardrail-row + .patient-guardrail-row {
+  border-top: 1px solid rgba(23,59,61,0.07);
+}
+
+.patient-guardrail-row span {
+  color: rgba(23,59,61,0.44);
+  font: 400 10px/1.25 var(--dd-font);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+.patient-guardrail-row strong {
+  min-width: 0;
+  color: var(--dd-text-primary);
+  font: 400 12px/1.4 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.patient-guardrail-row.warn {
+  background: rgba(178,85,49,0.075);
+}
+
+.patient-guardrail-row.warn strong {
+  color: #8f3f24;
+}
+
+.patient-assessment-section {
+  background: rgba(255,255,255,0.58);
+}
+
+.patient-assessment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 14px;
+  margin-bottom: 12px;
+}
+
+.patient-assessment-head strong {
+  color: var(--dd-text-primary);
+  font: 400 14px/1.25 var(--dd-font);
+}
+
+.patient-assessment-head span,
+.patient-assessment-head em {
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.35 var(--dd-font);
+  font-style: normal;
+}
+
+.patient-assessment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(23,59,61,0.07);
+}
+
+.patient-assessment-grid div {
+  min-width: 0;
+  background: rgba(255,252,246,0.98);
+  padding: 12px 13px;
+}
+
+.patient-assessment-grid span {
+  display: block;
+  color: rgba(23,59,61,0.44);
+  font: 400 10px/1.25 var(--dd-font);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+.patient-assessment-grid strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.4 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
 .patient-emr-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.42fr);
@@ -2576,6 +2681,15 @@ body {
 
   .patient-chart-section-head {
     flex-direction: column;
+  }
+
+  .patient-assessment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-guardrail-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .patient-snapshot-grid {

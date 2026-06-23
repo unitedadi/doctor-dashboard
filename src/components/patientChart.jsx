@@ -103,6 +103,57 @@ function multilineToList(value) {
     .filter(Boolean);
 }
 
+function humanizeAnswerKey(value) {
+  return String(value || "")
+    .replace(/^q[_-]?\d+[_-]?/i, "")
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || "Answer";
+}
+
+function humanizeAnswerValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (Array.isArray(value)) {
+    return value.map(humanizeAnswerValue).filter(Boolean).join(", ");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, entry]) => {
+        const rendered = humanizeAnswerValue(entry);
+        return rendered ? `${humanizeAnswerKey(key)}: ${rendered}` : "";
+      })
+      .filter(Boolean)
+      .join(" · ");
+  }
+  const raw = String(value).trim();
+  if (!raw) return "";
+  return raw
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function assessmentKindLabel(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "weight-loss" || normalized === "weight_loss") return "Weight Loss";
+  if (normalized === "peptides") return "Peptides";
+  if (normalized === "generic") return "Generic";
+  return value ? humanizeAnswerKey(value) : "Assessment";
+}
+
+function assessmentAnswerPairs(submission) {
+  return Object.entries(submission?.answers || {})
+    .map(([key, value]) => ({
+      key,
+      label: humanizeAnswerKey(key),
+      value: humanizeAnswerValue(value),
+    }))
+    .filter((item) => item.value)
+    .slice(0, 12);
+}
+
 function EmptyInline({ children }) {
   return <div className="inline-empty">{children}</div>;
 }
@@ -330,6 +381,106 @@ function CareStatePanel({
         <ChartFact label="Delivery" value={latestDelivery ? medicationStatusLabel(latestDelivery) : "No paid order"} />
       </div>
     </section>
+  );
+}
+
+function PrescriptionGuardrails({
+  clinical,
+  medication,
+  latestPrescription,
+  latestDelivery,
+}) {
+  const allergies = asArray(clinical?.allergies);
+  const conditions = asArray(clinical?.conditions);
+  const activeMedication = medication?.name || asArray(clinical?.current_medications)[0]?.name || "";
+  const prescriptionItems = itemLabel(latestPrescription?.items);
+  const deliveryStatusText = latestDelivery
+    ? `${medicationStatusLabel(latestDelivery)}${latestDelivery.delivered_at || latestDelivery.paid_at ? ` · ${formatDate(latestDelivery.delivered_at || latestDelivery.paid_at)}` : ""}`
+    : "No paid medication order";
+
+  const rows = [
+    {
+      label: "Allergies",
+      value: allergies.length ? allergies.join(", ") : "None reported",
+      tone: allergies.length ? "warn" : "clear",
+    },
+    {
+      label: "Conditions",
+      value: conditions.length ? conditions.join(", ") : "None reported",
+      tone: conditions.length ? "warn" : "clear",
+    },
+    {
+      label: "Current medication",
+      value: activeMedication || "Not listed",
+      tone: activeMedication ? "review" : "clear",
+    },
+    {
+      label: "Last prescription",
+      value: latestPrescription
+        ? [prescriptionStatusLabel(latestPrescription), prescriptionItems, formatDate(latestPrescription.issued_at)].filter(Boolean).join(" · ")
+        : "No prescription history",
+      tone: latestPrescription ? "review" : "clear",
+    },
+    {
+      label: "Medication order",
+      value: deliveryStatusText,
+      tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : latestDelivery ? "review" : "clear",
+    },
+  ];
+
+  return (
+    <ChartSection title="Prescription guardrails" subtitle="Check these before issuing or re-issuing." className="patient-guardrails-section">
+      <div className="patient-guardrail-list">
+        {rows.map((row) => (
+          <div key={row.label} className={`patient-guardrail-row ${row.tone}`}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+    </ChartSection>
+  );
+}
+
+function AssessmentReader({ assessment }) {
+  const submissions = asArray(assessment?.submissions);
+  const latest = submissions[0];
+  const pairs = assessmentAnswerPairs(latest);
+  const basic = assessment?.basic || {};
+
+  return (
+    <ChartSection title="Assessment answers" subtitle="Latest intake answers in readable clinical language." className="patient-assessment-section">
+      {latest ? (
+        <>
+          <div className="patient-assessment-head">
+            <div>
+              <strong>{assessmentKindLabel(latest.kind || latest.track_key)}</strong>
+              <span>{[latest.submitted_at ? formatDateTime(latest.submitted_at) : "", latest.template_version ? `Version ${latest.template_version}` : ""].filter(Boolean).join(" · ")}</span>
+            </div>
+            {submissions.length > 1 ? <em>{submissions.length} submissions</em> : null}
+          </div>
+          {pairs.length ? (
+            <div className="patient-assessment-grid">
+              {pairs.map((item) => (
+                <div key={item.key}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyInline>No detailed answers available for the latest assessment.</EmptyInline>
+          )}
+        </>
+      ) : (
+        <div className="patient-assessment-grid">
+          <div><span>Body shape</span><strong>{humanizeAnswerValue(basic.body_shape) || "Not provided"}</strong></div>
+          <div><span>Activity</span><strong>{humanizeAnswerValue(basic.activity_level) || "Not provided"}</strong></div>
+          <div><span>Pregnancy</span><strong>{humanizeAnswerValue(basic.pregnancy_status) || "Not provided"}</strong></div>
+          <div><span>Breastfeeding</span><strong>{humanizeAnswerValue(basic.breastfeeding_status) || "Not provided"}</strong></div>
+        </div>
+      )}
+    </ChartSection>
   );
 }
 
@@ -1023,6 +1174,8 @@ function PatientChart({
 
             {!focusedMode && (
               <>
+                <AssessmentReader assessment={clinical.assessment} />
+
                 <ChartSection title="Patient timeline" subtitle="Consultations, prescriptions, deliveries, refills, assessments, and notes in one chronological chain.">
                   <Timeline events={chart.timeline} />
                 </ChartSection>
@@ -1032,6 +1185,13 @@ function PatientChart({
 
           {!compact && !appointmentMode && !taskMode ? (
             <aside className="patient-emr-rail">
+              <PrescriptionGuardrails
+                clinical={clinical}
+                medication={medication}
+                latestPrescription={latestPrescription}
+                latestDelivery={deliveries[0]}
+              />
+
               <ChartSection title="Clinical profile" subtitle="Vitals, safety flags, and current patient facts." action={<button type="button" onClick={() => setEditingProfile(true)}>Update</button>} className="patient-chart-overview">
                 <div className="patient-profile-facts">
                   <ChartFact label="Track" value={trackLabel(trackKey)} />
