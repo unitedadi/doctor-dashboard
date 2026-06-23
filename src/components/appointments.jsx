@@ -241,6 +241,14 @@ function appointmentStatusBucket(status) {
   return "upcoming";
 }
 
+function appointmentIsLiveNow(appointment, nowMs) {
+  if (appointmentStatusBucket(appointment?.status) !== "upcoming") return false;
+  const startMs = new Date(appointment?.scheduledStartAt || "").getTime();
+  const endMs = new Date(appointment?.scheduledEndAt || "").getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false;
+  return nowMs >= startMs && nowMs <= endMs;
+}
+
 function nextStepLabel(appointment) {
   if (!appointment) return "";
   const normalized = String(appointment.status || "").toLowerCase();
@@ -399,6 +407,8 @@ function mapAppointment(item) {
     },
     chat: item.chat || patient.chat || { available: false, unavailable_reason: "chat_locked" },
     date: item.date,
+    scheduledStartAt: item.scheduled_start_at,
+    scheduledEndAt: item.scheduled_end_at,
     meetingLink: item.meeting_link,
     trackKey: item.track_key,
     sourceTag: item.source_tag,
@@ -428,6 +438,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [profilesLoaded, setProfilesLoaded] = useStateA(false);
   const [callToast, setCallToast] = useStateA("");
   const [statusFilter, setStatusFilter] = useStateA("all");
+  const [nowMs, setNowMs] = useStateA(() => Date.now());
 
   const loadAppointments = React.useCallback(async () => {
     setLoading(true);
@@ -486,6 +497,16 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const selectedPrescription = selectedWorkbench?.prescription || {};
   const selectedFulfillment = selectedWorkbench?.fulfillment || {};
   const selectedMedicationAmount = medicationOrderAmount(selected);
+  const selectedPrescriptionIssued = selectedPrescription.status === "ISSUED";
+  const selectedPrescriptionItems = Array.isArray(selectedPrescription.items) ? selectedPrescription.items : [];
+  const hasMedicationOrderDetails = Boolean(
+    selectedPrescriptionIssued ||
+    selectedFulfillment.status ||
+    selectedFulfillment.order_id ||
+    selectedFulfillment.paid_at ||
+    selectedFulfillment.delivered_at ||
+    selectedFulfillment.amount_fils
+  );
   const selectedActionState = actionState(selected);
   const selectedProfile = selected && !selectedIsQuickWlp
     ? patientProfiles.find((profile) => profile.id === selected.patientId || profile.id === selectedPatient?.id)
@@ -511,10 +532,15 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   }, [statusFilter, today]);
   const activeFilterLabel = APPOINTMENT_STATUS_FILTERS.find((filter) => filter.key === statusFilter)?.label || "appointments";
   const upcomingCount = statusCounts.upcoming;
-  const activeAppointmentId = visibleAppointments.find((appointment) => appointmentStatusBucket(appointment.status) === "upcoming")?.id || null;
+  const activeAppointmentId = visibleAppointments.find((appointment) => appointmentIsLiveNow(appointment, nowMs))?.id || null;
   const dateStr = formatScreenDate(selectedDate);
   const sectionDate = formatSectionDate(selectedDate);
   const isToday = selectedDate === currentDate;
+
+  useEffectA(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffectA(() => {
     if (selected && selected.source !== "quickwlp") loadPatientProfiles();
@@ -853,20 +879,24 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 <InfoRow label="Assessment" value={formatDateTime(selectedAssessment.latest_submitted_at)} />
               </section>
 
-              <section className="workbench-section">
-                <div className="workbench-section-title">Prescription</div>
-                <InfoRow label="Status" value={selectedPrescription.status === "ISSUED" ? "Issued" : "Not issued"} />
-                <InfoRow label="Issued" value={formatDateTime(selectedPrescription.issued_at)} />
-              </section>
+              {selectedPrescriptionIssued && (
+                <section className="workbench-section">
+                  <div className="workbench-section-title">Prescription</div>
+                  <InfoRow label="Status" value="Issued" />
+                  {selectedPrescription.issued_at && <InfoRow label="Issued" value={formatDateTime(selectedPrescription.issued_at)} />}
+                </section>
+              )}
 
-              <section className="workbench-section">
-                <div className="workbench-section-title">Medication order</div>
-                <InfoRow label="Status" value={medicationOrderState(selected)} />
-                <InfoRow label={selectedMedicationAmount.label} value={selectedMedicationAmount.value} />
-                <InfoRow label="Shipment" value={selectedFulfillment.order_id} />
-                <InfoRow label="Delivered" value={formatDateTime(selectedFulfillment.delivered_at)} />
-                <WorkbenchItems items={selectedPrescription.items} />
-              </section>
+              {hasMedicationOrderDetails && (
+                <section className="workbench-section">
+                  <div className="workbench-section-title">Medication order</div>
+                  <InfoRow label="Status" value={medicationOrderState(selected)} />
+                  {selectedMedicationAmount.value && <InfoRow label={selectedMedicationAmount.label} value={selectedMedicationAmount.value} />}
+                  {selectedFulfillment.order_id && <InfoRow label="Shipment" value={selectedFulfillment.order_id} />}
+                  {selectedFulfillment.delivered_at && <InfoRow label="Delivered" value={formatDateTime(selectedFulfillment.delivered_at)} />}
+                  {selectedPrescriptionItems.length > 0 && <WorkbenchItems items={selectedPrescriptionItems} />}
+                </section>
+              )}
 
               {!selectedIsQuickWlp && (
                 <section className="workbench-section">
