@@ -130,14 +130,8 @@ function consultationChecklist(appointment, nowMs) {
   const completed = Boolean(consultation.completed_at) || normalized === "completed";
   const issued = prescription.status === "ISSUED";
   const live = appointmentIsLiveNow(appointment, nowMs);
-  const hasMedicationState = Boolean(
-    issued ||
-    fulfillment.status ||
-    fulfillment.order_id ||
-    fulfillment.paid_at ||
-    fulfillment.delivered_at ||
-    fulfillment.amount_fils
-  );
+  const paid = Boolean(fulfillment.paid_at || fulfillment.order_id);
+  const delivered = Boolean(fulfillment.delivered_at);
 
   const steps = [
     {
@@ -151,17 +145,32 @@ function consultationChecklist(appointment, nowMs) {
       state: noShow ? "risk" : completed ? "done" : live ? "current" : "pending"
     },
     {
-      label: "Prescription issued",
-      meta: formatDateTime(prescription.issued_at),
+      label: issued ? "Prescription issued" : "Prescription not issued",
+      meta: issued ? formatDateTime(prescription.issued_at) : completed ? "Ready for doctor decision" : "Waiting for consultation",
       state: issued ? "done" : completed ? "current" : "pending"
-    }
+    },
+    {
+      label: "Issued but unpaid",
+      meta: issued && !paid ? medicationOrderState(appointment) : paid ? "Payment received" : "No unpaid prescription",
+      state: issued && !paid ? "current" : paid ? "done" : "pending"
+    },
+    {
+      label: "Paid",
+      meta: paid ? formatDateTime(fulfillment.paid_at) || "Paid" : "Not paid",
+      state: paid ? "done" : issued ? "current" : "pending"
+    },
+    {
+      label: "Delivered",
+      meta: delivered ? formatDateTime(fulfillment.delivered_at) : paid ? "Awaiting delivery" : "Not delivered",
+      state: delivered ? "done" : paid ? "current" : "pending"
+    },
   ];
 
-  if (hasMedicationState) {
+  if (delivered) {
     steps.push({
-      label: "Medication order",
-      meta: medicationOrderState(appointment),
-      state: workbench.fulfillment?.delivered_at ? "done" : issued ? "current" : "pending"
+      label: "Follow-up/refill",
+      meta: "Manage from Patient Hub",
+      state: "pending"
     });
   }
 
@@ -418,9 +427,9 @@ function HistoryRows({ rows, emptyText, renderTitle, renderMeta }) {
 
 function OperationalChecklist({ appointment, nowMs }) {
   return (
-    <div className="workbench-checklist">
+    <div className="rx-lifecycle-strip workbench-lifecycle-strip">
       {consultationChecklist(appointment, nowMs).map((step) => (
-        <div key={step.label} className={`workbench-check-step ${step.state}`}>
+        <div key={step.label} className={`rx-lifecycle-step ${step.state}`}>
           <span className="workbench-check-dot" />
           <div>
             <strong>{step.label}</strong>
@@ -470,6 +479,7 @@ function mapAppointment(item) {
 
 function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp }) {
   const { I, Avatar, Topbar } = window.DD_UI;
+  const PatientChatDrawer = window.DD_PatientChatDrawer;
   const currentDate = useMemoA(() => dubaiToday(), []);
   const [selectedDate, setSelectedDate] = useStateA(currentDate);
   const [today, setToday] = useStateA([]);
@@ -491,6 +501,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [statusFilter, setStatusFilter] = useStateA("all");
   const [scheduleScope, setScheduleScope] = useStateA("day");
   const [nowMs, setNowMs] = useStateA(() => Date.now());
+  const [chatTarget, setChatTarget] = useStateA(null);
 
   const loadAppointments = React.useCallback(async () => {
     setLoading(true);
@@ -944,7 +955,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     )}
                     {canPrescribeSelectedRx && (
                       <button className="workbench-action-button primary" onClick={() => onPrescribeRx?.(selected)}>
-                        {I.pill}<span>Issue RX prescription</span>
+                        {I.pill}<span>Issue prescription</span>
                       </button>
                     )}
                     {selectedHasLockedOutcomeNote && (
@@ -960,7 +971,13 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   <div className="workbench-access-actions">
                     <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
                     {selected.chat?.available ? (
-                      <button className="workbench-action-button secondary" onClick={() => onOpenChat(selectedPatient.id)}>
+                      <button
+                        className="workbench-action-button secondary"
+                        onClick={() => setChatTarget({
+                          patientId: selectedPatient.id,
+                          patientName: selectedPatient.name,
+                        })}
+                      >
                         {I.message}<span>Message {selectedPatient.name.split(" ")[0]}</span>
                       </button>
                     ) : (
@@ -971,7 +988,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               )}
 
               <section className="workbench-section">
-                <div className="workbench-section-title">Visit flow</div>
+                <div className="workbench-section-title">Prescription lifecycle</div>
                 <OperationalChecklist appointment={selected} nowMs={nowMs} />
               </section>
 
@@ -1113,6 +1130,18 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
         <div className="toast">
           {I.phone}<span>{callToast}</span>
         </div>
+      )}
+      {PatientChatDrawer && (
+        <PatientChatDrawer
+          open={Boolean(chatTarget)}
+          patientId={chatTarget?.patientId || ""}
+          patientName={chatTarget?.patientName || ""}
+          onClose={() => setChatTarget(null)}
+          onOpenPatient={(id, customerId) => {
+            setChatTarget(null);
+            onOpenPatient?.(id || chatTarget?.patientId, customerId);
+          }}
+        />
       )}
     </>
   );

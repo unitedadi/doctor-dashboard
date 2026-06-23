@@ -114,13 +114,11 @@ function Avatar({ initials, name, size = "md", online }) {
 // ============================================================
 // Sidebar
 // ============================================================
-function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, unreadChats, pendingRefills }) {
+function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, unreadChats }) {
   const items = [
     { id: "appointments", label: "Schedule", icon: I.calendar, count: appointmentCount },
     { id: "clinical-inbox", label: "Clinical Inbox", icon: I.shieldCheck, count: clinicalInboxCount, urgent: true },
-    { id: "patients", label: "Patients", icon: I.user, count: null },
-    { id: "chat", label: "Chat", icon: I.message, count: unreadChats },
-    { id: "refills", label: "Refills", icon: I.drop, count: pendingRefills, urgent: true },
+    { id: "patient-hub", label: "Patient Hub", icon: I.message, count: unreadChats },
     { id: "quickwlp", label: "Quick WLP", icon: I.stethoscope, count: null },
   ];
   const D = window.DD_DATA.DOCTOR;

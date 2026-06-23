@@ -231,11 +231,60 @@ function cartItemCatalogLabel(item, fallbackTrackLabel) {
   return TRACKS.find((track) => track.key === item.catalogKey)?.label || fallbackTrackLabel;
 }
 
-function publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing) {
-  if (publishing) return "Publishing...";
-  if (isQuickWlpMode) return "Publish Quick WLP prescription";
-  if (initialRefillRequestId) return "Publish refill prescription";
-  return "Publish care plan";
+function prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading) {
+  const trackLabel = activeTrack?.label || "Rx";
+  const copy = {
+    reissue: {
+      title: "Re-issue prescription",
+      subtitle: "Review the unpaid prescription, update medication, and issue the replacement.",
+      reviewTitle: "Review prescription",
+      typeLabel: "Re-issue unpaid prescription",
+      cta: "Re-issue prescription",
+      pendingCta: "Re-issuing...",
+      success: "Prescription re-issued",
+    },
+    quickwlp: {
+      title: "Issue Quick WLP prescription",
+      subtitle: "Select medication, quantity, and instructions. Checkout is sent after the prescription is issued.",
+      reviewTitle: "Review prescription",
+      typeLabel: "Quick WLP prescription",
+      cta: "Issue Quick WLP prescription",
+      pendingCta: "Issuing...",
+      success: "Prescription issued",
+    },
+    refill: {
+      title: "Issue refill prescription",
+      subtitle: "Review the refill request, confirm medication, and issue the next prescription.",
+      reviewTitle: "Review refill",
+      typeLabel: "Refill prescription",
+      cta: "Issue refill prescription",
+      pendingCta: "Issuing...",
+      success: "Refill prescription issued",
+    },
+    followup: {
+      title: "Follow-up prescription",
+      subtitle: `Select medication and issue the next ${trackLabel.toLowerCase()} prescription.`,
+      reviewTitle: "Review prescription",
+      typeLabel: "Follow-up prescription",
+      cta: "Issue follow-up prescription",
+      pendingCta: "Issuing...",
+      success: "Follow-up prescription issued",
+    },
+    issue: {
+      title: "Issue prescription",
+      subtitle: patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then issue the prescription.",
+      reviewTitle: "Review prescription",
+      typeLabel: "Initial prescription",
+      cta: "Issue prescription",
+      pendingCta: "Issuing...",
+      success: "Prescription issued",
+    },
+  };
+  return copy[workflowMode] || copy.issue;
+}
+
+function publishButtonLabel(workflowCopy, publishing) {
+  return publishing ? workflowCopy.pendingCta : workflowCopy.cta;
 }
 
 function parseAmendItems(value) {
@@ -252,7 +301,7 @@ function listItems(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, initialRefillRequestId, isAmendMode }) {
+function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, typeLabel }) {
   if (!patient) {
     return (
       <div className="rx-review-empty">
@@ -272,7 +321,7 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
       </div>
       <div className="rx-review-row">
         <span>Type</span>
-        <strong>{isAmendMode ? "Amendment" : isQuickWlpMode ? "One-off prescription" : initialRefillRequestId ? "Refill prescription" : "Care plan"}</strong>
+        <strong>{typeLabel}</strong>
       </div>
       <div className="rx-review-row">
         <span>Items</span>
@@ -362,8 +411,9 @@ function AmendmentReviewPanel({
       </div>
 
       <div className="field-block rx-amend-reason">
-        <label>Reason</label>
+        <label htmlFor="rx-amend-reason">Reason</label>
         <textarea
+          id="rx-amend-reason"
           value={amendReason}
           onChange={(event) => setAmendReason(event.target.value)}
           placeholder="Why is the prescription being re-issued?"
@@ -386,7 +436,7 @@ function errorCopy(error, payload) {
   const copy = {
     doctor_not_found: "Doctor profile is missing or inactive.",
     doctor_track_not_enabled: "Dr. Sami is not enabled for this Rx track yet.",
-    rx_prescription_completed_consultation_required: "A completed consultation is required before publishing this care plan.",
+    rx_prescription_completed_consultation_required: "A completed consultation is required before issuing this prescription.",
     rx_prescription_product_not_allowed_for_track: "One of the selected products is not allowed for this track.",
     rx_prescription_product_not_found: "One of the selected products is no longer available in the catalog.",
     rx_prescription_insufficient_inventory: payload?.product_name
@@ -396,7 +446,7 @@ function errorCopy(error, payload) {
     quickwlp_prescription_product_not_allowed: "One of the selected products is not allowed for Quick WLP checkout.",
     quickwlp_prescription_product_not_found: "One of the selected products is no longer available in the catalog.",
   };
-  return copy[error] || error || "Could not publish this prescription.";
+  return copy[error] || error || "Could not issue this prescription.";
 }
 
 function PrescribeView({
@@ -404,6 +454,7 @@ function PrescribeView({
   initialCustomerId,
   initialTrackKey,
   initialRefillRequestId,
+  initialPrescriptionMode,
   initialQuickWlpLeadId,
   initialQuickWlpName,
   initialQuickWlpPhone,
@@ -494,6 +545,14 @@ function PrescribeView({
   const patient = isQuickWlpMode ? quickWlpPatient : rxPatient;
   const contextualRxMode = !isQuickWlpMode && Boolean(initialPatientId || initialCustomerId || initialRefillRequestId);
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
+  const workflowMode = isAmendMode
+    ? "reissue"
+    : isQuickWlpMode
+      ? "quickwlp"
+      : initialRefillRequestId
+        ? "refill"
+        : initialPrescriptionMode || "issue";
+  const workflowCopy = prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading);
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
@@ -812,12 +871,12 @@ function PrescribeView({
       const quickWlpExpiry = formatDateTime(data.prescription?.checkout_expires_at);
       setSentToast(
         isAmendMode
-          ? "Prescription amended"
+          ? workflowCopy.success
           : isQuickWlpMode
           ? quickWlpExpiry
-            ? `Prescription published · checkout expires ${quickWlpExpiry}`
-            : "Prescription published"
-          : data.care_plan?.title || `${activeTrack.label} care plan published`
+            ? `${workflowCopy.success} · checkout expires ${quickWlpExpiry}`
+            : workflowCopy.success
+          : workflowCopy.success
       );
       setTimeout(() => setSentToast(""), 2600);
       if (!isQuickWlpMode) await loadPatients();
@@ -832,8 +891,8 @@ function PrescribeView({
   return (
     <>
       <Topbar
-        title={isAmendMode ? "Re-issue prescription" : isQuickWlpMode ? "Prescribe Quick WLP" : initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
-        subtitle={isAmendMode ? "Review the unpaid prescription, update medication, and issue a new prescription" : isQuickWlpMode ? "Select medication, quantity, and instructions, then publish the prescription" : patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
+        title={workflowCopy.title}
+        subtitle={workflowCopy.subtitle}
       />
       <div className="rx-layout">
         <div className="rx-main">
@@ -850,14 +909,14 @@ function PrescribeView({
                 <div className="rx-context-empty-icon">{I.pill}</div>
                 <h3>Prescription not ready for this patient</h3>
                 <p>
-                  This button was opened from a patient context, but the backend did not return this patient in the ready-to-prescribe queue.
-                  Complete the consultation first, then prescribe from the same patient or appointment.
+                  This button was opened from a patient context, but this patient is not ready for prescription issue yet.
+                  Complete the consultation first, then issue the prescription from the same patient or appointment.
                 </p>
                 <button type="button" className="btn-ghost" onClick={loadPatients}>Check again</button>
               </div>
             ) : !patient ? (
               <>
-                <div className="section-hdr"><div className="label">Prescribable patients</div></div>
+                <div className="section-hdr"><div className="label">Patients ready for prescription</div></div>
                 <div className="rx-track-tabs">
                   <button className={patientTrackFilter === ALL_TRACK ? "active" : ""} onClick={() => chooseTrack(ALL_TRACK)}>All</button>
                   {TRACKS.map((track) => (
@@ -900,7 +959,7 @@ function PrescribeView({
                       </button>
                     );
                   }) : (
-                    <div className="empty-state rx-product-empty">No patients are ready for prescribing.</div>
+                    <div className="empty-state rx-product-empty">No patients are ready for prescription issue.</div>
                   )}
                 </div>
               </>
@@ -1052,15 +1111,14 @@ function PrescribeView({
             />
           ) : (
             <>
-              <div className="section-hdr"><div className="label">Review & publish</div></div>
+              <div className="section-hdr"><div className="label">{workflowCopy.reviewTitle}</div></div>
               <ReviewChecklist
                 patient={patient}
                 cart={cart}
                 cartTotal={cartTotal}
                 activeTrack={activeTrack}
                 isQuickWlpMode={isQuickWlpMode}
-                initialRefillRequestId={initialRefillRequestId}
-                isAmendMode={isAmendMode}
+                typeLabel={workflowCopy.typeLabel}
               />
               <div className="rx-cart">
                 {!patient ? (
@@ -1094,7 +1152,7 @@ function PrescribeView({
                   style={{ opacity: canPublish ? 1 : 0.4, cursor: canPublish ? "pointer" : "not-allowed" }}
                   onClick={publishPrescription}
                 >
-                  {publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing)}
+                  {publishButtonLabel(workflowCopy, publishing)}
                 </button>
               </div>
 

@@ -17,11 +17,6 @@ type AppointmentCountPayload = {
   today?: unknown[]
 }
 
-type RefillRequestsPayload = {
-  requests?: unknown[]
-  refill_requests?: unknown[]
-}
-
 type ChatTokenPayload = {
   api_key: string
   user_id: string
@@ -54,7 +49,6 @@ function App() {
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
-  const [pendingRefills, setPendingRefills] = useState<number | null>(null)
 
   const Sidebar = window.DD_UI.Sidebar
   const ClinicalInboxView = window.DD_ClinicalInboxView
@@ -83,6 +77,7 @@ function App() {
       patientName: patient?.name || '',
       patientPhone: patient?.phone || '',
       trackKey: prescription?.trackKey || prescription?.track_key || patient?.trackKey || patient?.track_key || 'weight-loss',
+      prescriptionMode: 'reissue',
     }
     if (source === 'quickwlp_prescription') {
       go('prescribe', {
@@ -114,38 +109,6 @@ function App() {
 
     return () => {
       cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadPendingRefills() {
-      try {
-        const params = new URLSearchParams({
-          doctor_id: DOCTOR_ID,
-          status: 'pending',
-          limit: '100',
-          offset: '0',
-        })
-        const data = await fetchJson<RefillRequestsPayload>(`${API_BASE}/doctor/rx/refill-requests?${params.toString()}`)
-        const requests = Array.isArray(data.requests)
-          ? data.requests
-          : Array.isArray(data.refill_requests)
-            ? data.refill_requests
-            : []
-        if (!cancelled) setPendingRefills(requests.length)
-      } catch {
-        if (!cancelled) setPendingRefills(null)
-      }
-    }
-
-    loadPendingRefills()
-    const interval = window.setInterval(loadPendingRefills, 60000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
     }
   }, [])
 
@@ -190,19 +153,19 @@ function App() {
         appointmentCount={appointmentCount}
         clinicalInboxCount={clinicalInboxCount}
         unreadChats={unreadChats}
-        pendingRefills={pendingRefills}
       />
       <main className="main">
         {route === 'clinical-inbox' && (
           <ClinicalInboxView
             onCountChange={setClinicalInboxCount}
-            onOpenPatient={(id: string, customerId?: string) => go('patients', { patientId: id || '', customerId: customerId || '' })}
-            onOpenChat={(id: string) => go('chat', { patientId: id || '' })}
+            onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id || '', customerId: customerId || '', hubMode: 'charts' })}
+            onOpenChat={(id: string, channelId?: string) => go('patient-hub', { patientId: id || '', channelId: channelId || '', hubMode: 'needs_reply' })}
             onPrescribeRx={(task: any) => go('prescribe', {
               patientId: task?.patientId || '',
               customerId: task?.customerId || '',
               trackKey: task?.trackKey || 'weight-loss',
               refillRequestId: task?.refillRequestId || '',
+              prescriptionMode: task?.refillRequestId || task?.category === 'refill_review' ? 'refill' : task?.category === 'reissue' ? 'reissue' : 'issue',
             })}
             onPrescribeQuickWlp={(task: any) => go('prescribe', {
               quickWlpLeadId: task?.quickWlpLeadId || task?.patientId || '',
@@ -211,16 +174,18 @@ function App() {
               quickWlpWhatsapp: task?.phone || '',
               quickWlpEmail: task?.email || '',
               quickWlpDoctorId: task?.doctorId || DOCTOR_ID,
+              prescriptionMode: 'quickwlp',
             })}
           />
         )}
         {route === 'appointments' && (
           <AppointmentsView
-            onOpenPatient={(id: string) => go('patients', { patientId: id })}
-            onOpenChat={(id: string) => go('chat', { patientId: id })}
+            onOpenPatient={(id: string) => go('patient-hub', { patientId: id, hubMode: 'charts' })}
+            onOpenChat={(id: string) => go('patient-hub', { patientId: id, hubMode: 'all' })}
             onPrescribeRx={(appointment: any) => go('prescribe', {
               patientId: appointment?.patientId || appointment?.patient?.id || '',
               trackKey: appointment?.trackKey || 'weight-loss',
+              prescriptionMode: 'issue',
             })}
             onPrescribeQuickWlp={(appointment: any) => go('prescribe', {
               quickWlpLeadId: appointment?.quickWlpLeadId || appointment?.patientId || '',
@@ -229,6 +194,7 @@ function App() {
               quickWlpWhatsapp: appointment?.patient?.whatsapp || '',
               quickWlpEmail: appointment?.patient?.email || '',
               quickWlpDoctorId: appointment?.doctorId || DOCTOR_ID,
+              prescriptionMode: 'quickwlp',
             })}
           />
         )}
@@ -236,22 +202,25 @@ function App() {
           <PatientsView
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
-            onMessage={(id: string) => go('chat', { patientId: id })}
-            onPrescribe={(id: string, customerId?: string, trackKey?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '' })}
+            onMessage={(id: string) => go('patient-hub', { patientId: id })}
+            onPrescribe={(id: string, customerId?: string, trackKey?: string, prescriptionMode?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '', prescriptionMode: prescriptionMode || 'issue' })}
             onAmendPrescription={openAmendPrescription}
           />
         )}
-        {route === 'chat' && (
+        {(route === 'patient-hub' || route === 'chat') && (
           <ChatView
             initialPatientId={routeContext.patientId}
-            onOpenPatient={(id: string, customerId?: string) => go('patients', { patientId: id || '', customerId: customerId || '' })}
-            onPrescribe={(id: string, trackKey?: string, customerId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || '', customerId: customerId || '' })}
+            initialCustomerId={routeContext.customerId}
+            initialChannelId={routeContext.channelId}
+            initialHubMode={routeContext.hubMode}
+            onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id || '', customerId: customerId || '' })}
+            onPrescribe={(id: string, trackKey?: string, customerId?: string, prescriptionMode?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || '', customerId: customerId || '', prescriptionMode: prescriptionMode || 'issue' })}
             onAmendPrescription={openAmendPrescription}
           />
         )}
         {route === 'refills' && (
           <RefillsView
-            onPrescribe={(id: string, trackKey?: string, customerId?: string, refillRequestId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || 'weight-loss', customerId: customerId || '', refillRequestId: refillRequestId || '' })}
+            onPrescribe={(id: string, trackKey?: string, customerId?: string, refillRequestId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || 'weight-loss', customerId: customerId || '', refillRequestId: refillRequestId || '', prescriptionMode: 'refill' })}
           />
         )}
         {route === 'quickwlp' && (
@@ -263,6 +232,7 @@ function App() {
               quickWlpWhatsapp: request?.patient?.whatsapp || '',
               quickWlpEmail: request?.patient?.email || '',
               quickWlpDoctorId: request?.doctorId || '',
+              prescriptionMode: 'quickwlp',
             })}
           />
         )}
@@ -272,6 +242,7 @@ function App() {
             initialCustomerId={routeContext.customerId}
             initialTrackKey={routeContext.trackKey}
             initialRefillRequestId={routeContext.refillRequestId}
+            initialPrescriptionMode={routeContext.prescriptionMode}
             initialQuickWlpLeadId={routeContext.quickWlpLeadId}
             initialQuickWlpName={routeContext.quickWlpName}
             initialQuickWlpPhone={routeContext.quickWlpPhone}

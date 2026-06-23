@@ -71,10 +71,43 @@ function numberOrNull(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function positiveNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number.parseFloat(String(value).replace(/,/g, ""));
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function firstPresent(...values) {
+  return values.find((value) => value !== null && value !== undefined && value !== "");
+}
+
+function calculateBmi(heightCm, weightKg) {
+  const height = positiveNumber(heightCm);
+  const weight = positiveNumber(weightKg);
+  if (!height || !weight) return null;
+  const bmi = weight / ((height / 100) ** 2);
+  return Number.isFinite(bmi) ? Number(bmi.toFixed(1)) : null;
+}
+
+function assessmentDisplayValue(value) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^[a-z0-9]+([_-][a-z0-9]+)+$/i.test(trimmed)) return titleCase(trimmed);
+  if (/^[a-z0-9 ]+$/.test(trimmed) && trimmed === trimmed.toLowerCase()) return titleCase(trimmed);
+  return trimmed;
+}
+
 function medicationName(item) {
   if (!item) return "";
   if (typeof item === "string") return item;
   return item.name || item.title || "Medication";
+}
+
+function formatMoneyFils(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return `AED ${(amount / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 function updateClinicalProfile(patientId, body) {
@@ -95,7 +128,9 @@ function firstUsefulAnswer(answers) {
   if (!key) return null;
   return {
     label: titleCase(key),
-    value: Array.isArray(value) ? value.join(", ") : String(value),
+    value: Array.isArray(value)
+      ? value.map(assessmentDisplayValue).filter(Boolean).join(", ")
+      : String(assessmentDisplayValue(value)),
   };
 }
 
@@ -125,7 +160,7 @@ function answerValue(value) {
   if (value === null || value === undefined || value === "") return "";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return assessmentDisplayValue(value);
   if (Array.isArray(value)) {
     const values = value.map(answerValue).filter(Boolean);
     return values.join(", ");
@@ -226,6 +261,10 @@ function isIssuedUnpaidPrescription(prescription) {
   return prescription?.source === "rx_care_plan" && String(prescription?.status || "").toUpperCase() === "PUBLISHED";
 }
 
+function isUnpaidEditablePrescription(prescription) {
+  return isIssuedUnpaidPrescription(prescription) || prescription?.canAmend === true;
+}
+
 function prescriptionMedicationLabel(prescription) {
   return asArray(prescription?.items)
     .map((item) => `${item.name || "Medication"}${item.quantity > 1 ? ` x${item.quantity}` : ""}`)
@@ -236,6 +275,30 @@ function prescriptionMedicationLabel(prescription) {
 function prescriptionStatusLabel(prescription) {
   if (isIssuedUnpaidPrescription(prescription)) return "Issued · payment pending";
   return titleCase(prescription?.status || "Issued");
+}
+
+function orderItemsLabel(items) {
+  return asArray(items)
+    .map((item) => `${item.name || "Medication"}${Number(item.quantity || 1) > 1 ? ` x${Number(item.quantity || 1)}` : ""}`)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function refillStatusLabel(value) {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "PENDING_REVIEW") return "Pending review";
+  if (normalized === "PRESCRIBED") return "Prescribed";
+  if (normalized === "DECLINED") return "Declined";
+  return titleCase(value || "Refill");
+}
+
+function refillAdjustmentLabel(value) {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "INCREASE_DOSE") return "Increase dose";
+  if (normalized === "SAME_DOSE") return "Same dose";
+  if (normalized === "DECREASE_DOSE") return "Decrease dose";
+  if (normalized === "PAUSE") return "Pause";
+  return titleCase(value || "");
 }
 
 function prescriptionActionCopy(patient) {
@@ -250,14 +313,14 @@ function prescriptionActionCopy(patient) {
   if (hasActiveRxPrescription(patient.prescriptionHistory)) {
     return {
       label: "Follow-up prescription",
-      title: patient.prescribe ? "Create a follow-up prescription" : "A new completed consultation is required before prescribing again",
+      title: patient.prescribe ? "Create a follow-up prescription" : "A new completed consultation is required before issuing again",
       disabled: !patient.prescribe,
       mode: "prescribe",
     };
   }
   return {
-    label: patient.prescribe ? "Prescribe" : "Consult first",
-    title: patient.prescribe ? "Prescribe for this patient" : "Complete a consultation before prescribing",
+    label: patient.prescribe ? "Issue prescription" : "Consult first",
+    title: patient.prescribe ? "Issue prescription for this patient" : "Complete a consultation before issuing a prescription",
     disabled: !patient.prescribe,
     mode: "prescribe",
   };
@@ -266,6 +329,9 @@ function prescriptionActionCopy(patient) {
 function mapPatient(item) {
   const demographics = item.demographics || {};
   const basic = item.assessment?.basic || {};
+  const heightCm = firstPresent(demographics.height_cm, basic.height_cm, basic.current_height_cm, basic.height);
+  const weightKg = firstPresent(demographics.weight_kg, basic.weight_kg, basic.current_weight_kg, basic.weight);
+  const bmi = firstPresent(demographics.bmi, basic.bmi, calculateBmi(heightCm, weightKg));
   return {
     id: item.id,
     customerId: item.customer_id,
@@ -279,9 +345,9 @@ function mapPatient(item) {
     city: item.city || item.emirate || "",
     emirate: item.emirate || "",
     demographics: {
-      heightCm: demographics.height_cm ?? basic.height_cm,
-      weightKg: demographics.weight_kg ?? basic.weight_kg,
-      bmi: demographics.bmi ?? basic.bmi,
+      heightCm,
+      weightKg,
+      bmi,
     },
     assessment: {
       basic,
@@ -292,6 +358,8 @@ function mapPatient(item) {
     medications: asArray(item.medications),
     latestLabs: asArray(item.latest_labs),
     visitHistory: asArray(item.visit_history),
+    deliveredMedications: asArray(item.delivered_medications),
+    refillHistory: asArray(item.refill_history),
     prescriptionHistory: [
       ...asArray(item.rx_prescription_history),
       ...asArray(item.prescription_history),
@@ -303,7 +371,7 @@ function mapPatient(item) {
   };
 }
 
-function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe, onAmendPrescription }) {
+function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe, onAmendPrescription, embedded = false }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const [patients, setPatients] = useStateP([]);
   const [search, setSearch] = useStateP("");
@@ -413,13 +481,31 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
 
   return (
     <>
-      <Topbar
-        title="Patients"
-        subtitle={loading ? "Loading Rx patients" : `${patients.length} active · ${patientsToday} with appointments today`}
-        search={search}
-        onSearch={setSearch}
-        right={<button className="icon-btn">{I.filter}</button>}
-      />
+      {!embedded && (
+        <Topbar
+          title="Patients"
+          subtitle={loading ? "Loading Rx patients" : `${patients.length} active · ${patientsToday} with appointments today`}
+          search={search}
+          onSearch={setSearch}
+          right={<button className="icon-btn">{I.filter}</button>}
+        />
+      )}
+      {embedded && (
+        <div className="patient-embedded-toolbar">
+          <div>
+            <strong>Patient charts</strong>
+            <span>{loading ? "Loading charts" : `${patients.length} charts available`}</span>
+          </div>
+          <label>
+            {I.search}
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search charts by name, phone, email, or city"
+            />
+          </label>
+        </div>
+      )}
       <div className="patient-layout">
         <div className="patient-list dd-scroll">
           <div className="filter">
@@ -511,6 +597,151 @@ function PatientPrescriptionHistory({ prescriptions, onAmend }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function MedicationDeliveryHistory({ deliveries }) {
+  const list = asArray(deliveries);
+  if (!list.length) return <EmptyInline>No delivered medication history found.</EmptyInline>;
+
+  return (
+    <div className="patient-delivery-history">
+      {list.map((delivery, index) => (
+        <div className="patient-delivery-row" key={delivery.order_id || index}>
+          <div>
+            <strong>{orderItemsLabel(delivery.items) || "Medication order"}</strong>
+            <span>{[delivery.order_id, formatMoneyFils(delivery.amount_fils)].filter(Boolean).join(" · ")}</span>
+          </div>
+          <div>
+            <span>Paid</span>
+            <strong>{delivery.paid_at ? formatDateTime(delivery.paid_at) : "Not available"}</strong>
+          </div>
+          <div>
+            <span>Delivered</span>
+            <strong>{delivery.delivered_at ? formatDateTime(delivery.delivered_at) : "Not available"}</strong>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function patientRefillLifecycle(refill, hasDeliveredMedication, canPrescribe) {
+  const status = String(refill?.status || "").toUpperCase();
+  if (status === "PENDING_REVIEW") {
+    return { state: "current", meta: refill.submitted_at ? `Requested ${formatDateTime(refill.submitted_at)}` : "Needs review" };
+  }
+  if (status === "PRESCRIBED") {
+    return { state: "done", meta: refill.reviewed_at ? `Prescribed ${formatDateTime(refill.reviewed_at)}` : "Prescribed" };
+  }
+  if (status === "DECLINED") {
+    return { state: "risk", meta: refill.reviewed_at ? `Declined ${formatDateTime(refill.reviewed_at)}` : "Declined" };
+  }
+  if (canPrescribe && hasDeliveredMedication) return { state: "current", meta: "Follow-up can be issued" };
+  if (hasDeliveredMedication) return { state: "pending", meta: "Monitor for next refill" };
+  return { state: "pending", meta: "Not due yet" };
+}
+
+function patientLifecycleSteps(patient) {
+  const visits = asArray(patient.visitHistory);
+  const prescriptions = asArray(patient.prescriptionHistory);
+  const deliveries = asArray(patient.deliveredMedications);
+  const refills = asArray(patient.refillHistory);
+  const latestVisit = visits[0];
+  const latestPrescription = prescriptions[0];
+  const latestUnpaid = prescriptions.find(isUnpaidEditablePrescription);
+  const latestDelivery = deliveries[0];
+  const latestRefill = refills[0];
+  const hasScheduledConsult = Boolean(patient.upcoming || latestVisit);
+  const hasCompletedConsult = Boolean(latestVisit);
+  const hasPrescription = Boolean(latestPrescription);
+  const hasUnpaidPrescription = Boolean(latestUnpaid);
+  const paidAt = latestDelivery?.paid_at;
+  const deliveredAt = latestDelivery?.delivered_at;
+  const refillState = patientRefillLifecycle(latestRefill, Boolean(deliveredAt), Boolean(patient.prescribe));
+
+  return [
+    {
+      label: "Consultation scheduled",
+      meta: patient.upcoming ? formatAppointmentDate(patient.upcoming.date, patient.upcoming.time) : latestVisit ? formatDate(latestVisit.date) : "Not booked",
+      state: hasScheduledConsult ? "done" : "pending",
+    },
+    {
+      label: "Consultation completed",
+      meta: latestVisit ? formatDate(latestVisit.date) : patient.upcoming ? "Awaiting consult" : "Not completed",
+      state: hasCompletedConsult ? "done" : patient.upcoming ? "current" : "pending",
+    },
+    {
+      label: hasPrescription ? "Prescription issued" : "Prescription not issued",
+      meta: hasPrescription ? formatDateTime(latestPrescription.issuedAt || latestPrescription.createdAt) : hasCompletedConsult ? "Ready for doctor decision" : "Waiting for consultation",
+      state: hasPrescription ? "done" : hasCompletedConsult ? "current" : "pending",
+    },
+    {
+      label: "Issued but unpaid",
+      meta: hasUnpaidPrescription ? prescriptionMedicationLabel(latestUnpaid) || latestUnpaid.itemLabel : paidAt ? "Payment received" : "No unpaid prescription",
+      state: hasUnpaidPrescription ? "current" : paidAt ? "done" : "pending",
+    },
+    {
+      label: "Paid",
+      meta: paidAt ? formatDateTime(paidAt) : hasUnpaidPrescription ? "Awaiting payment" : "Not paid",
+      state: paidAt ? "done" : hasUnpaidPrescription ? "current" : "pending",
+    },
+    {
+      label: "Delivered",
+      meta: deliveredAt ? formatDateTime(deliveredAt) : paidAt ? "Awaiting delivery" : "Not delivered",
+      state: deliveredAt ? "done" : paidAt ? "current" : "pending",
+    },
+    {
+      label: "Follow-up/refill due",
+      meta: refillState.meta,
+      state: refillState.state,
+    },
+  ];
+}
+
+function RxLifecycleStrip({ steps }) {
+  return (
+    <div className="rx-lifecycle-strip patient-lifecycle-strip">
+      {steps.map((step) => (
+        <div key={step.label} className={`rx-lifecycle-step ${step.state}`}>
+          <span className="workbench-check-dot" />
+          <div>
+            <strong>{step.label}</strong>
+            <em>{step.meta || (step.state === "pending" ? "Pending" : "In progress")}</em>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RefillHistory({ refills }) {
+  const list = asArray(refills);
+  if (!list.length) return <EmptyInline>No refill requests found.</EmptyInline>;
+
+  return (
+    <div className="patient-refill-history">
+      {list.map((refill, index) => (
+        <div className="patient-refill-row" key={refill.id || index}>
+          <div>
+            <strong>{refillStatusLabel(refill.status)}</strong>
+            <span>{refill.submitted_at ? `Requested ${formatDateTime(refill.submitted_at)}` : "Request date not available"}</span>
+          </div>
+          <div>
+            <span>Adjustment</span>
+            <strong>{refillAdjustmentLabel(refill.dosage_adjustment) || "Not provided"}</strong>
+          </div>
+          <div>
+            <span>Side effects</span>
+            <strong>{titleCase(refill.side_effects || "Not provided")}</strong>
+          </div>
+          <div>
+            <span>Reviewed</span>
+            <strong>{refill.reviewed_at ? formatDateTime(refill.reviewed_at) : "Not reviewed"}</strong>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -628,6 +859,90 @@ function ClinicalProfileModal({ patient, onClose, onSaved }) {
   );
 }
 
+function ChartSection({ title, subtitle, action, children, className = "" }) {
+  return (
+    <section className={`patient-chart-section ${className}`.trim()}>
+      <div className="patient-chart-section-head">
+        <div>
+          <h3>{title}</h3>
+          {subtitle ? <p>{subtitle}</p> : null}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ChartFact({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <div className="patient-chart-fact">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ChartTimeline({ visits, prescriptions, assessments, deliveries, refills }) {
+  const events = [
+    ...asArray(visits).map((visit) => ({
+      id: `visit-${visit.id || visit.date || visit.title}`,
+      type: "Visit",
+      title: visit.title || "Consultation",
+      detail: visit.note || "",
+      occurredAt: visit.date,
+    })),
+    ...asArray(prescriptions).map((prescription) => ({
+      id: `prescription-${prescription.id}`,
+      type: "Prescription",
+      title: prescriptionMedicationLabel(prescription) || prescription.itemLabel || "Prescription",
+      detail: prescriptionStatusLabel(prescription),
+      occurredAt: prescription.issuedAt || prescription.createdAt,
+    })),
+    ...asArray(assessments).map((submission) => ({
+      id: `assessment-${submission.id}`,
+      type: "Assessment",
+      title: titleCase(submission.track_key || submission.kind),
+      detail: `Version ${submission.template_version || 1}`,
+      occurredAt: submission.submitted_at,
+    })),
+    ...asArray(deliveries).map((delivery) => ({
+      id: `delivery-${delivery.order_id}`,
+      type: "Delivery",
+      title: orderItemsLabel(delivery.items) || "Medication delivered",
+      detail: [delivery.order_id, formatMoneyFils(delivery.amount_fils)].filter(Boolean).join(" · "),
+      occurredAt: delivery.delivered_at || delivery.paid_at,
+    })),
+    ...asArray(refills).map((refill) => ({
+      id: `refill-${refill.id}`,
+      type: "Refill",
+      title: refillStatusLabel(refill.status),
+      detail: [refillAdjustmentLabel(refill.dosage_adjustment), refill.side_effects ? `${titleCase(refill.side_effects)} side effects` : ""].filter(Boolean).join(" · "),
+      occurredAt: refill.reviewed_at || refill.submitted_at,
+    })),
+  ].filter((event) => event.occurredAt)
+    .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
+    .slice(0, 10);
+
+  if (!events.length) return <EmptyInline>No clinical history yet.</EmptyInline>;
+
+  return (
+    <div className="patient-care-timeline">
+      {events.map((event) => (
+        <div className="patient-care-event" key={event.id}>
+          <div className="patient-care-event-type">{event.type}</div>
+          <div className="patient-care-event-body">
+            <strong>{event.title}</strong>
+            {event.detail ? <span>{event.detail}</span> : null}
+          </div>
+          <time>{formatDate(event.occurredAt)}</time>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfileSaved }) {
   const { I, Avatar } = window.DD_UI;
   const [editingProfile, setEditingProfile] = useStateP(false);
@@ -649,11 +964,37 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
     },
     { label: "BMI", value: p.demographics.bmi },
   ].filter((item) => item.value);
-  const hasAssessmentSummary = Boolean(basics.activity_level || basics.body_shape || basics.pregnancy_status || basics.breastfeeding_status || latestSubmission);
-  const hasHistory = Boolean(p.prescriptionHistory.length || p.visitHistory.length || p.assessment.submissions.length);
   const primaryPrescriptionAction = prescriptionActionCopy(p);
   const issuedUnpaidPrescriptions = p.prescriptionHistory.filter(isIssuedUnpaidPrescription);
   const historicalPrescriptions = p.prescriptionHistory.filter((prescription) => !isIssuedUnpaidPrescription(prescription));
+  const currentMedication = p.medications[0];
+  const latestVisit = p.visitHistory[0];
+  const latestPrescription = p.prescriptionHistory[0];
+  const latestDelivery = p.deliveredMedications[0];
+  const latestRefill = p.refillHistory[0];
+  const lifecycleSteps = patientLifecycleSteps(p);
+  const nextAppointment = p.upcoming ? `${p.upcoming.service_name} · ${formatAppointmentDate(p.upcoming.date, p.upcoming.time)}` : "";
+  const primaryClinicalState = issuedUnpaidPrescriptions.length
+    ? "Prescription issued, payment pending"
+    : p.prescribe
+      ? "Ready to issue"
+      : currentMedication
+        ? "Treatment active"
+        : p.upcoming
+          ? "Consultation booked"
+          : "Chart open";
+  const vitals = [
+    p.demographics.heightCm ? `${p.demographics.heightCm} cm` : null,
+    p.demographics.weightKg ? `${p.demographics.weightKg} kg` : null,
+    p.demographics.bmi ? `BMI ${p.demographics.bmi}` : null,
+  ].filter(Boolean).join(" · ");
+  const latestIntakeFacts = [
+    basics.activity_level ? { label: "Activity", value: assessmentDisplayValue(basics.activity_level) } : null,
+    basics.body_shape ? { label: "Body shape", value: assessmentDisplayValue(basics.body_shape) } : null,
+    basics.pregnancy_status ? { label: "Pregnancy", value: assessmentDisplayValue(basics.pregnancy_status) } : null,
+    basics.breastfeeding_status ? { label: "Breastfeeding", value: assessmentDisplayValue(basics.breastfeeding_status) } : null,
+    latestAnswer ? { label: latestAnswer.label, value: latestAnswer.value } : null,
+  ].filter(Boolean).slice(0, 4);
 
   useEffectP(() => {
     setExpandedAssessmentId(p.assessment.submissions[0]?.id || "");
@@ -661,225 +1002,205 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
 
   return (
     <>
-      <div className="patient-hero">
-        <Avatar initials={p.initials} name={p.name} size="xl" />
-        <div>
-          <h2>{p.name}</h2>
-          <div className="meta">
-            {[p.age ? `${p.age} years` : null, p.sex, p.city, p.demographics.bmi ? `BMI ${p.demographics.bmi}` : null].filter(Boolean).map((item, index) => (
-              <React.Fragment key={item}>
-                {index > 0 && <span className="dot-sep" />}
-                <span>{item}</span>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-        <div className="actions">
-          <button
-            className="btn-ghost"
-            onClick={() => onMessage(p.id)}
-            disabled={!p.chat?.available}
-            title={p.chat?.available ? "Message patient" : "Chat is locked for this patient"}
-            style={{ opacity: p.chat?.available ? 1 : 0.45, cursor: p.chat?.available ? "pointer" : "not-allowed" }}
-          >
-            {I.message}<span>Message</span>
-          </button>
-          <button
-            className="btn-primary"
-            onClick={() => {
-              if (primaryPrescriptionAction.mode === "amend") {
-                const prescription = findAmendablePrescription(p.prescriptionHistory);
-                if (prescription) onAmendPrescription?.(p, prescription);
-                return;
-              }
-              if (p.prescribe) onPrescribe(p.id, p.customerId, p.prescribe.trackKey);
-            }}
-            disabled={primaryPrescriptionAction.disabled}
-            title={primaryPrescriptionAction.title}
-            style={{ opacity: primaryPrescriptionAction.disabled ? 0.45 : 1, cursor: primaryPrescriptionAction.disabled ? "not-allowed" : "pointer" }}
-          >
-            {I.pill}<span>{primaryPrescriptionAction.label}</span>
-          </button>
-        </div>
-      </div>
-
-      {p.upcoming && (
-        <div className="dd-card-tan" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32, padding: "14px 18px" }}>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {I.calendar}
+      <div className="patient-emr-shell">
+        <div className="patient-emr-head">
+          <div className="patient-emr-identity">
+            <Avatar initials={p.initials} name={p.name} size="xl" />
             <div>
-              <div style={{ font: "400 14px/1.2 var(--dd-font)" }}>Next: {p.upcoming.service_name}</div>
-              <div style={{ font: "400 12px/1.4 var(--dd-font)", color: "var(--dd-text-secondary)", marginTop: 2 }}>{formatAppointmentDate(p.upcoming.date, p.upcoming.time)}</div>
-            </div>
-          </div>
-          <button className="btn-ghost" style={{ padding: "8px 14px" }}>View</button>
-        </div>
-      )}
-
-      <div className="patient-chart">
-        <section className="patient-chart-section patient-chart-overview">
-          <div className="patient-chart-section-head">
-            <div>
-              <h3>Patient snapshot</h3>
-              <p>Contact, demographics, and clinical flags.</p>
-            </div>
-            <button type="button" onClick={() => setEditingProfile(true)}>Update clinical profile</button>
-          </div>
-
-          <div className="patient-snapshot-grid">
-            <div className="patient-snapshot-card">
-              <span>Phone</span>
-              <strong>{p.phone || "Not provided"}</strong>
-            </div>
-            <div className="patient-snapshot-card">
-              <span>Email</span>
-              <strong>{p.email || "Not provided"}</strong>
-            </div>
-            {demographics.map((item) => (
-              <div className="patient-snapshot-card" key={item.label}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
+              <h2>{p.name}</h2>
+              <div className="meta">
+                {[p.phone, p.age ? `${p.age} years` : null, p.sex, p.city].filter(Boolean).map((item, index) => (
+                  <React.Fragment key={item}>
+                    {index > 0 && <span className="dot-sep" />}
+                    <span>{item}</span>
+                  </React.Fragment>
+                ))}
               </div>
-            ))}
-          </div>
-
-          <div className="patient-clinical-flags">
-            {clinicalFlags.length ? clinicalFlags.map((flag, index) => (
-              <span key={`${flag.label}-${index}`} className={"patient-flag " + flag.tone}>
-                {flag.icon}<span>{flag.label}</span>
-              </span>
-            )) : (
-              <span className="patient-flag clear">No allergies or active conditions recorded</span>
-            )}
-          </div>
-        </section>
-
-        <section className="patient-chart-section">
-          <div className="patient-chart-section-head">
-            <div>
-              <h3>Current treatment</h3>
-              <p>Medication the doctor should account for before prescribing again.</p>
             </div>
           </div>
+          <div className="patient-emr-actions">
+            <button
+              className="btn-ghost"
+              onClick={() => onMessage(p.id)}
+              disabled={!p.chat?.available}
+              title={p.chat?.available ? "Message patient" : "Chat is locked for this patient"}
+              style={{ opacity: p.chat?.available ? 1 : 0.45, cursor: p.chat?.available ? "pointer" : "not-allowed" }}
+            >
+              {I.message}<span>Message</span>
+            </button>
+            <button
+              className="btn-primary"
+              onClick={() => {
+                if (primaryPrescriptionAction.mode === "amend") {
+                  const prescription = findAmendablePrescription(p.prescriptionHistory);
+                  if (prescription) onAmendPrescription?.(p, prescription);
+                  return;
+                }
+                if (p.prescribe) {
+                  onPrescribe(
+                    p.id,
+                    p.customerId,
+                    p.prescribe.trackKey,
+                    primaryPrescriptionAction.label === "Follow-up prescription" ? "followup" : "issue"
+                  );
+                }
+              }}
+              disabled={primaryPrescriptionAction.disabled}
+              title={primaryPrescriptionAction.title}
+              style={{ opacity: primaryPrescriptionAction.disabled ? 0.45 : 1, cursor: primaryPrescriptionAction.disabled ? "not-allowed" : "pointer" }}
+            >
+              {I.pill}<span>{primaryPrescriptionAction.label}</span>
+            </button>
+          </div>
+        </div>
 
-          {p.medications.length ? (
-            <div className="patient-medication-list">
-              {p.medications.map((m, i) => (
-                <div key={i} className="patient-medication-row">
-                  <div>
-                    <strong>{m.name}</strong>
-                    {m.schedule && <p>{m.schedule}</p>}
-                  </div>
-                  {m.since && <span>Since {formatDate(m.since)}</span>}
+        <div className="patient-emr-status">
+          <ChartFact label="Clinical state" value={primaryClinicalState} />
+          <ChartFact label="Current medication" value={currentMedication?.name || "Not listed"} />
+          <ChartFact label="Next visit" value={nextAppointment || "Not booked"} />
+          <ChartFact label="Last prescription" value={latestPrescription ? formatDate(latestPrescription.issuedAt || latestPrescription.createdAt) : "None"} />
+          <ChartFact label="Last delivery" value={latestDelivery ? formatDate(latestDelivery.delivered_at || latestDelivery.paid_at) : "None"} />
+        </div>
+
+        <ChartSection
+          title="Prescription lifecycle"
+          subtitle="Consult, prescription, payment, delivery, and refill state in one place."
+          className="patient-lifecycle-section"
+        >
+          <RxLifecycleStrip steps={lifecycleSteps} />
+        </ChartSection>
+
+        <div className="patient-emr-grid">
+          <div className="patient-emr-main">
+            <ChartSection
+              title="Treatment and prescribing"
+              subtitle="Active medication and prescriptions that still need clinical attention."
+            >
+              {p.medications.length ? (
+                <div className="patient-medication-list">
+                  {p.medications.map((m, i) => (
+                    <div key={i} className="patient-medication-row">
+                      <div>
+                        <strong>{m.name}</strong>
+                        {m.schedule && <p>{m.schedule}</p>}
+                      </div>
+                      {m.since && <span>Since {formatDate(m.since)}</span>}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyInline>No active Rx medications.</EmptyInline>
-          )}
-        </section>
+              ) : (
+                <EmptyInline>No active Rx medications.</EmptyInline>
+              )}
 
-        {issuedUnpaidPrescriptions.length ? (
-          <section className="patient-chart-section">
-            <div className="patient-chart-section-head">
-              <div>
-                <h3>Issued prescriptions</h3>
-                <p>Prescribed but not paid or started yet.</p>
-              </div>
-            </div>
-            <PatientPrescriptionHistory
-              prescriptions={issuedUnpaidPrescriptions}
-              onAmend={(prescription) => onAmendPrescription?.(p, prescription)}
-            />
-          </section>
-        ) : null}
+              {issuedUnpaidPrescriptions.length ? (
+                <div className="patient-care-subsection">
+                  <h4>Issued but unpaid</h4>
+                  <PatientPrescriptionHistory
+                    prescriptions={issuedUnpaidPrescriptions}
+                    onAmend={(prescription) => onAmendPrescription?.(p, prescription)}
+                  />
+                </div>
+              ) : null}
+            </ChartSection>
 
-        {hasAssessmentSummary && (
-          <section className="patient-chart-section">
-            <div className="patient-chart-section-head">
-              <div>
-                <h3>Assessment summary</h3>
-                <p>Latest structured intake details.</p>
-              </div>
-            </div>
-            <div className="assessment-grid">
-              {basics.activity_level && <div><span>Activity</span><strong>{basics.activity_level}</strong></div>}
-              {basics.body_shape && <div><span>Body shape</span><strong>{basics.body_shape}</strong></div>}
-              {basics.pregnancy_status && <div><span>Pregnancy</span><strong>{basics.pregnancy_status}</strong></div>}
-              {basics.breastfeeding_status && <div><span>Breastfeeding</span><strong>{basics.breastfeeding_status}</strong></div>}
-            </div>
-            {latestSubmission && (
-              <div className="assessment-latest">
-                <div className="kind">{titleCase(latestSubmission.track_key || latestSubmission.kind)} · {formatDate(latestSubmission.submitted_at)}</div>
-                {latestAnswer && <div className="answer"><span>{latestAnswer.label}</span><strong>{latestAnswer.value}</strong></div>}
-              </div>
-            )}
-          </section>
-        )}
+            <ChartSection
+              title="Medication and delivery"
+              subtitle="Medication orders that reached the patient."
+            >
+              <MedicationDeliveryHistory deliveries={p.deliveredMedications} />
+            </ChartSection>
 
-        {hasHistory && (
-          <section className="patient-chart-section">
-            <div className="patient-chart-section-head">
-              <div>
-                <h3>History</h3>
-                <p>Consults, prescriptions, and submitted assessments.</p>
+            <ChartSection
+              title="Refill and follow-up"
+              subtitle="Refill requests, dose changes, side effects, and review outcomes."
+            >
+              <RefillHistory refills={p.refillHistory} />
+            </ChartSection>
+
+            <ChartSection
+              title="Clinical timeline"
+              subtitle="Consultations, prescriptions, deliveries, refills, and assessments in one chronological view."
+            >
+              <ChartTimeline
+                visits={p.visitHistory}
+                prescriptions={historicalPrescriptions}
+                assessments={p.assessment.submissions}
+                deliveries={p.deliveredMedications}
+                refills={p.refillHistory}
+              />
+            </ChartSection>
+
+            {p.assessment.submissions.length ? (
+              <ChartSection
+                title="Assessment answers"
+                subtitle="Structured intake responses submitted by the patient."
+              >
+                {p.assessment.submissions.map((submission) => (
+                  <AssessmentHistoryRow
+                    key={submission.id}
+                    submission={submission}
+                    expanded={expandedAssessmentId === submission.id}
+                    onToggle={() => setExpandedAssessmentId((current) => (current === submission.id ? "" : submission.id))}
+                  />
+                ))}
+              </ChartSection>
+            ) : null}
+          </div>
+
+          <aside className="patient-emr-rail">
+            <ChartSection
+              title="Clinical profile"
+              subtitle="Vitals, safety flags, and current patient facts."
+              action={<button type="button" onClick={() => setEditingProfile(true)}>Update</button>}
+              className="patient-chart-overview"
+            >
+              <div className="patient-profile-facts">
+                <ChartFact label="Vitals" value={vitals || "Not provided"} />
+                <ChartFact label="Email" value={p.email || "Not provided"} />
+                <ChartFact label="Address" value={p.address || "Not provided"} />
+                {demographics.filter((item) => !["Age", "Sex", "City", "BMI", "Height / weight"].includes(item.label)).map((item) => (
+                  <ChartFact key={item.label} label={item.label} value={item.value} />
+                ))}
               </div>
-            </div>
-            <div className="patient-history-grid">
-              <div>
-                <h4>Visits</h4>
-                {p.visitHistory.length ? (
-                  <div className="timeline-mini">
-                    {p.visitHistory.map((h) => (
-                      <div key={h.id} className="tm-row">
-                        <div className="d">{formatDate(h.date)}</div>
-                        <div className="b">
-                          <div className="t">{h.title}</div>
-                          {h.note && <div className="s">{h.note}</div>}
-                        </div>
+
+              {latestIntakeFacts.length ? (
+                <div className="patient-profile-intake">
+                  <div className="patient-profile-intake-head">
+                    <span>Latest intake</span>
+                    {latestSubmission ? <strong>{titleCase(latestSubmission.track_key || latestSubmission.kind)} · {formatDate(latestSubmission.submitted_at)}</strong> : null}
+                  </div>
+                  <div className="patient-profile-intake-grid">
+                    {latestIntakeFacts.map((item) => (
+                      <div key={item.label}>
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
                       </div>
                     ))}
                   </div>
-                ) : <EmptyInline>No visit history yet.</EmptyInline>}
-              </div>
+                </div>
+              ) : null}
 
-              <div>
-                <h4>Prescriptions</h4>
-                {historicalPrescriptions.length ? (
-                  <PatientPrescriptionHistory
-                    prescriptions={historicalPrescriptions}
-                    onAmend={(prescription) => onAmendPrescription?.(p, prescription)}
-                  />
-                ) : <EmptyInline>No checkout history yet.</EmptyInline>}
-
-                {p.assessment.submissions.length ? (
-                  <>
-                    <h4 className="patient-history-subhead">Assessments</h4>
-                    {p.assessment.submissions.map((submission) => (
-                      <AssessmentHistoryRow
-                        key={submission.id}
-                        submission={submission}
-                        expanded={expandedAssessmentId === submission.id}
-                        onToggle={() => setExpandedAssessmentId((current) => (current === submission.id ? "" : submission.id))}
-                      />
-                    ))}
-                  </>
-                ) : null}
+              <div className="patient-clinical-flags">
+                {clinicalFlags.length ? clinicalFlags.map((flag, index) => (
+                  <span key={`${flag.label}-${index}`} className={"patient-flag " + flag.tone}>
+                    {flag.icon}<span>{flag.label}</span>
+                  </span>
+                )) : (
+                  <span className="patient-flag clear">No allergies or active conditions recorded</span>
+                )}
               </div>
-            </div>
-          </section>
-        )}
+            </ChartSection>
 
-        {p.address && (
-          <section className="patient-chart-section patient-chart-muted">
-            <div className="patient-chart-section-head">
-              <div>
-                <h3>Address</h3>
-                <p>{p.address}</p>
+          <ChartSection title="Recall" subtitle="Fast context for the next clinical decision.">
+              <div className="patient-profile-facts">
+                <ChartFact label="Last visit" value={latestVisit ? `${latestVisit.title} · ${formatDate(latestVisit.date)}` : "No visit history"} />
+                <ChartFact label="Last medication" value={currentMedication?.name || "Not listed"} />
+                <ChartFact label="Last prescription" value={latestPrescription?.itemLabel || "No prescription history"} />
+                <ChartFact label="Last refill" value={latestRefill ? `${refillStatusLabel(latestRefill.status)} · ${formatDate(latestRefill.reviewed_at || latestRefill.submitted_at)}` : "No refill history"} />
               </div>
-            </div>
-          </section>
-        )}
+            </ChartSection>
+          </aside>
+        </div>
       </div>
 
       {editingProfile ? (

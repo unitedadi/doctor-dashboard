@@ -247,7 +247,7 @@ function QuickWlpRequestDetail({ request, onFinalize, onPrescribe, onRecreate, r
           recreatingId={recreatingId}
         />
         <button className="dd-btn-block" disabled={Boolean(saving)} onClick={() => onPrescribe?.(request)}>
-          Prescribe
+          Issue prescription
         </button>
       </div>
 

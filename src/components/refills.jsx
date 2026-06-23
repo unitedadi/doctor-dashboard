@@ -118,7 +118,7 @@ function RefillRequestDetail({ request, onPrescribe }) {
       <div className="refill-detail-empty">
         <div className="refill-detail-icon">{I.drop}</div>
         <div>Select a refill request</div>
-        <p>Review the patient answers, then prescribe from this queue.</p>
+        <p>Review the patient answers, then issue the refill prescription.</p>
       </div>
     );
   }
@@ -158,10 +158,10 @@ function RefillRequestDetail({ request, onPrescribe }) {
       <button
         className="dd-btn-block"
         disabled={!canPrescribe}
-        title={canPrescribe ? "Prescribe refill medication" : "Missing patient id on this refill request"}
+        title={canPrescribe ? "Issue refill prescription" : "Missing patient id on this refill request"}
         onClick={() => onPrescribe(request.patientId, "weight-loss", request.customerId, request.id)}
       >
-        Prescribe refill
+        Issue refill prescription
       </button>
     </div>
   );
