@@ -3019,8 +3019,27 @@ body {
 }
 
 .clinical-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 11px 0;
   border-top: 1px solid rgba(23,59,61,0.05);
+}
+
+.clinical-file-item > div {
+  min-width: 0;
+}
+
+.clinical-file-item button {
+  border: 1px solid rgba(23,59,61,0.1);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--dd-accent);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: 500 11px/1 var(--dd-font);
+  padding: 7px 10px;
 }
 
 .clinical-file-item strong,
@@ -3511,12 +3530,18 @@ body {
   color: #6f5a34;
 }
 .quickwlp-prescription-open {
+  background: #fff;
   border: 1px solid rgba(23, 59, 61, 0.12);
   border-radius: 999px;
   color: var(--dd-accent);
+  cursor: pointer;
   font: 500 11px/1 var(--dd-font);
   padding: 6px 10px;
   text-decoration: none;
+}
+
+.rx-amend-reason textarea {
+  min-height: 86px;
 }
 .quickwlp-prescription-recreate {
   padding: 6px 10px;
@@ -3989,6 +4014,93 @@ body {
   margin-top: 2px;
   font: 400 13px/1.5 var(--dd-font);
   color: var(--dd-text-secondary);
+}
+
+.rx-amend-original {
+  border-top: 1px solid var(--dd-divider);
+  border-bottom: 1px solid var(--dd-divider);
+  margin: 18px 0 24px;
+  padding: 14px 0;
+}
+
+.rx-amend-original.compact {
+  margin: 14px 0 18px;
+}
+
+.rx-amend-original-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.rx-amend-original-head span {
+  color: var(--dd-text-tertiary);
+  font: 400 12px/1 var(--dd-font);
+}
+
+.rx-amend-original-head strong {
+  color: var(--dd-accent);
+  font: 500 11px/1 var(--dd-font);
+  text-transform: uppercase;
+}
+
+.rx-amend-original-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rx-amend-original-item strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 500 13px/1.3 var(--dd-font);
+}
+
+.rx-amend-original-item p {
+  margin: 4px 0 0;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+}
+
+.rx-amend-side-head {
+  border-bottom: 1px solid var(--dd-divider);
+  padding-bottom: 14px;
+}
+
+.rx-amend-side-head span {
+  color: var(--dd-text-tertiary);
+  display: block;
+  font: 400 11px/1 var(--dd-font);
+  margin-bottom: 7px;
+}
+
+.rx-amend-side-head strong {
+  color: var(--dd-text-primary);
+  display: block;
+  font: 500 17px/1.25 var(--dd-font);
+}
+
+.rx-amend-section-title {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: 0 0 10px;
+}
+
+.rx-amend-section-title span {
+  color: var(--dd-text-secondary);
+  font: 400 12px/1 var(--dd-font);
+}
+
+.rx-amend-section-title strong {
+  color: var(--dd-text-primary);
+  font: 500 13px/1 var(--dd-font);
+}
+
+.rx-cart.rx-cart-amend {
+  margin-bottom: 16px;
 }
 
 .rx-cart {

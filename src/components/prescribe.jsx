@@ -238,7 +238,21 @@ function publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing) 
   return "Publish care plan";
 }
 
-function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, initialRefillRequestId }) {
+function parseAmendItems(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function listItems(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, initialRefillRequestId, isAmendMode }) {
   if (!patient) {
     return (
       <div className="rx-review-empty">
@@ -258,7 +272,7 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
       </div>
       <div className="rx-review-row">
         <span>Type</span>
-        <strong>{isQuickWlpMode ? "One-off prescription" : initialRefillRequestId ? "Refill prescription" : "Care plan"}</strong>
+        <strong>{isAmendMode ? "Amendment" : isQuickWlpMode ? "One-off prescription" : initialRefillRequestId ? "Refill prescription" : "Care plan"}</strong>
       </div>
       <div className="rx-review-row">
         <span>Items</span>
@@ -269,6 +283,102 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
         <strong>{cart.length ? formatPrice(cartTotal) : "Not ready"}</strong>
       </div>
     </div>
+  );
+}
+
+function amendmentLineLabel(item) {
+  const name = item?.name || item?.product_name || item?.productName || "Medication";
+  const quantity = Math.max(1, Number(item?.quantity || 1));
+  return `${name}${quantity > 1 ? ` x${quantity}` : ""}`;
+}
+
+function AmendmentOriginalPrescription({ items, compact = false }) {
+  const lines = listItems(items);
+  if (!lines.length) return null;
+  return (
+    <div className={compact ? "rx-amend-original compact" : "rx-amend-original"}>
+      <div className="rx-amend-original-head">
+        <span>Original prescription</span>
+        <strong>Unpaid</strong>
+      </div>
+      <div className="rx-amend-original-list">
+        {lines.map((item, index) => (
+          <div className="rx-amend-original-item" key={`${item?.product_id || item?.name || index}-${index}`}>
+            <strong>{amendmentLineLabel(item)}</strong>
+            {(item?.doctor_instructions || item?.doctorInstructions) && (
+              <p>{item.doctor_instructions || item.doctorInstructions}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AmendmentReviewPanel({
+  patient,
+  amendItems,
+  cart,
+  cartTotal,
+  amendReason,
+  setAmendReason,
+  removeCart,
+  canPublish,
+  publishPrescription,
+  publishing,
+  I,
+}) {
+  return (
+    <>
+      <div className="rx-amend-side-head">
+        <span>Re-issue prescription</span>
+        <strong>{patient?.name || "Patient"}</strong>
+      </div>
+
+      <AmendmentOriginalPrescription items={amendItems} compact />
+
+      <div className="rx-amend-replacement">
+        <div className="rx-amend-section-title">
+          <span>New prescription</span>
+          <strong>{cart.length ? formatPrice(cartTotal) : "Not ready"}</strong>
+        </div>
+        <div className="rx-cart rx-cart-amend">
+          {!patient ? (
+            <div className="empty">Patient context is missing.</div>
+          ) : cart.length === 0 ? (
+            <div className="empty">Select medication from the catalog.</div>
+          ) : cart.map((item) => (
+            <div key={item.id} className="rx-cart-item">
+              <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
+              <div className="nm">{item.name}</div>
+              <div className="rx-cart-meta">
+                <span>Qty {item.quantity}</span>
+                <span>{formatPrice((item.price_fils || 0) * item.quantity)}</span>
+              </div>
+              <div className="ds">{item.doctor_instructions}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="field-block rx-amend-reason">
+        <label>Reason</label>
+        <textarea
+          value={amendReason}
+          onChange={(event) => setAmendReason(event.target.value)}
+          placeholder="Why is the prescription being re-issued?"
+        />
+      </div>
+
+      <button
+        className="dd-btn-block"
+        disabled={!canPublish}
+        style={{ opacity: canPublish ? 1 : 0.4, cursor: canPublish ? "pointer" : "not-allowed" }}
+        onClick={publishPrescription}
+      >
+        {publishing ? "Re-issuing..." : "Re-issue prescription"}
+      </button>
+    </>
   );
 }
 
@@ -300,6 +410,11 @@ function PrescribeView({
   initialQuickWlpWhatsapp,
   initialQuickWlpEmail,
   initialQuickWlpDoctorId,
+  initialAmendSource,
+  initialAmendId,
+  initialAmendItems,
+  initialPatientName,
+  initialPatientPhone,
   onSent,
 }) {
   const { I, Avatar, Topbar } = window.DD_UI;
@@ -323,7 +438,12 @@ function PrescribeView({
   const [publishing, setPublishing] = useStateR(false);
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
+  const [amendReason, setAmendReason] = useStateR("");
+  const [amendPrefilled, setAmendPrefilled] = useStateR(false);
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
+  const amendSource = initialAmendSource || "";
+  const amendItems = useMemoR(() => parseAmendItems(initialAmendItems), [initialAmendItems]);
+  const isAmendMode = Boolean(initialAmendId && amendSource && amendItems.length);
 
   const quickWlpPatient = useMemoR(() => {
     if (!isQuickWlpMode) return null;
@@ -348,7 +468,29 @@ function PrescribeView({
     };
   }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode, quickWlpDoctorId]);
 
-  const rxPatient = patients.find((item) => item.key === selectedPatientKey) || null;
+  const amendmentPatient = useMemoR(() => {
+    if (isQuickWlpMode || !isAmendMode || !initialPatientId) return null;
+    const track = initialTrackKey || "weight-loss";
+    return {
+      key: `amend:${initialPatientId}:${track}`,
+      id: initialPatientId,
+      customerId: initialCustomerId || "",
+      name: initialPatientName || "Patient",
+      initials: patientInitials(initialPatientName || "Patient"),
+      age: null,
+      sex: "",
+      phone: initialPatientPhone || "",
+      email: "",
+      whatsapp: "",
+      trackKey: track,
+      doctorId: DOCTOR_ID,
+      subscriptionStatus: "",
+      latestCompletedAt: null,
+      canPrescribe: true,
+    };
+  }, [initialCustomerId, initialPatientId, initialPatientName, initialPatientPhone, initialTrackKey, isAmendMode, isQuickWlpMode]);
+
+  const rxPatient = patients.find((item) => item.key === selectedPatientKey) || amendmentPatient;
   const patient = isQuickWlpMode ? quickWlpPatient : rxPatient;
   const contextualRxMode = !isQuickWlpMode && Boolean(initialPatientId || initialCustomerId || initialRefillRequestId);
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
@@ -356,7 +498,7 @@ function PrescribeView({
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
   const productCatalogs = [...TRACKS, SUPPLEMENTS_CATALOG];
-  const canPublish = Boolean(cart.length && !publishing && patient && (isQuickWlpMode || patient.customerId));
+  const canPublish = Boolean(cart.length && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
 
   const loadPatients = React.useCallback(async () => {
     if (isQuickWlpMode) {
@@ -420,6 +562,11 @@ function PrescribeView({
   }, [patient?.key]);
 
   useEffectR(() => {
+    setAmendPrefilled(false);
+    setAmendReason("");
+  }, [initialAmendId]);
+
+  useEffectR(() => {
     let cancelled = false;
     const loadProducts = async () => {
       setProductsLoading(true);
@@ -479,6 +626,40 @@ function PrescribeView({
     return products
       .map((product) => ({ ...product, details: productDetails(product, productCatalogKey) }));
   }, [products, productCatalogKey]);
+
+  useEffectR(() => {
+    if (!patient || !isAmendMode || amendPrefilled) return;
+    const byId = new Map(visibleProducts.map((product) => [product.product_id, product]));
+    const nextCart = amendItems
+      .map((item) => {
+        const productId = item.product_id || item.productId;
+        if (!productId) return null;
+        const product = byId.get(productId);
+        const catalogKey = item.catalogKey || productCatalogKey || patient.trackKey;
+        const details = product?.details || {
+          price: product?.price_fils ? formatPrice(product.price_fils) : "",
+          category: "",
+          strength: "",
+          frequency: "",
+          packSize: "",
+          instructions: item.doctor_instructions || item.doctorInstructions || "Use as directed by your DarDoc physician.",
+        };
+        return {
+          id: `${catalogKey}:${productId}`,
+          product_id: productId,
+          vertical_id: product?.vertical_id || item.vertical_id || "",
+          name: product?.name || item.name || item.product_name || "Medication",
+          price_fils: product?.price_fils || item.price_fils || 0,
+          quantity: Math.max(1, Number(item.quantity || 1)),
+          doctor_instructions: item.doctor_instructions || item.doctorInstructions || details.instructions,
+          details,
+          catalogKey,
+        };
+      })
+      .filter(Boolean);
+    setCart(nextCart);
+    setAmendPrefilled(true);
+  }, [amendItems, amendPrefilled, isAmendMode, patient, productCatalogKey, visibleProducts]);
 
   const cartTotal = cart.reduce((sum, item) => sum + ((item.price_fils || 0) * item.quantity), 0);
 
@@ -597,15 +778,20 @@ function PrescribeView({
         doctor_instructions: item.doctor_instructions,
       }));
       const endpoint = isQuickWlpMode
-        ? `${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(patient.id)}/prescriptions`
+        ? isAmendMode
+          ? `${API_BASE}/doctor/quickwlp/prescriptions/${encodeURIComponent(initialAmendId)}/amend`
+          : `${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(patient.id)}/prescriptions`
         : initialRefillRequestId
           ? `${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(initialRefillRequestId)}/prescriptions`
-          : `${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`;
+          : isAmendMode
+            ? `${API_BASE}/doctor/rx/care-plans/${encodeURIComponent(initialAmendId)}/amend`
+            : `${API_BASE}/doctor/patients/${patient.id}/rx/tracks/${trackKey}/prescriptions`;
       const payload = isQuickWlpMode
         ? {
           doctor_id: patient.doctorId || quickWlpDoctorId,
           seller_id: SUPPLEMENT_SELLER_ID,
           items,
+          ...(isAmendMode ? { reason: amendReason.trim() } : {}),
         }
         : {
           doctor_id: DOCTOR_ID,
@@ -613,6 +799,7 @@ function PrescribeView({
           title: `${activeTrack.label} Rx plan`,
           summary: activeTrack.summary,
           items,
+          ...(isAmendMode ? { reason: amendReason.trim() } : {}),
         };
       const data = await fetchJson(endpoint, {
         method: "POST",
@@ -624,7 +811,9 @@ function PrescribeView({
       setSelectedProduct(null);
       const quickWlpExpiry = formatDateTime(data.prescription?.checkout_expires_at);
       setSentToast(
-        isQuickWlpMode
+        isAmendMode
+          ? "Prescription amended"
+          : isQuickWlpMode
           ? quickWlpExpiry
             ? `Prescription published · checkout expires ${quickWlpExpiry}`
             : "Prescription published"
@@ -643,8 +832,8 @@ function PrescribeView({
   return (
     <>
       <Topbar
-        title={isQuickWlpMode ? "Prescribe Quick WLP" : initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
-        subtitle={isQuickWlpMode ? "Select medication, quantity, and instructions, then publish the prescription" : patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
+        title={isAmendMode ? "Re-issue prescription" : isQuickWlpMode ? "Prescribe Quick WLP" : initialRefillRequestId ? "Prescribe refill" : "Prescribe"}
+        subtitle={isAmendMode ? "Review the unpaid prescription, update medication, and issue a new prescription" : isQuickWlpMode ? "Select medication, quantity, and instructions, then publish the prescription" : patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then publish an Rx care plan"}
       />
       <div className="rx-layout">
         <div className="rx-main">
@@ -729,6 +918,8 @@ function PrescribeView({
                   </div>
                   {!isQuickWlpMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
+
+                {isAmendMode && <AmendmentOriginalPrescription items={amendItems} />}
 
                 <div className="section-hdr"><div className="label">Medication catalog</div></div>
                 <div className="rx-track-tabs rx-product-source-tabs">
@@ -845,64 +1036,83 @@ function PrescribeView({
         </div>
 
         <div className="rx-side dd-scroll">
-          <div className="section-hdr"><div className="label">Review & publish</div></div>
-          <ReviewChecklist
-            patient={patient}
-            cart={cart}
-            cartTotal={cartTotal}
-            activeTrack={activeTrack}
-            isQuickWlpMode={isQuickWlpMode}
-            initialRefillRequestId={initialRefillRequestId}
-          />
-          <div className="rx-cart">
-            {!patient ? (
-              <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>
-            ) : cart.length === 0 ? (
-              <div className="empty">No medication added yet.<br/>Select products from the catalog to build the prescription.</div>
-            ) : cart.map((item) => (
-              <div key={item.id} className="rx-cart-item">
-                <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
-                <div className="nm">{item.name}</div>
-                <div className="rx-cart-meta">
-                  <span>{cartItemCatalogLabel(item, activeTrack.label)}</span>
-                  <span>Qty {item.quantity}</span>
-                  <span>{formatPrice((item.price_fils || 0) * item.quantity)}</span>
-                </div>
-                <div className="ds">{item.doctor_instructions}</div>
-              </div>
-            ))}
-            {cart.length > 0 && (
-              <div className="rx-summary">
-                <span>{cart.length} item{cart.length === 1 ? "" : "s"}</span>
-                <span>{formatPrice(cartTotal)}</span>
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-            <button
-              className="dd-btn-block"
-              disabled={!canPublish}
-              style={{ opacity: canPublish ? 1 : 0.4, cursor: canPublish ? "pointer" : "not-allowed" }}
-              onClick={publishPrescription}
-            >
-              {publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing)}
-            </button>
-          </div>
-
-          {patient && (
+          {isAmendMode ? (
+            <AmendmentReviewPanel
+              patient={patient}
+              amendItems={amendItems}
+              cart={cart}
+              cartTotal={cartTotal}
+              amendReason={amendReason}
+              setAmendReason={setAmendReason}
+              removeCart={removeCart}
+              canPublish={canPublish}
+              publishPrescription={publishPrescription}
+              publishing={publishing}
+              I={I}
+            />
+          ) : (
             <>
-              <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>{isQuickWlpMode ? "Customer" : "Clinical guardrails"}</h4>
-              <div className="kv-row"><div className="k">Track</div><div className="v">{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</div></div>
-              {isQuickWlpMode ? (
+              <div className="section-hdr"><div className="label">Review & publish</div></div>
+              <ReviewChecklist
+                patient={patient}
+                cart={cart}
+                cartTotal={cartTotal}
+                activeTrack={activeTrack}
+                isQuickWlpMode={isQuickWlpMode}
+                initialRefillRequestId={initialRefillRequestId}
+                isAmendMode={isAmendMode}
+              />
+              <div className="rx-cart">
+                {!patient ? (
+                  <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>
+                ) : cart.length === 0 ? (
+                  <div className="empty">No medication added yet.<br/>Select products from the catalog to build the prescription.</div>
+                ) : cart.map((item) => (
+                  <div key={item.id} className="rx-cart-item">
+                    <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
+                    <div className="nm">{item.name}</div>
+                    <div className="rx-cart-meta">
+                      <span>{cartItemCatalogLabel(item, activeTrack.label)}</span>
+                      <span>Qty {item.quantity}</span>
+                      <span>{formatPrice((item.price_fils || 0) * item.quantity)}</span>
+                    </div>
+                    <div className="ds">{item.doctor_instructions}</div>
+                  </div>
+                ))}
+                {cart.length > 0 && (
+                  <div className="rx-summary">
+                    <span>{cart.length} item{cart.length === 1 ? "" : "s"}</span>
+                    <span>{formatPrice(cartTotal)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+                <button
+                  className="dd-btn-block"
+                  disabled={!canPublish}
+                  style={{ opacity: canPublish ? 1 : 0.4, cursor: canPublish ? "pointer" : "not-allowed" }}
+                  onClick={publishPrescription}
+                >
+                  {publishButtonLabel(isQuickWlpMode, initialRefillRequestId, publishing)}
+                </button>
+              </div>
+
+              {patient && (
                 <>
-                  <div className="kv-row"><div className="k">Phone</div><div className="v">{patient.phone || "Not provided"}</div></div>
-                  <div className="kv-row"><div className="k">Email</div><div className="v">{patient.email || "Not provided"}</div></div>
-                </>
-              ) : (
-                <>
-                  <div className="kv-row"><div className="k">Subscription</div><div className="v">{titleCase(patient.subscriptionStatus)}</div></div>
-                  <div className="kv-row"><div className="k">Completed</div><div className="v">{formatDateTime(patient.latestCompletedAt)}</div></div>
+                  <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>{isQuickWlpMode ? "Customer" : "Clinical guardrails"}</h4>
+                  <div className="kv-row"><div className="k">Track</div><div className="v">{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</div></div>
+                  {isQuickWlpMode ? (
+                    <>
+                      <div className="kv-row"><div className="k">Phone</div><div className="v">{patient.phone || "Not provided"}</div></div>
+                      <div className="kv-row"><div className="k">Email</div><div className="v">{patient.email || "Not provided"}</div></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="kv-row"><div className="k">Subscription</div><div className="v">{titleCase(patient.subscriptionStatus)}</div></div>
+                      <div className="kv-row"><div className="k">Completed</div><div className="v">{formatDateTime(patient.latestCompletedAt)}</div></div>
+                    </>
+                  )}
                 </>
               )}
             </>

@@ -231,6 +231,7 @@ function medicationName(item) {
 
 function prescriptionTitle(item) {
   if (!item) return "Prescription";
+  if (item.source === "rx_care_plan" && item.title) return item.title;
   const items = asArray(item.items);
   if (items.length) {
     return items.map((line) => `${line.name || "Medication"}${line.quantity ? ` x${line.quantity}` : ""}`).join(", ");
@@ -277,10 +278,56 @@ function numberOrNull(value) {
 }
 
 function prescriptionMeta(item) {
+  const medication = formatMedicationItems(item.items);
+  const status = String(item.status || "").toUpperCase() === "PUBLISHED"
+    ? "Issued · payment pending"
+    : item.status
+      ? titleCase(item.status)
+      : "";
   return [
-    item.status ? titleCase(item.status) : "",
+    status,
+    medication !== "No medication items" ? medication : "",
     formatContextDateTime(item.issued_at || item.createdAt || item.created_at),
   ].filter(Boolean).join(" · ");
+}
+
+function isAmendablePrescription(item) {
+  return item?.can_amend === true || item?.canAmend === true;
+}
+
+function isActiveRxPrescription(item) {
+  return item?.source === "rx_care_plan" && String(item?.status || "").toUpperCase() === "ACTIVE";
+}
+
+function primaryPrescriptionAction(params) {
+  const prescriptions = asArray(params.prescriptions);
+  const amendable = prescriptions.find(isAmendablePrescription) || null;
+  if (amendable) {
+    return {
+      label: "Re-issue prescription",
+      heading: "Re-issue unpaid prescription",
+      state: "Unpaid prescription can be updated before payment",
+      disabled: false,
+      mode: "amend",
+      prescription: amendable,
+    };
+  }
+  if (prescriptions.some(isActiveRxPrescription)) {
+    return {
+      label: "Follow-up prescription",
+      heading: "Follow-up prescription",
+      state: params.canPrescribe ? "Active Rx plan on file" : "Complete a follow-up consultation first",
+      disabled: !params.canPrescribe,
+      mode: "prescribe",
+    };
+  }
+  return {
+    label: params.canPrescribe ? "Prescribe" : "Review patient file",
+    heading: params.canPrescribe ? "Publish clinical prescription" : "Review patient file",
+    state: params.canPrescribe ? "Ready to prescribe" : disabledReasonCopy(params.reason),
+    disabled: !params.canPrescribe,
+    mode: "prescribe",
+  };
 }
 
 function deliveryMeta(item) {
@@ -593,7 +640,7 @@ function ClinicalChatHeader({ channel, context, contextLoading, contextError, fa
   );
 }
 
-function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatient, patientFile, patientFileLoading, prescribablePatient, onOpenPatient, onPatientFileUpdated, onPrescribe }) {
+function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatient, patientFile, patientFileLoading, prescribablePatient, onOpenPatient, onPatientFileUpdated, onPrescribe, onAmendPrescription }) {
   const [editingProfile, setEditingProfile] = useStateC(false);
   const patient = mapPatientFileForPanel(patientFile, chatContextPatient(context, fallbackPatient));
   const service = channelServiceName(channel, patient?.name);
@@ -612,8 +659,11 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
   const deliveredMedications = asArray(patient.delivered_medications);
   const refills = asArray(patient.refill_history);
   const visits = asArray(patient.visit_history);
-  const prescriptionState = canPrescribe ? "Ready to prescribe" : disabledReasonCopy(context?.rx?.can_prescribe_reason);
-  const primaryAction = canPrescribe ? "Publish clinical prescription" : "Review patient file";
+  const prescriptionAction = primaryPrescriptionAction({
+    prescriptions,
+    canPrescribe,
+    reason: context?.rx?.can_prescribe_reason,
+  });
 
   return (
     <aside className="clinical-context-panel">
@@ -627,8 +677,8 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
 
       <section className="clinical-next-card">
         <span>Clinical next</span>
-        <strong>{primaryAction}</strong>
-        <p>{prescriptionState}</p>
+        <strong>{prescriptionAction.heading}</strong>
+        <p>{prescriptionAction.state}</p>
       </section>
 
       <section className="clinical-context-recall">
@@ -646,7 +696,7 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
         </div>
         <div>
           <span>Prescription</span>
-          <strong>{prescriptionState}</strong>
+          <strong>{prescriptionAction.state}</strong>
         </div>
       </section>
 
@@ -732,8 +782,13 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
         <h4>Prescriptions</h4>
         {prescriptions.length ? prescriptions.slice(0, 6).map((item, index) => (
           <div className="clinical-file-item" key={item.id || index}>
-            <strong>{prescriptionTitle(item)}</strong>
-            <span>{prescriptionMeta(item) || "Prescription details not available"}</span>
+            <div>
+              <strong>{prescriptionTitle(item)}</strong>
+              <span>{prescriptionMeta(item) || "Prescription details not available"}</span>
+            </div>
+            {isAmendablePrescription(item) ? (
+              <button type="button" onClick={() => onAmendPrescription?.(patient, item)}>Re-issue</button>
+            ) : null}
           </div>
         )) : <p className="clinical-file-empty">No prescription history found.</p>}
       </section>
@@ -772,10 +827,16 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
         <button
           type="button"
           className="btn-primary"
-          disabled={!canPrescribe}
-          onClick={() => canPrescribe && onPrescribe(patientId, prescribeTrackKey, patientCustomerId)}
+          disabled={prescriptionAction.disabled}
+          onClick={() => {
+            if (prescriptionAction.mode === "amend") {
+              onAmendPrescription?.(patient, prescriptionAction.prescription);
+              return;
+            }
+            if (canPrescribe) onPrescribe(patientId, prescribeTrackKey, patientCustomerId);
+          }}
         >
-          Prescribe
+          {prescriptionAction.label}
         </button>
         <button
           type="button"
@@ -798,7 +859,7 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
   );
 }
 
-function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, prescribableDirectory }) {
+function StreamConversation({ onOpenPatient, onPrescribe, onAmendPrescription, patientDirectory, prescribableDirectory }) {
   const { channel, client } = useChatContext("StreamConversation");
   const fallbackPatient = channelPatient(channel, client.userID, patientDirectory);
   const directoryPrescribablePatient = findChannelPatient(channel, client.userID, prescribableDirectory);
@@ -925,6 +986,7 @@ function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, pres
             onOpenPatient={onOpenPatient}
             onPatientFileUpdated={setPatientFile}
             onPrescribe={onPrescribe}
+            onAmendPrescription={onAmendPrescription}
             patientFile={patientFile}
             patientFileLoading={patientFileLoading}
             prescribablePatient={prescribablePatient}
@@ -935,7 +997,7 @@ function StreamConversation({ onOpenPatient, onPrescribe, patientDirectory, pres
   );
 }
 
-function ChatView({ initialPatientId, onOpenPatient, onPrescribe }) {
+function ChatView({ initialPatientId, onOpenPatient, onPrescribe, onAmendPrescription }) {
   const { Topbar } = window.DD_UI;
   const [client, setClient] = useStateC(null);
   const [initialChannelId, setInitialChannelId] = useStateC("");
@@ -1073,6 +1135,7 @@ function ChatView({ initialPatientId, onOpenPatient, onPrescribe }) {
               <StreamConversation
                 onOpenPatient={onOpenPatient}
                 onPrescribe={onPrescribe}
+                onAmendPrescription={onAmendPrescription}
                 patientDirectory={patientDirectory}
                 prescribableDirectory={prescribableDirectory}
               />

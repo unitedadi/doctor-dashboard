@@ -176,13 +176,29 @@ function groupedAssessmentAnswers(answers) {
 }
 
 function mapPrescriptionHistoryItem(item) {
+  const items = asArray(item.items || item.items_json).map((line) => ({
+    product_id: line.product_id || line.productId || "",
+    name: line.name || line.product_name || "Medication",
+    quantity: Number(line.quantity || 1),
+    doctor_instructions: line.doctor_instructions || line.doctorInstructions || "",
+    price_fils: line.price_fils || 0,
+  }));
+  const itemLabel = item.item_label
+    || item.title
+    || (items.length ? items.map((line) => `${line.name}${line.quantity > 1 ? ` x${line.quantity}` : ""}`).join(", ") : "Prescription checkout");
   return {
-    id: item.prescription_id,
+    id: item.id || item.prescription_id,
+    source: item.source || (item.checkout_url ? "quickwlp_prescription" : "rx_care_plan"),
+    trackKey: item.track_key || "weight-loss",
+    quickWlpLeadId: item.lead_id || item.quickwlp_lead_id || "",
     checkoutUrl: item.checkout_url || "",
     checkoutExpiresAt: item.checkout_expires_at || "",
-    itemLabel: item.item_label || "Prescription checkout",
+    itemLabel,
     status: item.status || "ACTIVE",
+    canAmend: item.can_amend === true || item.canAmend === true,
     createdAt: item.created_at || "",
+    issuedAt: item.issued_at || "",
+    items,
   };
 }
 
@@ -193,6 +209,57 @@ function mapPrescribablePatient(item) {
     trackKey: item.track_key || "",
     canPrescribe: item.can_prescribe === true,
     latestCompletedAt: item.latest_completed_at || "",
+  };
+}
+
+function findAmendablePrescription(prescriptions) {
+  return asArray(prescriptions).find((item) => item.canAmend === true) || null;
+}
+
+function hasActiveRxPrescription(prescriptions) {
+  return asArray(prescriptions).some((item) => (
+    item.source === "rx_care_plan" && String(item.status || "").toUpperCase() === "ACTIVE"
+  ));
+}
+
+function isIssuedUnpaidPrescription(prescription) {
+  return prescription?.source === "rx_care_plan" && String(prescription?.status || "").toUpperCase() === "PUBLISHED";
+}
+
+function prescriptionMedicationLabel(prescription) {
+  return asArray(prescription?.items)
+    .map((item) => `${item.name || "Medication"}${item.quantity > 1 ? ` x${item.quantity}` : ""}`)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function prescriptionStatusLabel(prescription) {
+  if (isIssuedUnpaidPrescription(prescription)) return "Issued · payment pending";
+  return titleCase(prescription?.status || "Issued");
+}
+
+function prescriptionActionCopy(patient) {
+  if (findAmendablePrescription(patient.prescriptionHistory)) {
+    return {
+      label: "Re-issue prescription",
+      title: "Update the unpaid prescription before payment",
+      disabled: false,
+      mode: "amend",
+    };
+  }
+  if (hasActiveRxPrescription(patient.prescriptionHistory)) {
+    return {
+      label: "Follow-up prescription",
+      title: patient.prescribe ? "Create a follow-up prescription" : "A new completed consultation is required before prescribing again",
+      disabled: !patient.prescribe,
+      mode: "prescribe",
+    };
+  }
+  return {
+    label: patient.prescribe ? "Prescribe" : "Consult first",
+    title: patient.prescribe ? "Prescribe for this patient" : "Complete a consultation before prescribing",
+    disabled: !patient.prescribe,
+    mode: "prescribe",
   };
 }
 
@@ -225,7 +292,10 @@ function mapPatient(item) {
     medications: asArray(item.medications),
     latestLabs: asArray(item.latest_labs),
     visitHistory: asArray(item.visit_history),
-    prescriptionHistory: asArray(item.prescription_history).map(mapPrescriptionHistoryItem),
+    prescriptionHistory: [
+      ...asArray(item.rx_prescription_history),
+      ...asArray(item.prescription_history),
+    ].map(mapPrescriptionHistoryItem),
     upcoming: item.upcoming_appointment || null,
     chat: item.chat || { available: false, unavailable_reason: "chat_locked" },
     prescribe: null,
@@ -233,7 +303,7 @@ function mapPatient(item) {
   };
 }
 
-function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe }) {
+function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe, onAmendPrescription }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const [patients, setPatients] = useStateP([]);
   const [search, setSearch] = useStateP("");
@@ -371,7 +441,13 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
             </div>
           ) : filtered.map((pat) => {
             const primaryMedication = pat.medications[0]?.name || "";
-            const statusLabel = pat.upcoming
+            const hasAmendable = Boolean(findAmendablePrescription(pat.prescriptionHistory));
+            const hasActiveRx = hasActiveRxPrescription(pat.prescriptionHistory);
+            const statusLabel = hasAmendable
+              ? "Amend"
+              : hasActiveRx
+                ? "Follow-up"
+                : pat.upcoming
               ? "Visit booked"
               : pat.prescribe
                 ? "Ready"
@@ -395,7 +471,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
         </div>
 
         <div className="patient-pane dd-scroll fade-in" key={p?.id || "empty"}>
-          {loading ? <div className="empty-state">Loading patient profile...</div> : p ? <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onProfileSaved={loadPatients} /> : <div className="empty-state">Select a patient</div>}
+          {loading ? <div className="empty-state">Loading patient profile...</div> : p ? <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={loadPatients} /> : <div className="empty-state">Select a patient</div>}
         </div>
       </div>
     </>
@@ -406,7 +482,7 @@ function EmptyInline({ children }) {
   return <div className="inline-empty">{children}</div>;
 }
 
-function PatientPrescriptionHistory({ prescriptions }) {
+function PatientPrescriptionHistory({ prescriptions, onAmend }) {
   const list = Array.isArray(prescriptions) ? prescriptions : [];
   if (!list.length) return null;
 
@@ -419,15 +495,20 @@ function PatientPrescriptionHistory({ prescriptions }) {
             <div>
               <div className="patient-prescription-title">{prescription.itemLabel}</div>
               <div className="patient-prescription-meta">
-                {[prescription.checkoutExpiresAt ? `Expires ${formatDateTime(prescription.checkoutExpiresAt)}` : "", prescription.createdAt ? `Created ${formatDateTime(prescription.createdAt)}` : ""].filter(Boolean).join(" · ")}
+                {[prescriptionStatusLabel(prescription), prescriptionMedicationLabel(prescription), prescription.checkoutExpiresAt ? `Expires ${formatDateTime(prescription.checkoutExpiresAt)}` : "", (prescription.issuedAt || prescription.createdAt) ? `Issued ${formatDateTime(prescription.issuedAt || prescription.createdAt)}` : ""].filter(Boolean).join(" · ")}
               </div>
             </div>
             <div className="patient-prescription-actions">
-              <span className={`quickwlp-prescription-status ${status}`}>{titleCase(prescription.status)}</span>
+              <span className={`quickwlp-prescription-status ${status}`}>{isIssuedUnpaidPrescription(prescription) ? "Payment pending" : titleCase(prescription.status)}</span>
               {prescription.checkoutUrl && (
                 <a className="quickwlp-prescription-open" href={prescription.checkoutUrl} target="_blank" rel="noreferrer">
                   Open
                 </a>
+              )}
+              {prescription.canAmend && (
+                <button type="button" className="quickwlp-prescription-open" onClick={() => onAmend?.(prescription)}>
+                  Re-issue
+                </button>
               )}
             </div>
           </div>
@@ -550,7 +631,7 @@ function ClinicalProfileModal({ patient, onClose, onSaved }) {
   );
 }
 
-function PatientDetail({ p, onMessage, onPrescribe, onProfileSaved }) {
+function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfileSaved }) {
   const { I, Avatar } = window.DD_UI;
   const [editingProfile, setEditingProfile] = useStateP(false);
   const [expandedAssessmentId, setExpandedAssessmentId] = useStateP("");
@@ -573,6 +654,9 @@ function PatientDetail({ p, onMessage, onPrescribe, onProfileSaved }) {
   ].filter((item) => item.value);
   const hasAssessmentSummary = Boolean(basics.activity_level || basics.body_shape || basics.pregnancy_status || basics.breastfeeding_status || latestSubmission);
   const hasHistory = Boolean(p.prescriptionHistory.length || p.visitHistory.length || p.assessment.submissions.length);
+  const primaryPrescriptionAction = prescriptionActionCopy(p);
+  const issuedUnpaidPrescriptions = p.prescriptionHistory.filter(isIssuedUnpaidPrescription);
+  const historicalPrescriptions = p.prescriptionHistory.filter((prescription) => !isIssuedUnpaidPrescription(prescription));
 
   useEffectP(() => {
     setExpandedAssessmentId(p.assessment.submissions[0]?.id || "");
@@ -605,12 +689,19 @@ function PatientDetail({ p, onMessage, onPrescribe, onProfileSaved }) {
           </button>
           <button
             className="btn-primary"
-            onClick={() => p.prescribe && onPrescribe(p.id, p.customerId, p.prescribe.trackKey)}
-            disabled={!p.prescribe}
-            title={p.prescribe ? "Prescribe for this patient" : "Complete a consultation before prescribing"}
-            style={{ opacity: p.prescribe ? 1 : 0.45, cursor: p.prescribe ? "pointer" : "not-allowed" }}
+            onClick={() => {
+              if (primaryPrescriptionAction.mode === "amend") {
+                const prescription = findAmendablePrescription(p.prescriptionHistory);
+                if (prescription) onAmendPrescription?.(p, prescription);
+                return;
+              }
+              if (p.prescribe) onPrescribe(p.id, p.customerId, p.prescribe.trackKey);
+            }}
+            disabled={primaryPrescriptionAction.disabled}
+            title={primaryPrescriptionAction.title}
+            style={{ opacity: primaryPrescriptionAction.disabled ? 0.45 : 1, cursor: primaryPrescriptionAction.disabled ? "not-allowed" : "pointer" }}
           >
-            {I.pill}<span>{p.prescribe ? "Prescribe" : "Consult first"}</span>
+            {I.pill}<span>{primaryPrescriptionAction.label}</span>
           </button>
         </div>
       </div>
@@ -691,6 +782,21 @@ function PatientDetail({ p, onMessage, onPrescribe, onProfileSaved }) {
           )}
         </section>
 
+        {issuedUnpaidPrescriptions.length ? (
+          <section className="patient-chart-section">
+            <div className="patient-chart-section-head">
+              <div>
+                <h3>Issued prescriptions</h3>
+                <p>Prescribed but not paid or started yet.</p>
+              </div>
+            </div>
+            <PatientPrescriptionHistory
+              prescriptions={issuedUnpaidPrescriptions}
+              onAmend={(prescription) => onAmendPrescription?.(p, prescription)}
+            />
+          </section>
+        ) : null}
+
         {hasAssessmentSummary && (
           <section className="patient-chart-section">
             <div className="patient-chart-section-head">
@@ -742,7 +848,12 @@ function PatientDetail({ p, onMessage, onPrescribe, onProfileSaved }) {
 
               <div>
                 <h4>Prescriptions</h4>
-                {p.prescriptionHistory.length ? <PatientPrescriptionHistory prescriptions={p.prescriptionHistory} /> : <EmptyInline>No checkout history yet.</EmptyInline>}
+                {historicalPrescriptions.length ? (
+                  <PatientPrescriptionHistory
+                    prescriptions={historicalPrescriptions}
+                    onAmend={(prescription) => onAmendPrescription?.(p, prescription)}
+                  />
+                ) : <EmptyInline>No checkout history yet.</EmptyInline>}
 
                 {p.assessment.submissions.length ? (
                   <>

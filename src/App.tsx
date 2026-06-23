@@ -68,6 +68,33 @@ function App() {
     window.scrollTo(0, 0)
   }
 
+  const openAmendPrescription = (patient: any, prescription: any) => {
+    const source = prescription?.source || ''
+    const items = Array.isArray(prescription?.items) ? prescription.items : []
+    const base = {
+      amendSource: source,
+      amendId: prescription?.id || '',
+      amendItems: JSON.stringify(items),
+      patientId: patient?.id || '',
+      customerId: patient?.customerId || patient?.customer_id || '',
+      patientName: patient?.name || '',
+      patientPhone: patient?.phone || '',
+      trackKey: prescription?.trackKey || prescription?.track_key || patient?.trackKey || patient?.track_key || 'weight-loss',
+    }
+    if (source === 'quickwlp_prescription') {
+      go('prescribe', {
+        ...base,
+        quickWlpLeadId: prescription?.quickWlpLeadId || prescription?.lead_id || '',
+        quickWlpName: patient?.name || '',
+        quickWlpPhone: patient?.phone || '',
+        quickWlpEmail: patient?.email || '',
+        quickWlpDoctorId: DOCTOR_ID,
+      })
+      return
+    }
+    go('prescribe', base)
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -186,6 +213,7 @@ function App() {
             initialCustomerId={routeContext.customerId}
             onMessage={(id: string) => go('chat', { patientId: id })}
             onPrescribe={(id: string, customerId?: string, trackKey?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '' })}
+            onAmendPrescription={openAmendPrescription}
           />
         )}
         {route === 'chat' && (
@@ -193,6 +221,7 @@ function App() {
             initialPatientId={routeContext.patientId}
             onOpenPatient={(id: string, customerId?: string) => go('patients', { patientId: id || '', customerId: customerId || '' })}
             onPrescribe={(id: string, trackKey?: string, customerId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || '', customerId: customerId || '' })}
+            onAmendPrescription={openAmendPrescription}
           />
         )}
         {route === 'refills' && (
@@ -224,6 +253,11 @@ function App() {
             initialQuickWlpWhatsapp={routeContext.quickWlpWhatsapp}
             initialQuickWlpEmail={routeContext.quickWlpEmail}
             initialQuickWlpDoctorId={routeContext.quickWlpDoctorId}
+            initialAmendSource={routeContext.amendSource}
+            initialAmendId={routeContext.amendId}
+            initialAmendItems={routeContext.amendItems}
+            initialPatientName={routeContext.patientName}
+            initialPatientPhone={routeContext.patientPhone}
             onSent={() => undefined}
           />
         )}
