@@ -765,6 +765,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .apt-date-actions .btn-icon {
   width: 30px;
@@ -797,6 +799,11 @@ body {
 .apt-today-button:hover {
   background: var(--dd-fill-subtle);
 }
+.apt-today-button.active {
+  border-color: rgba(16, 75, 72, 0.2);
+  background: rgba(16, 75, 72, 0.08);
+  color: var(--dd-accent);
+}
 .apt-today-button:disabled {
   color: var(--dd-text-disabled);
   cursor: default;
@@ -804,6 +811,20 @@ body {
 }
 .apt-today-button:disabled:hover {
   background: transparent;
+}
+.apt-date-input {
+  height: 30px;
+  border: 1px solid var(--dd-divider);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dd-text-primary);
+  font: 500 12px/1 var(--dd-font);
+  padding: 0 9px;
+}
+.apt-date-subtitle {
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.4 var(--dd-font);
+  margin-top: 7px;
 }
 
 .api-state {
@@ -843,7 +864,7 @@ body {
 /* Today list */
 .today-stat-row {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0;
   margin-bottom: 30px;
   border-bottom: 1px solid var(--dd-divider);
@@ -894,6 +915,12 @@ body {
   border-color: rgba(16, 75, 72, 0.2);
   background: rgba(16, 75, 72, 0.08);
   color: var(--dd-accent);
+}
+
+.apt-filter-chip.needs_action.active {
+  border-color: rgba(143, 79, 19, 0.2);
+  background: rgba(143, 79, 19, 0.08);
+  color: #8f4f13;
 }
 
 .apt-filter-chip.completed.active {

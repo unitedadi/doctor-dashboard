@@ -400,7 +400,6 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
   }, [initialCustomerId, initialPatientId, patients]);
 
   const patientsToday = patients.filter((patient) => patient.upcoming?.date === today).length;
-  const watchlistCount = patients.filter((patient) => patient.conditions.length || patient.allergies.length || patient.medications.length).length;
   const filtered = patients.filter((patient) => {
     const query = search.trim().toLowerCase();
     if (query) {
@@ -408,7 +407,6 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
       if (!haystack.includes(query)) return false;
     }
     if (filter === "today" && patient.upcoming?.date !== today) return false;
-    if (filter === "watch" && !patient.conditions.length && !patient.allergies.length && !patient.medications.length) return false;
     return true;
   });
   const p = patients.find((patient) => patient.id === selectedId) || filtered[0] || null;
@@ -427,7 +425,6 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           <div className="filter">
             <span className={"chip" + (filter === "all" ? " on" : "")} onClick={() => setFilter("all")}>All <b>{patients.length}</b></span>
             <span className={"chip" + (filter === "today" ? " on" : "")} onClick={() => setFilter("today")}>Today <b>{patientsToday}</b></span>
-            <span className={"chip" + (filter === "watch" ? " on" : "")} onClick={() => setFilter("watch")}>Watchlist <b>{watchlistCount}</b></span>
           </div>
           {error && (
             <div className="api-state patient-api-state">

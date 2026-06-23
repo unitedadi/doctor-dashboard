@@ -200,9 +200,12 @@ function actionState(appointment, nowMs) {
     };
   }
   if (issued) {
+    const fulfillment = appointment.workbench?.fulfillment || {};
     return {
-      label: "Prescription issued. Medication/payment state is read-only here.",
-      tone: "done",
+      label: fulfillment.order_id && fulfillment.paid_at
+        ? "Medication paid. No doctor action required here."
+        : "Prescription issued. Payment is handled outside this view.",
+      tone: fulfillment.order_id && fulfillment.paid_at ? "done" : "idle",
       canPrescribe: false,
       canComplete: false,
       canNoShow: false
@@ -248,6 +251,7 @@ function statusTone(status) {
 
 const APPOINTMENT_STATUS_FILTERS = [
   { key: "all", label: "All" },
+  { key: "needs_action", label: "Needs action" },
   { key: "upcoming", label: "Upcoming" },
   { key: "completed", label: "Completed" },
   { key: "no_show", label: "No-show" },
@@ -276,6 +280,15 @@ function appointmentOutcomeActionsAvailable(appointment, nowMs) {
   return nowMs >= startMs;
 }
 
+function appointmentNeedsAction(appointment, nowMs) {
+  if (!appointment) return false;
+  const bucket = appointmentStatusBucket(appointment.status);
+  if (bucket === "no_show") return true;
+  if (bucket === "upcoming") return appointmentIsLiveNow(appointment, nowMs);
+  if (bucket !== "completed") return false;
+  return !prescriptionIssued(appointment);
+}
+
 function nextStepLabel(appointment) {
   if (!appointment) return "";
   const normalized = String(appointment.status || "").toLowerCase();
@@ -290,6 +303,16 @@ function nextStepLabel(appointment) {
   if (normalized === "cancelled" || normalized === "canceled") return "No doctor action required";
   if (appointment.meetingLink) return "Join consultation, then complete or mark no-show";
   return "Review appointment and update outcome";
+}
+
+function appointmentRowContext(appointment) {
+  return [appointmentContextLabel(appointment), appointment.service].filter(Boolean).join(" · ");
+}
+
+function appointmentRowTime(appointment, selectedDate) {
+  if (!appointment?.date || appointment.date === selectedDate) return appointment?.time || "";
+  const [, month, day] = String(appointment.date).split("-");
+  return `${Number(day)}/${Number(month)} · ${appointment.time}`;
 }
 
 function sourceTagLabel(value) {
@@ -309,6 +332,7 @@ function appointmentContextLabel(appointment) {
 }
 
 function InfoRow({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
   return (
     <div className="workbench-info-row">
       <span>{label}</span>
@@ -465,6 +489,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [profilesLoaded, setProfilesLoaded] = useStateA(false);
   const [callToast, setCallToast] = useStateA("");
   const [statusFilter, setStatusFilter] = useStateA("all");
+  const [scheduleScope, setScheduleScope] = useStateA("day");
   const [nowMs, setNowMs] = useStateA(() => Date.now());
 
   const loadAppointments = React.useCallback(async () => {
@@ -559,26 +584,51 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const selectedPrescriptionHistoryRows = Array.isArray(selectedProfile?.rx_prescription_history) ? selectedProfile.rx_prescription_history : [];
   const selectedDeliveredMedicationRows = Array.isArray(selectedProfile?.delivered_medications) ? selectedProfile.delivered_medications : [];
   const selectedRefillHistoryRows = Array.isArray(selectedProfile?.refill_history) ? selectedProfile.refill_history : [];
+  const selectedMemberLabel = selectedPatient
+    ? [selectedPatient.age ? `${selectedPatient.age}y` : "", selectedPatient.sex && selectedPatient.sex !== "Unknown" ? selectedPatient.sex : ""].filter(Boolean).join(" · ")
+    : "";
+  const selectedHeightWeight = [
+    selectedAssessment.height_cm ? `${selectedAssessment.height_cm} cm` : "",
+    selectedAssessment.weight_kg ? `${selectedAssessment.weight_kg} kg` : "",
+  ].filter(Boolean).join(" · ");
+  const selectedAllergies = (selectedAssessment.allergies || []).join(", ");
+  const selectedConditions = (selectedAssessment.conditions || []).join(", ");
+  const hasClinicalSummary = Boolean(
+    (selectedIsQuickWlp && selectedAssessment.preferred_medication) ||
+    selectedHeightWeight ||
+    selectedAssessment.bmi ||
+    selectedAllergies ||
+    selectedConditions ||
+    selectedAssessment.latest_submitted_at
+  );
+  const scheduleAppointments = useMemoA(() => (
+    scheduleScope === "week" ? allAppointments : today
+  ), [allAppointments, scheduleScope, today]);
   const statusCounts = useMemoA(() => {
-    return today.reduce((counts, appointment) => {
+    return scheduleAppointments.reduce((counts, appointment) => {
       const bucket = appointmentStatusBucket(appointment.status);
       counts.all += 1;
+      if (appointmentNeedsAction(appointment, nowMs)) counts.needs_action += 1;
       if (bucket === "upcoming" || bucket === "completed" || bucket === "no_show") {
         counts[bucket] += 1;
       }
       return counts;
-    }, { all: 0, upcoming: 0, completed: 0, no_show: 0 });
-  }, [today]);
+    }, { all: 0, needs_action: 0, upcoming: 0, completed: 0, no_show: 0 });
+  }, [nowMs, scheduleAppointments]);
   const visibleAppointments = useMemoA(() => {
-    if (statusFilter === "all") return today;
-    return today.filter((appointment) => appointmentStatusBucket(appointment.status) === statusFilter);
-  }, [statusFilter, today]);
+    if (statusFilter === "all") return scheduleAppointments;
+    if (statusFilter === "needs_action") return scheduleAppointments.filter((appointment) => appointmentNeedsAction(appointment, nowMs));
+    return scheduleAppointments.filter((appointment) => appointmentStatusBucket(appointment.status) === statusFilter);
+  }, [nowMs, scheduleAppointments, statusFilter]);
   const activeFilterLabel = APPOINTMENT_STATUS_FILTERS.find((filter) => filter.key === statusFilter)?.label || "appointments";
   const upcomingCount = statusCounts.upcoming;
   const activeAppointmentId = visibleAppointments.find((appointment) => appointmentIsLiveNow(appointment, nowMs))?.id || null;
   const dateStr = formatScreenDate(selectedDate);
   const sectionDate = formatSectionDate(selectedDate);
   const isToday = selectedDate === currentDate;
+  const isTomorrow = selectedDate === addDays(currentDate, 1);
+  const scheduleTitle = scheduleScope === "week" ? "Upcoming schedule" : isToday ? "Today" : isTomorrow ? "Tomorrow" : "Selected day";
+  const scheduleSubtitle = scheduleScope === "week" ? `${sectionDate} + 7 days` : dateStr;
 
   useEffectA(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60 * 1000);
@@ -704,25 +754,47 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   return (
     <>
       <Topbar
-        title={isToday ? "Today's clinic" : "Clinic schedule"}
-        subtitle={dateStr}
+        title="Schedule"
+        subtitle={scheduleSubtitle}
       />
       <div className="apt-layout">
         <div className="apt-main dd-scroll">
           <div className="today-stat-row">
-            <div className="stat"><div className="v">{loading ? "..." : today.length}</div><div className="l">Appointments</div></div>
+            <div className="stat"><div className="v">{loading ? "..." : scheduleAppointments.length}</div><div className="l">{scheduleScope === "week" ? "Next 7 days" : "Appointments"}</div></div>
             <div className="stat"><div className="v">{loading ? "..." : upcomingCount}</div><div className="l">Upcoming</div></div>
+            <div className="stat"><div className="v">{loading ? "..." : statusCounts.needs_action}</div><div className="l">Needs action</div></div>
           </div>
 
           <div className="section-hdr">
-            <div className="label apt-date-label">{sectionDate}</div>
+            <div>
+              <div className="label apt-date-label">{scheduleTitle}</div>
+              <div className="apt-date-subtitle">{scheduleScope === "week" ? "Consultations from the selected day onward" : sectionDate}</div>
+            </div>
             <div className="apt-date-actions" aria-label="Appointment date navigation">
               <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, -1))} aria-label="Previous day" title="Previous day">
                 {I.chevronLeft}
               </button>
-              <button type="button" className="apt-today-button" onClick={() => setSelectedDate(currentDate)} disabled={isToday}>
+              <button type="button" className={`apt-today-button ${isToday && scheduleScope === "day" ? "active" : ""}`} onClick={() => { setScheduleScope("day"); setSelectedDate(currentDate); }}>
                 Today
               </button>
+              <button type="button" className={`apt-today-button ${isTomorrow && scheduleScope === "day" ? "active" : ""}`} onClick={() => { setScheduleScope("day"); setSelectedDate(addDays(currentDate, 1)); }}>
+                Tomorrow
+              </button>
+              <button type="button" className={`apt-today-button ${scheduleScope === "week" ? "active" : ""}`} onClick={() => setScheduleScope("week")}>
+                Week
+              </button>
+              <input
+                className="apt-date-input"
+                type="date"
+                value={selectedDate}
+                onChange={(event) => {
+                  if (event.target.value) {
+                    setScheduleScope("day");
+                    setSelectedDate(event.target.value);
+                  }
+                }}
+                aria-label="Select schedule date"
+              />
               <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, 1))} aria-label="Next day" title="Next day">
                 {I.chevronRight}
               </button>
@@ -756,10 +828,10 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               <div />
               <div />
             </div>
-          ) : today.length === 0 ? (
-            <div className="empty-state apt-empty">No appointments scheduled for this date</div>
+          ) : scheduleAppointments.length === 0 ? (
+            <div className="empty-state apt-empty">No consultations scheduled for this {scheduleScope === "week" ? "window" : "date"}</div>
           ) : visibleAppointments.length === 0 ? (
-            <div className="empty-state apt-empty">No {activeFilterLabel.toLowerCase()} appointments for this date</div>
+            <div className="empty-state apt-empty">No {activeFilterLabel.toLowerCase()} consultations for this {scheduleScope === "week" ? "window" : "date"}</div>
           ) : (
             <div className="timeline">
               {visibleAppointments.map((a) => {
@@ -767,7 +839,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 const isSel = a.id === selectedId;
                 return (
                   <div key={a.id} className={"tl-row" + (isNow ? " now" : "")}>
-                    <div className="time">{a.time}</div>
+                    <div className="time">{appointmentRowTime(a, selectedDate)}</div>
                     <div className="dot-mark"></div>
                     <div className={"apt-card" + (isSel ? " selected" : "") + (isNow && !isSel ? " now-card" : "")}
                          onClick={() => setSelectedId(a.id)}>
@@ -780,7 +852,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                           <div className="apt-meta">
                             {a.patient.phone && <span>{a.patient.phone}</span>}
                             {a.patient.phone && <span className="dot-sep" />}
-                            <span>{appointmentContextLabel(a)}</span>
+                            <span>{appointmentRowContext(a)}</span>
                           </div>
                           <div className="apt-actions">
                             {a.meetingLink && a.status === "upcoming" && (
@@ -899,7 +971,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               )}
 
               <section className="workbench-section">
-                <div className="workbench-section-title">Consultation flow</div>
+                <div className="workbench-section-title">Visit flow</div>
                 <OperationalChecklist appointment={selected} nowMs={nowMs} />
               </section>
 
@@ -907,22 +979,21 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 <div className="workbench-section-title">Visit details</div>
                 <InfoRow label="Service" value={selected.service} />
                 <InfoRow label="Mode" value={selected.type} />
-                <InfoRow label="Member" value={[selectedPatient.age ? `${selectedPatient.age}y` : "", selectedPatient.sex].filter(Boolean).join(" · ")} />
+                <InfoRow label="Member" value={selectedMemberLabel} />
                 {selectedPatient.whatsapp && <InfoRow label="WhatsApp" value={selectedPatient.whatsapp} />}
               </section>
 
-              <section className="workbench-section">
-                <div className="workbench-section-title">Clinical summary</div>
-                {selectedIsQuickWlp && <InfoRow label="Preferred" value={selectedAssessment.preferred_medication} />}
-                <InfoRow label="Height / weight" value={[
-                  selectedAssessment.height_cm ? `${selectedAssessment.height_cm} cm` : "",
-                  selectedAssessment.weight_kg ? `${selectedAssessment.weight_kg} kg` : "",
-                ].filter(Boolean).join(" · ")} />
-                <InfoRow label="BMI" value={selectedAssessment.bmi} />
-                <InfoRow label="Allergies" value={(selectedAssessment.allergies || []).join(", ")} />
-                <InfoRow label="Conditions" value={(selectedAssessment.conditions || []).join(", ")} />
-                <InfoRow label="Assessment" value={formatDateTime(selectedAssessment.latest_submitted_at)} />
-              </section>
+              {hasClinicalSummary && (
+                <section className="workbench-section">
+                  <div className="workbench-section-title">Clinical summary</div>
+                  {selectedIsQuickWlp && <InfoRow label="Preferred" value={selectedAssessment.preferred_medication} />}
+                  <InfoRow label="Height / weight" value={selectedHeightWeight} />
+                  <InfoRow label="BMI" value={selectedAssessment.bmi} />
+                  <InfoRow label="Allergies" value={selectedAllergies} />
+                  <InfoRow label="Conditions" value={selectedConditions} />
+                  <InfoRow label="Assessment" value={formatDateTime(selectedAssessment.latest_submitted_at)} />
+                </section>
+              )}
 
               {selectedPrescriptionIssued && (
                 <section className="workbench-section">
