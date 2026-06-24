@@ -578,7 +578,17 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const canCompleteSelected = selectedActionState.canComplete && selectedOutcomeUnlocked;
   const canNoShowSelected = selectedActionState.canNoShow && selectedOutcomeUnlocked;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
-  const canPrescribeSelectedQuickWlp = selectedIsQuickWlp && selectedActionState.canPrescribe && !blocksQuickWlpPrescription(selected.status);
+  const selectedHasMedicationOrder = Boolean(
+    selectedPrescriptionIssued ||
+    selectedFulfillment.order_id ||
+    selectedFulfillment.paid_at ||
+    selectedFulfillment.delivered_at
+  );
+  const canPrescribeSelectedQuickWlp =
+    selectedIsQuickWlp &&
+    selectedActionState.canPrescribe &&
+    !blocksQuickWlpPrescription(selected.status) &&
+    !selectedHasMedicationOrder;
   const selectedHasJoinOrCall = Boolean(selected?.meetingLink && appointmentStatusBucket(selected.status) === "upcoming");
   const selectedHasClinicalActions = Boolean(
     selectedHasJoinOrCall ||
@@ -929,7 +939,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                           onClick={() => setCallConfirm(selected)}
                           disabled={callingId === selected.id}
                         >
-                          {I.phone}<span>{callingId === selected.id ? "Calling..." : "Call Patient"}</span>
+                          {I.phone}<span>{callingId === selected.id ? "Calling..." : "Call patient"}</span>
                         </button>
                       </>
                     )}
@@ -939,7 +949,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                         onClick={() => setCompleteConfirm(selected)}
                         disabled={completingId === selected.id}
                       >
-                        {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete Consultation"}</span>
+                        {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete consultation"}</span>
                       </button>
                     )}
                     {canNoShowSelected && (
@@ -973,7 +983,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   <div className="workbench-section-title">Patient access</div>
                   <div className="workbench-access-actions">
                     {selectedHasPatientChart ? (
-                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
+                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open chart</button>
                     ) : null}
                     {selectedIsQuickWlp ? (
                       <div className="workbench-note">Quick Consult does not include in-app chat. Use phone or WhatsApp for follow-up.</div>

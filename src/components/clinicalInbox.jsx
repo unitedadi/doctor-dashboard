@@ -358,7 +358,7 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
         </button>
         {canOpenPatient && (
           <button className="clinical-secondary-action" onClick={() => onOpenPatient?.(task.patientId, task.customerId)}>
-            Open patient
+            Open chart
           </button>
         )}
         {canOpenChat && (

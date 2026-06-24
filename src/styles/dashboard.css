@@ -1775,16 +1775,33 @@ body {
 }
 
 .chat-clinical-facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
   padding: 0 18px;
 }
 
-.chat-clinical-facts .patient-chart-fact {
+.patient-care-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.appointment-clinical-card > .patient-care-summary-strip,
+.task-clinical-card > .patient-care-summary-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.patient-care-summary-strip .patient-chart-fact {
   border: 1px solid rgba(23,59,61,0.08);
   border-radius: 10px;
   background: rgba(255,255,255,0.42);
+  padding: 11px 12px;
+}
+
+.patient-care-summary-strip .patient-chart-fact strong {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .chat-clinical-card .appointment-clinical-lifecycle,
@@ -1880,6 +1897,10 @@ body {
   background: rgba(247,238,224,0.34);
   color: var(--dd-text-secondary);
   font: 400 12px/1.45 var(--dd-font);
+}
+
+.patient-chart-full > .patient-care-summary-strip {
+  margin: 0 0 18px;
 }
 
 .patient-emr-status {
@@ -2661,9 +2682,9 @@ body {
 
 .patient-chart-section {
   box-sizing: border-box;
-  border: 1px solid rgba(23,59,61,0.10);
+  border: 1px solid rgba(23,59,61,0.08);
   border-radius: 12px;
-  background: rgba(255,255,255,0.58);
+  background: rgba(255,255,255,0.50);
   padding: 18px;
 }
 
@@ -2824,6 +2845,37 @@ body {
 }
 
 @media (max-width: 1380px) {
+  .apt-layout {
+    grid-template-columns: minmax(0, 1fr) 430px;
+  }
+
+  .apt-main {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .apt-side {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .clinical-inbox-layout {
+    grid-template-columns: minmax(420px, 0.92fr) minmax(390px, 0.78fr);
+    gap: 14px;
+  }
+
+  .clinical-inbox-stats div {
+    padding: 12px 10px;
+  }
+
+  .clinical-inbox-stats span {
+    font-size: 10px;
+  }
+
+  .clinical-inbox-stats strong {
+    font-size: 19px;
+  }
+
   .patient-emr-grid {
     grid-template-columns: 1fr;
   }
@@ -2840,12 +2892,48 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .patient-care-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .patient-snapshot-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .patient-history-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1180px) {
+  .apt-layout {
+    grid-template-columns: minmax(0, 1fr) 400px;
+  }
+
+  .workbench-head {
+    align-items: flex-start;
+  }
+
+  .workbench-status {
+    max-width: 116px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .appointment-lifecycle-row {
+    grid-template-columns: 10px minmax(76px, 0.5fr) minmax(0, 1fr);
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+
+  .clinical-inbox-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .clinical-inbox-detail {
+    min-height: 420px;
   }
 }
 
@@ -2866,6 +2954,12 @@ body {
   }
 
   .patient-care-state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-care-summary-strip,
+  .appointment-clinical-card > .patient-care-summary-strip,
+  .task-clinical-card > .patient-care-summary-strip {
     grid-template-columns: 1fr;
   }
 
@@ -2963,9 +3057,9 @@ body {
   color: #9A3412;
 }
 .inline-empty {
-  color: var(--dd-text-tertiary);
-  font: 400 13px/1.5 var(--dd-font);
-  padding: 8px 0;
+  color: rgba(23,59,61,0.44);
+  font: 400 12px/1.45 var(--dd-font);
+  padding: 4px 0;
 }
 
 .assessment-grid {

@@ -317,6 +317,29 @@ function ChartFact({ label, value }) {
   );
 }
 
+function compactDateOrNone(value, fallback = "Not available") {
+  return formatDate(value) || fallback;
+}
+
+function latestRefillStatus(refills) {
+  const refill = asArray(refills)[0];
+  if (!refill) return "Not due";
+  const status = String(refill.status || "").toUpperCase();
+  if (status === "PENDING_REVIEW") return "Review due";
+  return [titleCase(refill.status || "Refill"), formatDate(refill.reviewed_at || refill.submitted_at)].filter(Boolean).join(" · ");
+}
+
+function CareSummaryStrip({ medication, latestPrescription, latestDelivery, refills }) {
+  return (
+    <div className="patient-care-summary-strip" aria-label="Patient care summary">
+      <ChartFact label="Current medication" value={medication?.name || itemLabel(latestPrescription?.items) || "Not listed"} />
+      <ChartFact label="Last prescription" value={latestPrescription ? compactDateOrNone(latestPrescription.issued_at) : "Not issued"} />
+      <ChartFact label="Last delivery" value={latestDelivery ? compactDateOrNone(latestDelivery.delivered_at || latestDelivery.paid_at) : "No paid order"} />
+      <ChartFact label="Refill / follow-up" value={latestRefillStatus(refills)} />
+    </div>
+  );
+}
+
 function refillDetailRows(refill) {
   return [
     {
@@ -399,6 +422,17 @@ function chartPatientActionPayload(chart) {
 
 function primaryTrack(chart) {
   return chart?.program?.track_keys?.[0] || chart?.prescriptions?.[0]?.track_key || "weight-loss";
+}
+
+function chartSourceLabel(chart, context) {
+  const source = String(context?.appointment?.source || context?.task?.source || chart?.program?.source || chart?.patient?.source || "").toLowerCase();
+  if (source === "quickwlp" || source === "quick_wlp" || source === "quick-consult") return "Quick Consult";
+  if (source === "rx") return "Lifestyle Rx";
+  return "";
+}
+
+function isQuickConsultChart(chart, context) {
+  return chartSourceLabel(chart, context) === "Quick Consult";
 }
 
 function prescriptionStatusLabel(prescription) {
@@ -808,6 +842,7 @@ function AppointmentClinicalCard({
   lifecycle,
   latestPrescription,
   deliveries,
+  refills,
   patientPayload,
   onAmendPrescription,
   onNoteSaved,
@@ -818,6 +853,13 @@ function AppointmentClinicalCard({
 
   return (
     <section className="appointment-clinical-card">
+      <CareSummaryStrip
+        medication={chart?.clinical?.current_medications?.[0]}
+        latestPrescription={latestPrescription}
+        latestDelivery={latestDelivery}
+        refills={refills}
+      />
+
       <CompactLifecycle steps={lifecycle} />
 
       <DoctorNotesCompact
@@ -878,6 +920,13 @@ function TaskClinicalCard({
 
   return (
     <section className="task-clinical-card">
+      <CareSummaryStrip
+        medication={chart?.clinical?.current_medications?.[0]}
+        latestPrescription={latestPrescription}
+        latestDelivery={latestDelivery}
+        refills={refills}
+      />
+
       <CompactLifecycle steps={lifecycle} />
 
       {latestPrescription ? (
@@ -963,8 +1012,12 @@ function ChatClinicalCard({
       </div>
 
       <div className="chat-clinical-facts">
-        <ChartFact label="Current medication" value={medication?.name || "Not listed"} />
-        <ChartFact label="Last prescription" value={latestPrescription ? formatDate(latestPrescription.issued_at) : "None"} />
+        <CareSummaryStrip
+          medication={medication}
+          latestPrescription={latestPrescription}
+          latestDelivery={latestDelivery}
+          refills={refills}
+        />
       </div>
 
       <CompactLifecycle steps={lifecycle} />
@@ -1255,6 +1308,10 @@ function PatientChart({
   const medication = clinical.current_medications?.[0];
   const patientPayload = chartPatientActionPayload(chart);
   const trackKey = context?.prescribable?.trackKey || context?.prescribable?.track_key || latestPrescription?.track_key || primaryTrack(chart);
+  const showTreatmentSection = !focusedMode || Boolean(clinical.current_medications?.length || prescriptions.length);
+  const showDeliverySection = !focusedMode || deliveries.length > 0;
+  const sourceLabel = chartSourceLabel(chart, context);
+  const quickConsultChart = isQuickConsultChart(chart, context);
   const saveNoteLocally = (note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }));
   const saveNoteAndRefreshChart = (note) => {
     saveNoteLocally(note);
@@ -1315,6 +1372,7 @@ function PatientChart({
           lifecycle={lifecycle}
           latestPrescription={latestPrescription}
           deliveries={deliveries}
+          refills={enrichedRefills}
           patientPayload={patientPayload}
           onAmendPrescription={onAmendPrescription}
           onNoteSaved={saveNoteLocally}
@@ -1351,7 +1409,7 @@ function PatientChart({
             <div>
               <h2>{patient.name || "Patient"}</h2>
               <div className="meta">
-                {[patient.phone, patient.email, patient.age ? `${patient.age} years` : null, titleCase(patient.sex), context?.label].filter(Boolean).map((item, index) => (
+                {[patient.phone, patient.email, patient.age ? `${patient.age} years` : null, titleCase(patient.sex), sourceLabel, context?.label].filter(Boolean).map((item, index) => (
                   <React.Fragment key={`${item}-${index}`}>
                     {index > 0 && <span className="dot-sep" />}
                     <span>{item}</span>
@@ -1374,6 +1432,12 @@ function PatientChart({
         </div>
         )}
 
+        {quickConsultChart && !focusedMode ? (
+          <div className="patient-emr-access-note">
+            Quick Consult patient. Chat is not available, but notes, prescriptions, clinical profile, and history stay available in this chart.
+          </div>
+        ) : null}
+
         {!focusedMode && (
           <CareStatePanel
             chart={chart}
@@ -1382,6 +1446,15 @@ function PatientChart({
             medication={medication}
             latestPrescription={latestPrescription}
             latestDelivery={deliveries[0]}
+          />
+        )}
+
+        {!focusedMode && (
+          <CareSummaryStrip
+            medication={medication}
+            latestPrescription={latestPrescription}
+            latestDelivery={deliveries[0]}
+            refills={enrichedRefills}
           />
         )}
 
@@ -1419,6 +1492,7 @@ function PatientChart({
 
             {!focusedMode ? <ClinicalActionTrail events={chart.action_events} /> : null}
 
+            {showTreatmentSection ? (
             <ChartSection title={focusedMode ? "Treatment and prescribing" : "Prescriptions"} subtitle={focusedMode ? "" : "Issued, unpaid, re-issued, and historical prescriptions."}>
               {focusedMode && clinical.current_medications?.length ? (
                   <div className="patient-medication-list">
@@ -1432,7 +1506,7 @@ function PatientChart({
                       </div>
                     ))}
                   </div>
-                ) : focusedMode ? <EmptyInline>No active Rx medications.</EmptyInline> : null}
+                ) : null}
 
               {prescriptions.length ? (
                 <div className={focusedMode ? "patient-care-subsection" : ""}>
@@ -1449,9 +1523,11 @@ function PatientChart({
                     ))}
                   </div>
                 </div>
-              ) : !focusedMode ? <EmptyInline>No prescription history found.</EmptyInline> : null}
+              ) : !focusedMode ? <EmptyInline>No prescriptions recorded yet.</EmptyInline> : null}
             </ChartSection>
+            ) : null}
 
+            {showDeliverySection ? (
             <ChartSection title={focusedMode ? "Medication and delivery" : "Medication orders"} subtitle={focusedMode ? "" : "Paid medication orders and delivery outcomes."}>
               {deliveries.length ? (
                 <div className="patient-delivery-history">
@@ -1463,8 +1539,9 @@ function PatientChart({
                     </div>
                   ))}
                 </div>
-              ) : <EmptyInline>No delivered medication found.</EmptyInline>}
+              ) : !focusedMode ? <EmptyInline>No paid medication orders yet.</EmptyInline> : null}
             </ChartSection>
+            ) : null}
 
             {!focusedMode && (
               <>
