@@ -1872,6 +1872,16 @@ body {
   font-size: 13px;
 }
 
+.patient-emr-access-note {
+  margin: -6px 0 18px;
+  padding: 10px 12px;
+  border: 1px solid rgba(23,59,61,0.09);
+  border-radius: 10px;
+  background: rgba(247,238,224,0.34);
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
+}
+
 .patient-emr-status {
   position: relative;
   z-index: 1;
@@ -2219,6 +2229,76 @@ body {
   grid-template-columns: minmax(150px, 1.2fr) repeat(3, minmax(100px, 0.8fr));
 }
 
+.patient-refill-review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.patient-refill-review-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(23,59,61,0.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.48);
+}
+
+.patient-refill-review-head strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 15px/1.3 var(--dd-font);
+}
+
+.patient-refill-review-head span {
+  display: block;
+  margin-top: 4px;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+
+.patient-refill-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.patient-refill-answer-grid div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(23,59,61,0.07);
+  border-radius: 9px;
+  background: rgba(247,238,224,0.28);
+}
+
+.patient-refill-answer-grid span,
+.patient-refill-message span {
+  display: block;
+  color: var(--dd-text-tertiary);
+  font: 400 10px/1.2 var(--dd-font);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.patient-refill-answer-grid strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.35 var(--dd-font);
+}
+
+.patient-refill-message {
+  padding: 10px 11px;
+  border: 1px solid rgba(23,59,61,0.07);
+  border-radius: 9px;
+  background: rgba(23,59,61,0.035);
+}
+
+.patient-refill-message p {
+  margin: 5px 0 0;
+  color: var(--dd-text-primary);
+  font: 400 13px/1.45 var(--dd-font);
+}
+
 .patient-delivery-row strong,
 .patient-refill-row strong {
   display: block;
@@ -2285,6 +2365,100 @@ body {
   text-align: right;
 }
 
+.clinical-action-trail {
+  background: rgba(255,255,255,0.68);
+}
+
+.clinical-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(23,59,61,0.08);
+}
+
+.clinical-action-row {
+  display: grid;
+  grid-template-columns: 142px minmax(0, 1fr) 108px;
+  gap: 14px;
+  align-items: center;
+  min-height: 58px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.62);
+}
+
+.clinical-action-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 28px;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--dd-text-primary);
+  font: 400 11px/1.1 var(--dd-font);
+  white-space: nowrap;
+}
+
+.clinical-action-chip-consult {
+  background: rgba(12,132,132,0.08);
+  border-color: rgba(12,132,132,0.18);
+  color: #0b6666;
+}
+
+.clinical-action-chip-prescription {
+  background: rgba(91,68,45,0.08);
+  border-color: rgba(91,68,45,0.16);
+  color: #5f432f;
+}
+
+.clinical-action-chip-profile {
+  background: rgba(78,92,110,0.08);
+  border-color: rgba(78,92,110,0.16);
+  color: #40536a;
+}
+
+.clinical-action-chip-note {
+  background: rgba(246,240,230,0.78);
+  border-color: rgba(91,68,45,0.14);
+  color: var(--dd-text-secondary);
+}
+
+.clinical-action-chip-warn {
+  background: rgba(175,67,45,0.08);
+  border-color: rgba(175,67,45,0.16);
+  color: #984029;
+}
+
+.clinical-action-copy {
+  min-width: 0;
+}
+
+.clinical-action-copy strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 400 14px/1.25 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.clinical-action-copy span {
+  display: block;
+  margin-top: 4px;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+  overflow-wrap: anywhere;
+}
+
+.clinical-action-row time {
+  color: var(--dd-text-tertiary);
+  font: 400 12px/1.3 var(--dd-font);
+  text-align: right;
+}
+
 .doctor-notes-section {
   background: rgba(255,255,255,0.66);
 }
@@ -2292,6 +2466,40 @@ body {
 .doctor-note-composer {
   display: grid;
   gap: 10px;
+}
+
+.doctor-note-category-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.doctor-note-category-pills button {
+  min-height: 28px;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.48);
+  color: var(--dd-text-secondary);
+  cursor: pointer;
+  font: 400 11px/1 var(--dd-font);
+  padding: 0 10px;
+}
+
+.doctor-note-category-pills button.active {
+  border-color: rgba(12,132,132,0.26);
+  background: rgba(12,132,132,0.08);
+  color: #0b6666;
+}
+
+.doctor-note-category-pills.compact {
+  gap: 6px;
+}
+
+.doctor-note-category-pills.compact button {
+  min-height: 26px;
+  font-size: 10px;
+  padding: 0 8px;
 }
 
 .doctor-note-composer textarea {
@@ -2675,6 +2883,12 @@ body {
     gap: 6px;
   }
 
+  .clinical-action-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+
   .patient-chart-full .patient-lifecycle-strip {
     grid-template-columns: 1fr;
   }
@@ -2685,6 +2899,10 @@ body {
   }
 
   .patient-care-event time {
+    text-align: left;
+  }
+
+  .clinical-action-row time {
     text-align: left;
   }
 
@@ -4681,19 +4899,24 @@ body {
 
 @media (max-width: 1380px) {
   .stream-kit-layout {
-    grid-template-columns: 320px minmax(0, 1fr);
+    grid-template-columns: 300px minmax(0, 1fr);
   }
 
   .stream-kit-chat-workspace {
-    grid-template-columns: minmax(360px, 1fr) minmax(340px, 38vw);
+    grid-template-columns: minmax(420px, 1fr) 340px;
   }
 
+  .clinical-chat-header-center,
   .clinical-chat-service {
     display: none;
   }
 
   .clinical-context-row strong {
     max-width: 220px;
+  }
+
+  .patient-refill-answer-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -4740,6 +4963,10 @@ body {
 
   .clinical-profile-form {
     grid-template-columns: 1fr;
+  }
+
+  .patient-refill-answer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -6631,6 +6858,16 @@ body {
   border-radius: 999px;
   background: rgba(255,255,255,0.42);
   padding: 6px 9px;
+}
+
+.clinical-detail-note {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(23,59,61,0.09);
+  border-radius: 10px;
+  background: rgba(247,238,224,0.34);
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.45 var(--dd-font);
 }
 
 .clinical-detail-actions {

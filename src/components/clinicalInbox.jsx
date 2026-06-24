@@ -24,7 +24,7 @@ const CATEGORY_COPY = {
   needs_prescription: {
     label: "Needs prescription",
     queueLabel: "Issue prescription",
-    reason: "Consultation is complete and no prescription has been issued.",
+    reason: "The backend has marked the consultation completed and no prescription has been issued. It is not based on estimated slot time.",
     decision: "Review the chart, confirm medication choice, and issue the prescription if clinically appropriate.",
     closes: "Closed when the prescription is issued.",
     actionFallback: "Issue prescription",
@@ -260,9 +260,9 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
     );
   }
 
-  const canOpenPatient = Boolean(task.patientId);
-  const canOpenChat = Boolean(task.patientId || task.channelId);
   const isQuickWlp = task.action === "PRESCRIBE_QUICK_WLP" || task.source === "quickwlp" || task.source === "quick_wlp";
+  const canOpenPatient = Boolean(task.patientId);
+  const canOpenChat = !isQuickWlp && Boolean(task.patientId || task.channelId);
   const copy = taskCopy(task);
   const actionLabel = task.actionLabel || copy.actionFallback;
   const primaryAction = () => {
@@ -315,11 +315,11 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
         </div>
         <dl>
           <div>
-            <dt>Why</dt>
+            <dt>Why shown</dt>
             <dd>{copy.reason}</dd>
           </div>
           <div>
-            <dt>Closes when</dt>
+            <dt>Leaves inbox when</dt>
             <dd>{copy.closes}</dd>
           </div>
         </dl>
@@ -345,6 +345,12 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
         <span>{sourceLabel(task)}</span>
         <span>{task.service || task.track || "Service not available"}</span>
       </div>
+
+      {isQuickWlp ? (
+        <div className="clinical-detail-note">
+          Quick Consult patient. This one-off flow does not include in-app chat access; use the patient phone number for follow-up.
+        </div>
+      ) : null}
 
       <div className="clinical-detail-actions">
         <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>

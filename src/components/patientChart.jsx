@@ -81,6 +81,10 @@ function createDoctorNote(patientId, body) {
   });
 }
 
+function fetchPatientRefillRequests(patientId) {
+  return fetchJson(`${API_BASE}/doctor/rx/refill-requests?doctor_id=${DOCTOR_ID}&patient_id=${encodeURIComponent(patientId)}&limit=20&offset=0`);
+}
+
 function updateClinicalProfile(patientId, body) {
   return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/clinical-profile?doctor_id=${DOCTOR_ID}`, {
     method: "PATCH",
@@ -135,6 +139,51 @@ function humanizeAnswerValue(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+const REFILL_ANSWER_LABELS = {
+  dosage_adjustment: {
+    STAY_CURRENT_DOSE: "Stay on current dose",
+    INCREASE_DOSE: "Increase dose",
+    LOWER_DOSE: "Lower dose",
+    DISCUSS_BY_PHONE: "Discuss by phone",
+  },
+  delivery_experience: {
+    EXTREMELY_SATISFIED: "Extremely satisfied",
+    SATISFIED: "Satisfied",
+    NEUTRAL: "Neutral",
+    DISSATISFIED: "Dissatisfied",
+  },
+  weight_loss_last_month: {
+    LESS_THAN_4KG: "Less than 4 kg",
+    FOUR_TO_SEVEN_KG: "4 kg to 7 kg",
+    EIGHT_TO_TWELVE_KG: "8 kg to 12 kg",
+    MORE_THAN_TWELVE_KG: "More than 12 kg",
+  },
+  side_effects: {
+    NONE: "None reported",
+    MILD: "Mild",
+    MODERATE: "Moderate",
+    SEVERE: "Severe",
+  },
+};
+
+function readAnswer(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key] ?? source?.answers_json?.[key];
+    if (value !== null && value !== undefined && value !== "") return value;
+  }
+  return "";
+}
+
+function refillAnswerLabel(group, value) {
+  if (value === null || value === undefined || value === "") return "";
+  return REFILL_ANSWER_LABELS[group]?.[value] || humanizeAnswerValue(value);
+}
+
+function formatWeight(value) {
+  if (value === null || value === undefined || value === "") return "";
+  return /kg\b/i.test(String(value)) ? String(value) : `${value} kg`;
+}
+
 function assessmentKindLabel(value) {
   const normalized = String(value || "").toLowerCase();
   if (normalized === "weight-loss" || normalized === "weight_loss") return "Weight Loss";
@@ -176,6 +225,69 @@ function groupedAssessmentPairs(pairs) {
     .filter((group) => group.items.length);
 }
 
+const NOTE_CATEGORIES = [
+  { value: "CLINICAL_NOTE", label: "Clinical note" },
+  { value: "MEDICATION_DECISION", label: "Medication decision" },
+  { value: "SAFETY_RISK", label: "Safety/risk" },
+  { value: "FOLLOW_UP", label: "Follow-up" },
+  { value: "ADMIN_HANDOFF", label: "Admin handoff" },
+];
+
+function noteCategoryLabel(value) {
+  return NOTE_CATEGORIES.find((item) => item.value === value)?.label || "Clinical note";
+}
+
+function NoteCategoryPicker({ value, onChange, compact = false }) {
+  return (
+    <div className={compact ? "doctor-note-category-pills compact" : "doctor-note-category-pills"} aria-label="Note category">
+      {NOTE_CATEGORIES.map((category) => (
+        <button
+          key={category.value}
+          type="button"
+          className={value === category.value ? "active" : ""}
+          onClick={() => onChange(category.value)}
+        >
+          {category.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function clinicalActionLabel(value) {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "CONSULTATION_COMPLETED") return "Completed consult";
+  if (normalized === "CONSULTATION_NO_SHOW") return "Marked no-show";
+  if (normalized === "PRESCRIPTION_ISSUED") return "Issued prescription";
+  if (normalized === "PRESCRIPTION_REISSUED") return "Re-issued prescription";
+  if (normalized === "CLINICAL_PROFILE_EDITED") return "Edited profile";
+  if (normalized === "DOCTOR_NOTE_ADDED") return "Added note";
+  return value ? titleCase(value) : "Clinical action";
+}
+
+function clinicalActionTone(value) {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized.includes("NO_SHOW")) return "warn";
+  if (normalized.includes("PRESCRIPTION")) return "prescription";
+  if (normalized.includes("PROFILE")) return "profile";
+  if (normalized.includes("NOTE")) return "note";
+  return "consult";
+}
+
+function clinicalActionContext(event) {
+  const context = event?.context || {};
+  const changedFields = asArray(context.changed_fields)
+    .map((field) => humanizeAnswerKey(field))
+    .join(", ");
+  if (changedFields) return `Updated ${changedFields}`;
+  if (context.reason) return `Reason: ${String(context.reason).trim()}`;
+  if (context.note_category) return noteCategoryLabel(context.note_category);
+  if (context.track_key) return trackLabel(context.track_key);
+  if (context.source) return humanizeAnswerValue(context.source);
+  if (context.context_type) return titleCase(context.context_type);
+  return titleCase(event?.subject_type || "Clinical record");
+}
+
 function EmptyInline({ children }) {
   return <div className="inline-empty">{children}</div>;
 }
@@ -202,6 +314,74 @@ function ChartFact({ label, value }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function refillDetailRows(refill) {
+  return [
+    {
+      label: "Dose request",
+      value: refillAnswerLabel("dosage_adjustment", readAnswer(refill, ["dosage_adjustment", "dose_adjustment", "dosePreference", "dose_preference"])),
+    },
+    {
+      label: "Side effects",
+      value: refillAnswerLabel("side_effects", readAnswer(refill, ["side_effects", "sideEffects"])),
+    },
+    {
+      label: "Weight change",
+      value: refillAnswerLabel("weight_loss_last_month", readAnswer(refill, ["weight_loss_last_month", "total_progress", "weight_loss_range", "progress"])),
+    },
+    {
+      label: "Current weight",
+      value: formatWeight(readAnswer(refill, ["current_weight_kg", "current_weight", "weight_kg"])),
+    },
+    {
+      label: "Delivery experience",
+      value: refillAnswerLabel("delivery_experience", readAnswer(refill, ["delivery_experience", "delivery_rating", "experience"])),
+    },
+  ].filter((row) => row.value);
+}
+
+function RefillRequestSummary({ refills }) {
+  const visibleRefills = asArray(refills).slice(0, 2);
+  if (!visibleRefills.length) return null;
+  return (
+    <ChartSection title="Refill request details" subtitle="Patient-submitted answers for dose, progress, side effects, and weight.">
+      <div className="patient-refill-review-list">
+        {visibleRefills.map((refill, index) => {
+          const rows = refillDetailRows(refill);
+          const message = readAnswer(refill, ["doctor_message", "message_to_doctor", "message"]);
+          return (
+            <article className="patient-refill-review-card" key={refill.refill_request_id || refill.id || index}>
+              <div className="patient-refill-review-head">
+                <div>
+                  <strong>{refill.current_medication || refill.source_product_name || refill.medication_name || "Weight loss refill"}</strong>
+                  <span>{[titleCase(refill.status || "Refill"), formatDateTime(refill.submitted_at)].filter(Boolean).join(" · ")}</span>
+                </div>
+              </div>
+              {rows.length ? (
+                <div className="patient-refill-answer-grid">
+                  {rows.map((row) => (
+                    <div key={row.label}>
+                      <span>{row.label}</span>
+                      <strong>{row.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyInline>No refill answers are available in this chart yet.</EmptyInline>
+              )}
+              {message ? (
+                <div className="patient-refill-message">
+                  <span>Message to doctor</span>
+                  <p>{message}</p>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </ChartSection>
   );
 }
 
@@ -547,6 +727,7 @@ function CompactLifecycle({ steps }) {
 function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
   const [notes, setNotes] = useStatePC(asArray(chart?.notes));
   const [draft, setDraft] = useStatePC("");
+  const [category, setCategory] = useStatePC("CLINICAL_NOTE");
   const [composing, setComposing] = useStatePC(false);
   const [saving, setSaving] = useStatePC(false);
   const [error, setError] = useStatePC("");
@@ -554,6 +735,7 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
   useEffectPC(() => {
     setNotes(asArray(chart?.notes));
     setDraft("");
+    setCategory("CLINICAL_NOTE");
     setComposing(false);
     setError("");
   }, [chart?.patient?.id, chart?.notes]);
@@ -569,6 +751,7 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
     try {
       const data = await createDoctorNote(chart.patient.id, {
         note_text: noteText,
+        note_category: category,
         context_type: contextType || "SCHEDULE",
       });
       const nextNotes = [data.note, ...notes];
@@ -600,13 +783,14 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
         <article className="appointment-note-preview">
           <div>
             <strong>{latestNote.actor?.display_name || "Clinical team"}</strong>
-            <span>{formatDateTime(latestNote.created_at)}</span>
+            <span>{noteCategoryLabel(latestNote.note_category)} · {formatDateTime(latestNote.created_at)}</span>
           </div>
           <p>{latestNote.note_text}</p>
         </article>
       ) : null}
       {composing ? (
         <div className="appointment-note-composer">
+          <NoteCategoryPicker value={category} onChange={setCategory} compact />
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Add internal clinical context..." maxLength={4000} rows={3} />
           <div>
             <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
@@ -683,6 +867,7 @@ function TaskClinicalCard({
   lifecycle,
   latestPrescription,
   deliveries,
+  refills,
   patientPayload,
   onAmendPrescription,
   onNoteSaved,
@@ -728,6 +913,8 @@ function TaskClinicalCard({
         </div>
       ) : null}
 
+      <RefillRequestSummary refills={refills} />
+
       <DoctorNotesCompact
         chart={chart}
         contextType="CLINICAL_INBOX"
@@ -744,6 +931,7 @@ function ChatClinicalCard({
   medication,
   latestPrescription,
   deliveries,
+  refills,
   onOpenPatient,
   onNoteSaved,
 }) {
@@ -810,6 +998,8 @@ function ChatClinicalCard({
           </div>
         </div>
       ) : null}
+
+      <RefillRequestSummary refills={refills} />
 
       <DoctorNotesCompact
         chart={chart}
@@ -883,12 +1073,14 @@ function ClinicalProfileModal({ chart, onClose, onSaved }) {
 function DoctorNotes({ chart, contextType, onNoteSaved }) {
   const [notes, setNotes] = useStatePC(asArray(chart?.notes));
   const [draft, setDraft] = useStatePC("");
+  const [category, setCategory] = useStatePC("CLINICAL_NOTE");
   const [saving, setSaving] = useStatePC(false);
   const [error, setError] = useStatePC("");
 
   useEffectPC(() => {
     setNotes(asArray(chart?.notes));
     setDraft("");
+    setCategory("CLINICAL_NOTE");
   }, [chart?.patient?.id, chart?.notes]);
 
   const save = async () => {
@@ -902,6 +1094,7 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
     try {
       const data = await createDoctorNote(chart.patient.id, {
         note_text: noteText,
+        note_category: category,
         context_type: contextType || "PATIENT_CHART",
       });
       const nextNotes = [data.note, ...notes];
@@ -918,6 +1111,7 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
   return (
     <ChartSection title="Doctor notes" subtitle="Internal clinical handover and follow-up context." className="doctor-notes-section">
       <div className="doctor-note-composer">
+        <NoteCategoryPicker value={category} onChange={setCategory} />
         <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Add a concise internal note..." maxLength={4000} rows={3} />
         <div className="doctor-note-composer-foot">
           <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
@@ -931,7 +1125,7 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
             <article className="doctor-note-card" key={note.note_id}>
               <div className="doctor-note-meta">
                 <strong>{note.actor?.display_name || "Clinical team"}</strong>
-                <span>{actorRoleLabel(note.actor?.actor_type)} · {formatDateTime(note.created_at)}</span>
+                <span>{noteCategoryLabel(note.note_category)} · {actorRoleLabel(note.actor?.actor_type)} · {formatDateTime(note.created_at)}</span>
               </div>
               <p>{note.note_text}</p>
             </article>
@@ -963,6 +1157,36 @@ function Timeline({ events }) {
   );
 }
 
+function ClinicalActionTrail({ events }) {
+  const list = asArray(events).slice(0, 8);
+  return (
+    <ChartSection title="Clinical action trail" subtitle="Who changed what, and when." className="clinical-action-trail">
+      {list.length ? (
+        <div className="clinical-action-list">
+          {list.map((event, index) => {
+            const actor = event.actor || {};
+            const actionType = event.action_type || event.type;
+            return (
+              <article className="clinical-action-row" key={event.event_id || event.id || `${actionType}-${event.created_at}-${index}`}>
+                <div className={`clinical-action-chip clinical-action-chip-${clinicalActionTone(actionType)}`}>
+                  {clinicalActionLabel(actionType)}
+                </div>
+                <div className="clinical-action-copy">
+                  <strong>{actor.display_name || event.actor_name || "Clinical team"}</strong>
+                  <span>{[actorRoleLabel(actor.actor_type || actor.role), clinicalActionContext(event)].filter(Boolean).join(" · ")}</span>
+                </div>
+                <time>{formatDateTime(event.created_at || event.occurred_at)}</time>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyInline>No clinical actions recorded yet.</EmptyInline>
+      )}
+    </ChartSection>
+  );
+}
+
 function PatientChart({
   patientId,
   initialChart,
@@ -980,6 +1204,7 @@ function PatientChart({
   const [loading, setLoading] = useStatePC(Boolean(patientId) && !initialChart);
   const [error, setError] = useStatePC("");
   const [editingProfile, setEditingProfile] = useStatePC(false);
+  const [refillRequestDetails, setRefillRequestDetails] = useStatePC([]);
   const compact = mode === "compact";
   const appointmentMode = mode === "appointment";
   const taskMode = mode === "task";
@@ -1018,12 +1243,45 @@ function PatientChart({
   const deliveries = asArray(chart?.medication_delivery);
   const refills = asArray(chart?.refills);
   const consultations = asArray(chart?.consultations);
+  const refillKey = refills.map((refill) => refill.id || refill.refill_request_id || refill.submitted_at || refill.status).join("|");
+  const refillDetailsById = new Map(refillRequestDetails.map((refill) => [refill.refill_request_id || refill.id, refill]));
+  const enrichedRefills = refills.map((refill) => ({
+    ...refill,
+    ...(refillDetailsById.get(refill.id || refill.refill_request_id) || {}),
+  }));
   const latestPrescription = prescriptions[0];
   const amendablePrescription = prescriptions.find((prescription) => prescription.can_amend === true);
   const nextAction = asArray(chart?.next_actions)[0];
   const medication = clinical.current_medications?.[0];
   const patientPayload = chartPatientActionPayload(chart);
   const trackKey = context?.prescribable?.trackKey || context?.prescribable?.track_key || latestPrescription?.track_key || primaryTrack(chart);
+  const saveNoteLocally = (note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }));
+  const saveNoteAndRefreshChart = (note) => {
+    saveNoteLocally(note);
+    if (!chart?.patient?.id) return;
+    fetchPatientChart(chart.patient.id)
+      .then((data) => {
+        setChart(data);
+        onChartLoaded?.(data);
+      })
+      .catch(() => undefined);
+  };
+
+  useEffectPC(() => {
+    if (!patient.id || !refills.length) {
+      setRefillRequestDetails([]);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchPatientRefillRequests(patient.id)
+      .then((data) => {
+        if (!cancelled) setRefillRequestDetails(asArray(data.requests || data.refill_requests));
+      })
+      .catch(() => {
+        if (!cancelled) setRefillRequestDetails([]);
+      });
+    return () => { cancelled = true; };
+  }, [patient.id, refillKey]);
 
   if (!patientId && !chart) return <div className="empty-state">Select a patient chart.</div>;
   if (loading && !chart) return <div className="empty-state">Loading patient chart...</div>;
@@ -1040,9 +1298,10 @@ function PatientChart({
           lifecycle={lifecycle}
           latestPrescription={latestPrescription}
           deliveries={deliveries}
+          refills={enrichedRefills}
           patientPayload={patientPayload}
           onAmendPrescription={onAmendPrescription}
-          onNoteSaved={(note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }))}
+          onNoteSaved={saveNoteLocally}
         />
       </div>
     );
@@ -1058,7 +1317,7 @@ function PatientChart({
           deliveries={deliveries}
           patientPayload={patientPayload}
           onAmendPrescription={onAmendPrescription}
-          onNoteSaved={(note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }))}
+          onNoteSaved={saveNoteLocally}
         />
       </div>
     );
@@ -1074,8 +1333,9 @@ function PatientChart({
           medication={medication}
           latestPrescription={latestPrescription}
           deliveries={deliveries}
+          refills={enrichedRefills}
           onOpenPatient={onOpenPatient}
-          onNoteSaved={(note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }))}
+          onNoteSaved={saveNoteLocally}
         />
       </div>
     );
@@ -1151,9 +1411,13 @@ function PatientChart({
           <RxLifecycleStrip steps={lifecycle} />
         </ChartSection>
 
+        <RefillRequestSummary refills={enrichedRefills} />
+
         <div className={compact || appointmentMode || taskMode ? "patient-chart-single" : "patient-emr-grid"}>
           <div className="patient-emr-main">
-            <DoctorNotes chart={chart} contextType={compact ? "CHAT" : appointmentMode ? "SCHEDULE" : taskMode ? "CLINICAL_INBOX" : "PATIENT_HUB"} onNoteSaved={(note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }))} />
+            <DoctorNotes chart={chart} contextType={compact ? "CHAT" : appointmentMode ? "SCHEDULE" : taskMode ? "CLINICAL_INBOX" : "PATIENT_HUB"} onNoteSaved={focusedMode ? saveNoteLocally : saveNoteAndRefreshChart} />
+
+            {!focusedMode ? <ClinicalActionTrail events={chart.action_events} /> : null}
 
             <ChartSection title={focusedMode ? "Treatment and prescribing" : "Prescriptions"} subtitle={focusedMode ? "" : "Issued, unpaid, re-issued, and historical prescriptions."}>
               {focusedMode && clinical.current_medications?.length ? (

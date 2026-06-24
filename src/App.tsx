@@ -9,7 +9,6 @@ import './components/patients.jsx'
 import './components/chat.jsx'
 import './components/prescribe.jsx'
 import './components/refills.jsx'
-import './components/quickwlp.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
@@ -58,7 +57,6 @@ function App() {
   const ChatView = window.DD_ChatView
   const PrescribeView = window.DD_PrescribeView
   const RefillsView = window.DD_RefillsView
-  const QuickWlpView = window.DD_QuickWlpView
 
   const go = (id: string, ctx: Record<string, string> = {}) => {
     setRoute(id)
@@ -224,20 +222,6 @@ function App() {
         {route === 'refills' && (
           <RefillsView
             onPrescribe={(id: string, trackKey?: string, customerId?: string, refillRequestId?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || 'weight-loss', customerId: customerId || '', refillRequestId: refillRequestId || '', prescriptionMode: 'refill' })}
-          />
-        )}
-        {route === 'quickwlp' && (
-          <QuickWlpView
-            onPrescribe={(request: any) => go('prescribe', {
-              quickWlpLeadId: request?.leadId || request?.id || '',
-              quickWlpName: request?.patient?.name || '',
-              quickWlpPhone: request?.patient?.userPhone || request?.patient?.phone || '',
-              quickWlpWhatsapp: request?.patient?.whatsapp || '',
-              quickWlpEmail: request?.patient?.email || '',
-              quickWlpDoctorId: request?.doctorId || '',
-              quickWlpTrackKey: request?.trackKey || request?.track_key || 'weight-loss',
-              prescriptionMode: 'quickwlp',
-            })}
           />
         )}
         {route === 'prescribe' && (

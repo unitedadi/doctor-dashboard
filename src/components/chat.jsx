@@ -21,6 +21,17 @@ function asArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
+function isQuickConsultOnlyPatientRecord(patient) {
+  const history = [
+    ...asArray(patient?.rx_prescription_history),
+    ...asArray(patient?.prescription_history),
+    ...asArray(patient?.prescriptionHistory),
+  ];
+  const hasQuickConsult = history.some((item) => item?.source === "quickwlp_prescription");
+  const hasRxCarePlan = history.some((item) => item?.source === "rx_care_plan");
+  return hasQuickConsult && !hasRxCarePlan;
+}
+
 function fetchChatToken() {
   return fetchJson(`${API_BASE}/doctor/chat/token`, {
     method: "POST",
@@ -61,6 +72,35 @@ function titleCase(value) {
     .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+const NOTE_CATEGORIES = [
+  { value: "CLINICAL_NOTE", label: "Clinical note" },
+  { value: "MEDICATION_DECISION", label: "Medication decision" },
+  { value: "SAFETY_RISK", label: "Safety/risk" },
+  { value: "FOLLOW_UP", label: "Follow-up" },
+  { value: "ADMIN_HANDOFF", label: "Admin handoff" },
+];
+
+function noteCategoryLabel(value) {
+  return NOTE_CATEGORIES.find((item) => item.value === value)?.label || "Clinical note";
+}
+
+function NoteCategoryPicker({ value, onChange }) {
+  return (
+    <div className="doctor-note-category-pills compact" aria-label="Note category">
+      {NOTE_CATEGORIES.map((category) => (
+        <button
+          key={category.value}
+          type="button"
+          className={value === category.value ? "active" : ""}
+          onClick={() => onChange(category.value)}
+        >
+          {category.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function mapPatientForChannel(item) {
@@ -720,6 +760,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
   const seededNotesKey = seededNotes.map((note) => note.note_id || note.created_at || note.note_text).join("|");
   const [notes, setNotes] = useStateC(seededNotes);
   const [draft, setDraft] = useStateC("");
+  const [category, setCategory] = useStateC("CLINICAL_NOTE");
   const [loading, setLoading] = useStateC(true);
   const [saving, setSaving] = useStateC(false);
   const [error, setError] = useStateC("");
@@ -745,6 +786,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
 
   useEffectC(() => {
     setDraft("");
+    setCategory("CLINICAL_NOTE");
     loadNotes();
   }, [loadNotes]);
 
@@ -759,6 +801,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
     try {
       const data = await createDoctorNote(patientId, {
         note_text: noteText,
+        note_category: category,
         context_type: "CHAT",
       });
       setNotes((current) => [data.note, ...current]);
@@ -777,6 +820,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
   return (
     <div className="clinical-notes-block">
       <div className="clinical-note-composer">
+        <NoteCategoryPicker value={category} onChange={setCategory} />
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -798,7 +842,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
             <article key={note.note_id} className="clinical-note-item">
               <div>
                 <strong>{note.actor?.display_name || "Clinical team"}</strong>
-                <span>{actorRoleLabel(note.actor?.actor_type)} · {formatContextDateTime(note.created_at)}</span>
+                <span>{noteCategoryLabel(note.note_category)} · {actorRoleLabel(note.actor?.actor_type)} · {formatContextDateTime(note.created_at)}</span>
               </div>
               <p>{note.note_text}</p>
             </article>
@@ -1263,6 +1307,14 @@ function PatientChatDrawer({ open, patientId, customerId, channelId, patientName
         } else {
           const patient = patients.find((item) => item.id === patientId || item.customer_id === customerId) || null;
           setResolvedPatient(patient ? mapPatientForChannel(patient) : null);
+          if (isQuickConsultOnlyPatientRecord(patient) || patient?.chat?.available === false) {
+            const reason = patient?.chat?.unavailable_reason === "quick_consult_no_chat"
+              ? "Quick Consult patients do not have in-app chat access."
+              : isQuickConsultOnlyPatientRecord(patient)
+                ? "Quick Consult patients do not have in-app chat access."
+              : "Patient chat is not available for this record.";
+            throw new Error(reason);
+          }
           const nextPatientId = patient?.id || patientId;
           const nextCustomerId = patient?.customer_id || customerId;
           if (!nextPatientId || !nextCustomerId) {
@@ -1433,9 +1485,12 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
           .filter((task) => task?.category === "message_needs_response" && task?.channel_id)
           .map((task) => String(task.channel_id))
           .filter(Boolean);
-        setNeedsReplyChannelIds([...new Set(channelIds)]);
+        const nextChannelIds = [...new Set(channelIds)];
+        setNeedsReplyChannelIds((current) => (
+          current.join("|") === nextChannelIds.join("|") ? current : nextChannelIds
+        ));
       } catch {
-        if (!cancelled) setNeedsReplyChannelIds([]);
+        if (!cancelled) setNeedsReplyChannelIds((current) => (current.length ? [] : current));
       } finally {
         if (!cancelled) setNeedsReplyLoading(false);
       }
@@ -1467,29 +1522,6 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
         setInitialChannelId(routeInitialChannelId);
       }
 
-      if (hubPatientId) {
-        const patient = patients.find((item) => item.id === hubPatientId);
-        if (patient?.chat?.available && patient.customer_id) {
-          const opened = await fetchJson(`${API_BASE}/doctor/chat/channels`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              doctor_id: DOCTOR_ID,
-              patient_id: patient.id,
-              customer_id: patient.customer_id,
-            }),
-          });
-          setInitialChannelId(opened.channel_id || "");
-
-          const createdChannel = streamClient.channel(opened.channel_type, opened.channel_id, {
-            name: patient.name,
-            patient_id: patient.id,
-            patient: mapPatientForChannel(patient),
-          });
-          await createdChannel.watch().catch(() => {});
-        }
-      }
-
       if (loadId !== loadIdRef.current) {
         await streamClient.disconnectUser().catch(() => {});
         return null;
@@ -1503,7 +1535,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
     } finally {
       if (loadId === loadIdRef.current) setLoading(false);
     }
-  }, [hubPatientId, routeInitialChannelId]);
+  }, [routeInitialChannelId]);
 
   useEffectC(() => {
     let connectedClient = null;
@@ -1520,6 +1552,40 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
       if (connectedClient) connectedClient.disconnectUser().catch(() => {});
     };
   }, [loadChat]);
+
+  useEffectC(() => {
+    if (!client || !hubPatientId || hubLens === "charts") return undefined;
+    let cancelled = false;
+
+    async function openPatientChannel() {
+      const patient = patientDirectory.find((item) => item.id === hubPatientId || item.customer_id === hubCustomerId);
+      if (!patient?.chat?.available || !patient.customer_id || isQuickConsultOnlyPatientRecord(patient)) return;
+      try {
+        const opened = await fetchJson(`${API_BASE}/doctor/chat/channels`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            doctor_id: DOCTOR_ID,
+            patient_id: patient.id,
+            customer_id: patient.customer_id,
+          }),
+        });
+        if (cancelled) return;
+        setInitialChannelId(opened.channel_id || "");
+        const createdChannel = client.channel(opened.channel_type || "messaging", opened.channel_id, {
+          name: patient.name,
+          patient_id: patient.id,
+          patient: mapPatientForChannel(patient),
+        });
+        await createdChannel.watch().catch(() => {});
+      } catch {
+        if (!cancelled) setError("Could not open patient chat.");
+      }
+    }
+
+    openPatientChannel();
+    return () => { cancelled = true; };
+  }, [client, hubCustomerId, hubLens, hubPatientId, patientDirectory]);
 
   const channelFilters = useMemoC(() => {
     if (!client?.userID) return {};
@@ -1575,7 +1641,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
               setHubCustomerId("");
               setHubLens("all");
             }}
-            onPrescribe={onPrescribe}
+            onPrescribe={(id, customerId, trackKey, prescriptionMode) => onPrescribe?.(id, trackKey, customerId, prescriptionMode)}
             onAmendPrescription={onAmendPrescription}
           />
         </div>

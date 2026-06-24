@@ -569,7 +569,8 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedFulfillment.amount_fils
   );
   const selectedActionState = actionState(selected, nowMs);
-  const selectedProfile = selected && !selectedIsQuickWlp
+  const selectedHasPatientChart = Boolean(selectedPatient?.id && (!selectedIsQuickWlp || selectedPatient.id !== selected.quickWlpLeadId));
+  const selectedProfile = selected
     ? patientProfiles.find((profile) => profile.id === selected.patientId || profile.id === selectedPatient?.id)
     : null;
   const selectedHistory = selectedProfile?.visit_history || [];
@@ -649,8 +650,8 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   }, []);
 
   useEffectA(() => {
-    if (selected && selected.source !== "quickwlp") loadPatientProfiles();
-  }, [loadPatientProfiles, selected?.id, selected?.source]);
+    if (selected) loadPatientProfiles();
+  }, [loadPatientProfiles, selected?.id]);
 
   useEffectA(() => {
     if (!visibleAppointments.length) return;
@@ -967,12 +968,16 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 </section>
               )}
 
-              {!selectedIsQuickWlp && (
+              {(selectedHasPatientChart || selectedIsQuickWlp) && (
                 <section className="workbench-section workbench-section-access">
                   <div className="workbench-section-title">Patient access</div>
                   <div className="workbench-access-actions">
-                    <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
-                    {selected.chat?.available ? (
+                    {selectedHasPatientChart ? (
+                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open patient chart</button>
+                    ) : null}
+                    {selectedIsQuickWlp ? (
+                      <div className="workbench-note">Quick Consult does not include in-app chat. Use phone or WhatsApp for follow-up.</div>
+                    ) : selected.chat?.available ? (
                       <button
                         className="workbench-action-button secondary"
                         onClick={() => setChatTarget({
@@ -985,11 +990,14 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     ) : (
                       <div className="workbench-note">Chat unlocks after consultation completion.</div>
                     )}
+                    {selectedIsQuickWlp && !selectedHasPatientChart ? (
+                      <div className="workbench-note">Patient chart is not linked yet for this older Quick Consult.</div>
+                    ) : null}
                   </div>
                 </section>
               )}
 
-              {PatientChart && !selectedIsQuickWlp ? (
+              {PatientChart && selectedHasPatientChart ? (
                 <section className="workbench-section workbench-patient-chart">
                   <div className="workbench-section-title">Clinical context</div>
                   <PatientChart
@@ -998,7 +1006,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     focus="schedule"
                     context={{ appointment: selected, label: "Schedule" }}
                     onOpenPatient={onOpenPatient}
-                    onMessage={(id) => setChatTarget({ patientId: id || selectedPatient.id, patientName: selectedPatient.name })}
+                    onMessage={selectedIsQuickWlp ? undefined : (id) => setChatTarget({ patientId: id || selectedPatient.id, patientName: selectedPatient.name })}
                     onPrescribe={({ patientId, trackKey, mode }) => onPrescribeRx?.({ ...selected, patientId, trackKey, prescriptionMode: mode })}
                   />
                 </section>

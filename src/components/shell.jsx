@@ -119,7 +119,6 @@ function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, unreadCh
     { id: "appointments", label: "Schedule", icon: I.calendar, count: appointmentCount },
     { id: "clinical-inbox", label: "Clinical Inbox", icon: I.shieldCheck, count: clinicalInboxCount, urgent: true },
     { id: "patient-hub", label: "Patient Hub", icon: I.message, count: unreadChats },
-    { id: "quickwlp", label: "Quick WLP", icon: I.stethoscope, count: null },
   ];
   const D = window.DD_DATA.DOCTOR;
   return (

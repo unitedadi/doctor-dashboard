@@ -21,6 +21,35 @@ function titleCase(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+const NOTE_CATEGORIES = [
+  { value: "CLINICAL_NOTE", label: "Clinical note" },
+  { value: "MEDICATION_DECISION", label: "Medication decision" },
+  { value: "SAFETY_RISK", label: "Safety/risk" },
+  { value: "FOLLOW_UP", label: "Follow-up" },
+  { value: "ADMIN_HANDOFF", label: "Admin handoff" },
+];
+
+function noteCategoryLabel(value) {
+  return NOTE_CATEGORIES.find((item) => item.value === value)?.label || "Clinical note";
+}
+
+function NoteCategoryPicker({ value, onChange }) {
+  return (
+    <div className="doctor-note-category-pills" aria-label="Note category">
+      {NOTE_CATEGORIES.map((category) => (
+        <button
+          key={category.value}
+          type="button"
+          className={value === category.value ? "active" : ""}
+          onClick={() => onChange(category.value)}
+        >
+          {category.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function formatDate(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("en-US", {
@@ -250,6 +279,15 @@ function mapPrescriptionHistoryItem(item) {
   };
 }
 
+function isQuickConsultPrescription(prescription) {
+  return prescription?.source === "quickwlp_prescription";
+}
+
+function isQuickConsultOnlyPatient(prescriptionHistory) {
+  const history = asArray(prescriptionHistory);
+  return history.some(isQuickConsultPrescription) && !history.some((item) => item.source === "rx_care_plan");
+}
+
 function mapPrescribablePatient(item) {
   return {
     id: item.patient_id,
@@ -288,6 +326,13 @@ function prescriptionMedicationLabel(prescription) {
 function prescriptionStatusLabel(prescription) {
   if (isIssuedUnpaidPrescription(prescription)) return "Issued · payment pending";
   return titleCase(prescription?.status || "Issued");
+}
+
+function chatUnavailableCopy(patient) {
+  if (patient?.quickConsultOnly || patient?.chat?.unavailable_reason === "quick_consult_no_chat") {
+    return "Quick Consult patients do not have in-app chat access.";
+  }
+  return "Chat is not available for this patient.";
 }
 
 function actorRoleLabel(value) {
@@ -334,7 +379,7 @@ function prescriptionActionCopy(patient) {
   if (hasActiveRxPrescription(patient.prescriptionHistory)) {
     return {
       label: "Follow-up prescription",
-      title: patient.prescribe ? "Create a follow-up prescription" : "A new completed consultation is required before issuing again",
+      title: patient.prescribe ? "Create a follow-up prescription" : "A refill request or completed follow-up consultation is required before issuing again",
       disabled: !patient.prescribe,
       mode: "prescribe",
     };
@@ -353,6 +398,11 @@ function mapPatient(item) {
   const heightCm = firstPresent(demographics.height_cm, basic.height_cm, basic.current_height_cm, basic.height);
   const weightKg = firstPresent(demographics.weight_kg, basic.weight_kg, basic.current_weight_kg, basic.weight);
   const bmi = firstPresent(demographics.bmi, basic.bmi, calculateBmi(heightCm, weightKg));
+  const prescriptionHistory = [
+    ...asArray(item.rx_prescription_history),
+    ...asArray(item.prescription_history),
+  ].map(mapPrescriptionHistoryItem);
+  const quickConsultOnly = isQuickConsultOnlyPatient(prescriptionHistory);
   return {
     id: item.id,
     customerId: item.customer_id,
@@ -381,12 +431,12 @@ function mapPatient(item) {
     visitHistory: asArray(item.visit_history),
     deliveredMedications: asArray(item.delivered_medications),
     refillHistory: asArray(item.refill_history),
-    prescriptionHistory: [
-      ...asArray(item.rx_prescription_history),
-      ...asArray(item.prescription_history),
-    ].map(mapPrescriptionHistoryItem),
+    prescriptionHistory,
     upcoming: item.upcoming_appointment || null,
-    chat: item.chat || { available: false, unavailable_reason: "chat_locked" },
+    quickConsultOnly,
+    chat: quickConsultOnly
+      ? { available: false, unavailable_reason: "quick_consult_no_chat" }
+      : item.chat || { available: false, unavailable_reason: "chat_locked" },
     prescribe: null,
     prescribeChecked: false,
   };
@@ -984,6 +1034,7 @@ function ChartTimeline({ visits, prescriptions, assessments, deliveries, refills
 function DoctorNotesSection({ patientId }) {
   const [notes, setNotes] = useStateP([]);
   const [draft, setDraft] = useStateP("");
+  const [category, setCategory] = useStateP("CLINICAL_NOTE");
   const [loading, setLoading] = useStateP(true);
   const [saving, setSaving] = useStateP(false);
   const [error, setError] = useStateP("");
@@ -1004,6 +1055,7 @@ function DoctorNotesSection({ patientId }) {
 
   useEffectP(() => {
     setDraft("");
+    setCategory("CLINICAL_NOTE");
     loadNotes();
   }, [loadNotes]);
 
@@ -1018,6 +1070,7 @@ function DoctorNotesSection({ patientId }) {
     try {
       const data = await createDoctorNote(patientId, {
         note_text: noteText,
+        note_category: category,
         context_type: "PATIENT_HUB",
       });
       setNotes((current) => [data.note, ...current]);
@@ -1036,6 +1089,7 @@ function DoctorNotesSection({ patientId }) {
       className="doctor-notes-section"
     >
       <div className="doctor-note-composer">
+        <NoteCategoryPicker value={category} onChange={setCategory} />
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -1061,7 +1115,7 @@ function DoctorNotesSection({ patientId }) {
             <article className="doctor-note-card" key={note.note_id}>
               <div className="doctor-note-meta">
                 <strong>{note.actor?.display_name || "Clinical team"}</strong>
-                <span>{actorRoleLabel(note.actor?.actor_type)} · {formatDateTime(note.created_at)}</span>
+                <span>{noteCategoryLabel(note.note_category)} · {actorRoleLabel(note.actor?.actor_type)} · {formatDateTime(note.created_at)}</span>
               </div>
               <p>{note.note_text}</p>
             </article>
@@ -1105,6 +1159,10 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
   const latestRefill = p.refillHistory[0];
   const lifecycleSteps = patientLifecycleSteps(p);
   const nextAppointment = p.upcoming ? `${p.upcoming.service_name} · ${formatAppointmentDate(p.upcoming.date, p.upcoming.time)}` : "";
+  const messageDisabledCopy = chatUnavailableCopy(p);
+  const prescriptionLockedCopy = hasActiveRxPrescription(p.prescriptionHistory) && !p.prescribe
+    ? "Follow-up prescription is locked until the patient submits a refill request or completes a follow-up consultation."
+    : "";
   const primaryClinicalState = issuedUnpaidPrescriptions.length
     ? "Prescription issued, payment pending"
     : p.prescribe
@@ -1154,7 +1212,7 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
               className="btn-ghost"
               onClick={() => onMessage(p.id)}
               disabled={!p.chat?.available}
-              title={p.chat?.available ? "Message patient" : "Chat is locked for this patient"}
+              title={p.chat?.available ? "Message patient" : messageDisabledCopy}
               style={{ opacity: p.chat?.available ? 1 : 0.45, cursor: p.chat?.available ? "pointer" : "not-allowed" }}
             >
               {I.message}<span>Message</span>
@@ -1184,6 +1242,18 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
             </button>
           </div>
         </div>
+
+        {!p.chat?.available && p.quickConsultOnly ? (
+          <div className="patient-emr-access-note">
+            Quick Consult patient. This one-off flow does not include in-app chat access; use the phone number for follow-up.
+          </div>
+        ) : null}
+
+        {prescriptionLockedCopy ? (
+          <div className="patient-emr-access-note">
+            {prescriptionLockedCopy}
+          </div>
+        ) : null}
 
         <div className="patient-emr-status">
           <ChartFact label="Clinical state" value={primaryClinicalState} />
