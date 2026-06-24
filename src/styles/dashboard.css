@@ -5567,6 +5567,76 @@ body {
   gap: 10px;
   margin-top: 18px;
 }
+
+.consult-outcome-dialog {
+  width: min(760px, 100%);
+}
+
+.consult-outcome-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.consult-outcome-option {
+  min-height: 78px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 10px;
+  background: var(--dd-cell);
+  color: var(--dd-text-primary);
+  text-align: left;
+  padding: 14px;
+  cursor: pointer;
+}
+
+.consult-outcome-option strong {
+  font: 500 13px/1.25 var(--dd-font);
+  color: var(--dd-text-primary);
+}
+
+.consult-outcome-option span {
+  font: 400 12px/1.4 var(--dd-font);
+  color: var(--dd-text-secondary);
+}
+
+.consult-outcome-option.selected {
+  border-color: var(--dd-accent);
+  background: var(--dd-fill-light);
+}
+
+.consult-outcome-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.consult-outcome-note textarea {
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--dd-divider);
+  border-radius: 10px;
+  background: var(--dd-cell);
+  color: var(--dd-text-primary);
+  font: 400 13px/1.45 var(--dd-font);
+  outline: none;
+  padding: 12px 13px;
+  resize: vertical;
+}
+
+.consult-outcome-note textarea:focus {
+  border-color: rgba(23,59,61,0.35);
+  box-shadow: 0 0 0 3px rgba(23,59,61,0.08);
+}
+
+.clinical-task-priority.needs_outcome {
+  color: var(--dd-accent);
+  border-color: rgba(23,59,61,0.16);
+  background: rgba(23,59,61,0.07);
+}
+
 .btn-ghost.danger {
   color: #9f2d2d;
 }

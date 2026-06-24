@@ -78,6 +78,14 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-06-24 20:53 +04 - Consultation outcome frontend
+
+- Source: doctor-dashboard clinical workflow cleanup after backend introduced explicit consultation outcomes.
+- Changed Schedule, Clinical Inbox, and Patient Hub to show `Record outcome` for completed follow-up consults that need an explicit clinical decision instead of incorrectly showing `Issue prescription`.
+- Added a shared consultation outcome modal with outcome choices and internal note support.
+- Verification: `npm run build:prod` passed; Playwright smoke confirmed the Clinical Inbox `Needs outcome` filter, `Record outcome` CTA, and modal render locally. `npm run lint` still fails on pre-existing `src/App.tsx` and `src/main.tsx` rules unrelated to this change.
+- Follow-up: deploy requires backend outcome endpoint to be live.
+
 ### 2026-06-15 14:47 +04 - DAR-1766 empty appointment text
 
 - Source: Linear DAR-1766 requested changing the empty appointment copy.

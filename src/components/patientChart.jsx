@@ -93,6 +93,17 @@ function updateClinicalProfile(patientId, body) {
   });
 }
 
+function recordConsultOutcome(appointmentId, body) {
+  return fetchJson(`${API_BASE}/doctor/appointments/${encodeURIComponent(appointmentId)}/outcome`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doctor_id: DOCTOR_ID,
+      ...body,
+    }),
+  });
+}
+
 function numberOrNull(value) {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return null;
@@ -237,6 +248,44 @@ function noteCategoryLabel(value) {
   return NOTE_CATEGORIES.find((item) => item.value === value)?.label || "Clinical note";
 }
 
+const CONSULT_OUTCOME_OPTIONS = [
+  {
+    value: "CONTINUE_EXISTING_TREATMENT",
+    label: "Continue existing treatment",
+    detail: "No new prescription from this consult.",
+  },
+  {
+    value: "PRESCRIPTION_NEEDED",
+    label: "Prescription needed",
+    detail: "Proceed to issue a new prescription.",
+  },
+  {
+    value: "NO_MEDICATION_NEEDED",
+    label: "No medication needed",
+    detail: "Consult closed without medication.",
+  },
+  {
+    value: "PATIENT_UNDECIDED",
+    label: "Patient undecided",
+    detail: "Patient needs time before a medication decision.",
+  },
+  {
+    value: "NOT_ELIGIBLE",
+    label: "Not eligible",
+    detail: "Do not prescribe at this time.",
+  },
+  {
+    value: "OPS_FOLLOW_UP_NEEDED",
+    label: "Ops follow-up needed",
+    detail: "Support should follow up before the next clinical step.",
+  },
+];
+
+function consultOutcomeLabel(value) {
+  const normalized = String(value || "").toUpperCase();
+  return CONSULT_OUTCOME_OPTIONS.find((option) => option.value === normalized)?.label || titleCase(value || "Outcome");
+}
+
 function NoteCategoryPicker({ value, onChange, compact = false }) {
   return (
     <div className={compact ? "doctor-note-category-pills compact" : "doctor-note-category-pills"} aria-label="Note category">
@@ -257,6 +306,7 @@ function NoteCategoryPicker({ value, onChange, compact = false }) {
 function clinicalActionLabel(value) {
   const normalized = String(value || "").toUpperCase();
   if (normalized === "CONSULTATION_COMPLETED") return "Completed consult";
+  if (normalized === "CONSULTATION_OUTCOME_RECORDED") return "Recorded outcome";
   if (normalized === "CONSULTATION_NO_SHOW") return "Marked no-show";
   if (normalized === "PRESCRIPTION_ISSUED") return "Issued prescription";
   if (normalized === "PRESCRIPTION_REISSUED") return "Re-issued prescription";
@@ -268,6 +318,7 @@ function clinicalActionLabel(value) {
 function clinicalActionTone(value) {
   const normalized = String(value || "").toUpperCase();
   if (normalized.includes("NO_SHOW")) return "warn";
+  if (normalized.includes("OUTCOME")) return "profile";
   if (normalized.includes("PRESCRIPTION")) return "prescription";
   if (normalized.includes("PROFILE")) return "profile";
   if (normalized.includes("NOTE")) return "note";
@@ -279,6 +330,7 @@ function clinicalActionContext(event) {
   const changedFields = asArray(context.changed_fields)
     .map((field) => humanizeAnswerKey(field))
     .join(", ");
+  if (context.outcome) return consultOutcomeLabel(context.outcome);
   if (changedFields) return `Updated ${changedFields}`;
   if (context.reason) return `Reason: ${String(context.reason).trim()}`;
   if (context.note_category) return noteCategoryLabel(context.note_category);
@@ -483,11 +535,32 @@ function contextCanPrescribe(context) {
   return Boolean(context?.prescribable?.canPrescribe || context?.prescribable?.can_prescribe);
 }
 
+function nextActionKey(value) {
+  return String(value?.key || value?.action || "").toUpperCase();
+}
+
+function isRecordOutcomeAction(action) {
+  return nextActionKey(action) === "RECORD_CONSULT_OUTCOME";
+}
+
+function contextAppointmentId(context, chart) {
+  return (
+    context?.appointment?.id ||
+    context?.task?.appointmentId ||
+    context?.task?.appointment_id ||
+    context?.task?.sourceId ||
+    context?.task?.source_id ||
+    asArray(chart?.consultations)[0]?.id ||
+    ""
+  );
+}
+
 function contextCompletedAt(context) {
   return context?.prescribable?.latestCompletedAt || context?.prescribable?.latest_completed_at || "";
 }
 
-function prescriptionActionForChart({ chart, context, medication, amendablePrescription }) {
+function prescriptionActionForChart({ chart, context, medication, amendablePrescription, nextAction }) {
+  if (isRecordOutcomeAction(nextAction)) return null;
   const canPrescribe = contextCanPrescribe(context);
   if (amendablePrescription) {
     return { label: "Re-issue prescription", mode: "reissue", enabled: true, prescription: amendablePrescription };
@@ -502,6 +575,7 @@ function prescriptionActionForChart({ chart, context, medication, amendablePresc
 function buildLifecycle(chart, context = {}) {
   const taskCategory = String(context?.task?.category || "").toLowerCase();
   const canPrescribe = contextCanPrescribe(context);
+  const needsOutcome = taskCategory === "needs_outcome" || String(context?.task?.action || "").toUpperCase() === "RECORD_CONSULT_OUTCOME";
   const consultation = chart?.consultations?.[0];
   const prescription = chart?.prescriptions?.[0];
   const delivery = chart?.medication_delivery?.[0];
@@ -509,7 +583,7 @@ function buildLifecycle(chart, context = {}) {
   const prescriptionStatus = String(prescription?.status || "").toUpperCase();
   let consultState = consultationStatus(consultation);
   let consultMeta = consultation?.completed_at || consultation?.no_show_at || consultation?.scheduled_at;
-  if (canPrescribe || taskCategory === "needs_prescription" || taskCategory === "refill_review") {
+  if (canPrescribe || taskCategory === "needs_prescription" || taskCategory === "refill_review" || needsOutcome) {
     consultState = "completed";
     consultMeta = context?.task?.occurredAt || contextCompletedAt(context) || consultMeta;
   }
@@ -534,15 +608,17 @@ function buildLifecycle(chart, context = {}) {
       state: consultState === "no_show" ? "risk" : consultState === "completed" ? "done" : consultState === "scheduled" ? "current" : "pending",
     },
     {
-      label: issued ? "Rx issued" : "Rx not issued",
+      label: needsOutcome ? "Outcome not recorded" : issued ? "Rx issued" : "Rx not issued",
       meta: issued
         ? formatDateTime(prescription?.issued_at) || prescriptionStatusLabel(prescription)
+        : needsOutcome
+          ? "Record decision"
         : consultState === "completed"
           ? "Doctor decision needed"
           : consultState === "no_show"
             ? "No-show"
             : "Waiting for consult",
-      state: issued ? "done" : consultState === "completed" ? "current" : "pending",
+      state: issued ? "done" : needsOutcome || consultState === "completed" ? "current" : "pending",
     },
     {
       label: "Payment",
@@ -572,9 +648,10 @@ function currentCareState({ chart, context, nextAction, medication, latestPrescr
   const consultation = asArray(chart?.consultations)[0];
   const taskCategory = String(context?.task?.category || "").toLowerCase();
   const canPrescribe = contextCanPrescribe(context);
+  const needsOutcome = isRecordOutcomeAction(nextAction) || taskCategory === "needs_outcome" || String(context?.task?.action || "").toUpperCase() === "RECORD_CONSULT_OUTCOME";
   const nextActionLabel = String(nextAction?.label || "").trim();
   const nextActionIsNoop = !nextActionLabel || nextActionLabel.toLowerCase() === "no doctor action needed";
-  const consultState = canPrescribe || taskCategory === "needs_prescription" || taskCategory === "refill_review"
+  const consultState = canPrescribe || needsOutcome || taskCategory === "needs_prescription" || taskCategory === "refill_review"
     ? "completed"
     : consultationStatus(consultation);
   const issued = Boolean(latestPrescription?.issued_at || latestPrescription?.id);
@@ -583,6 +660,7 @@ function currentCareState({ chart, context, nextAction, medication, latestPrescr
   const refill = pendingRefill(chart);
 
   if (refill) return "Refill review due";
+  if (needsOutcome) return "Consultation outcome needed";
   if (delivered) return "Medication delivered";
   if (paid) return "Paid, awaiting delivery";
   if (issued) return "Prescription issued, unpaid";
@@ -1123,6 +1201,95 @@ function ClinicalProfileModal({ chart, onClose, onSaved }) {
   );
 }
 
+function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSaved }) {
+  const [outcome, setOutcome] = useStatePC("");
+  const [note, setNote] = useStatePC("");
+  const [saving, setSaving] = useStatePC(false);
+  const [error, setError] = useStatePC("");
+
+  useEffectPC(() => {
+    if (!open) return;
+    setOutcome("");
+    setNote("");
+    setSaving(false);
+    setError("");
+  }, [appointmentId, open]);
+
+  if (!open) return null;
+
+  const save = async () => {
+    if (!appointmentId) {
+      setError("Consultation is missing. Refresh and try again.");
+      return;
+    }
+    if (!outcome) {
+      setError("Select the consultation outcome.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const result = await recordConsultOutcome(appointmentId, {
+        outcome,
+        note: note.trim() || null,
+      });
+      onSaved?.(result);
+      onClose?.();
+    } catch (err) {
+      setError(err.message || "Could not record outcome.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="quickwlp-dialog-backdrop consult-outcome-backdrop">
+      <div className="quickwlp-dialog consult-outcome-dialog" role="dialog" aria-modal="true" aria-labelledby="consult-outcome-title">
+        <div className="quickwlp-dialog-head">
+          <div>
+            <div id="consult-outcome-title" className="quickwlp-dialog-title">Record consultation outcome</div>
+            <p>{patientName ? `Close the clinical decision for ${patientName}.` : "Close the clinical decision for this consultation."}</p>
+          </div>
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Close</button>
+        </div>
+
+        <div className="consult-outcome-options">
+          {CONSULT_OUTCOME_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={`consult-outcome-option${outcome === option.value ? " selected" : ""}`}
+              onClick={() => setOutcome(option.value)}
+              disabled={saving}
+            >
+              <strong>{option.label}</strong>
+              <span>{option.detail}</span>
+            </button>
+          ))}
+        </div>
+
+        <label className="consult-outcome-note">
+          <span>Internal note</span>
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Optional clinical context for the outcome."
+            rows={3}
+            maxLength={1000}
+            disabled={saving}
+          />
+        </label>
+
+        {error ? <div className="quickwlp-dialog-error">{error}</div> : null}
+        <div className="quickwlp-dialog-actions">
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="btn-primary" onClick={save} disabled={saving || !outcome}>{saving ? "Saving" : "Save outcome"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DoctorNotes({ chart, contextType, onNoteSaved }) {
   const [notes, setNotes] = useStatePC(asArray(chart?.notes));
   const [draft, setDraft] = useStatePC("");
@@ -1257,6 +1424,7 @@ function PatientChart({
   const [loading, setLoading] = useStatePC(Boolean(patientId) && !initialChart);
   const [error, setError] = useStatePC("");
   const [editingProfile, setEditingProfile] = useStatePC(false);
+  const [outcomeTarget, setOutcomeTarget] = useStatePC(null);
   const [refillRequestDetails, setRefillRequestDetails] = useStatePC([]);
   const compact = mode === "compact";
   const appointmentMode = mode === "appointment";
@@ -1312,16 +1480,21 @@ function PatientChart({
   const showDeliverySection = !focusedMode || deliveries.length > 0;
   const sourceLabel = chartSourceLabel(chart, context);
   const quickConsultChart = isQuickConsultChart(chart, context);
+  const recordOutcomeAction = isRecordOutcomeAction(nextAction) ? nextAction : null;
+  const recordOutcomeAppointmentId = contextAppointmentId(context, chart);
   const saveNoteLocally = (note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }));
-  const saveNoteAndRefreshChart = (note) => {
-    saveNoteLocally(note);
-    if (!chart?.patient?.id) return;
-    fetchPatientChart(chart.patient.id)
+  const refreshChart = () => {
+    if (!chart?.patient?.id) return Promise.resolve();
+    return fetchPatientChart(chart.patient.id)
       .then((data) => {
         setChart(data);
         onChartLoaded?.(data);
       })
       .catch(() => undefined);
+  };
+  const saveNoteAndRefreshChart = (note) => {
+    saveNoteLocally(note);
+    refreshChart();
   };
 
   useEffectPC(() => {
@@ -1345,7 +1518,7 @@ function PatientChart({
   if (error && !chart) return <div className="api-state patient-api-state">{error}</div>;
   if (!chart) return <div className="empty-state">Patient chart unavailable.</div>;
 
-  const prescriptionAction = prescriptionActionForChart({ chart, context, medication, amendablePrescription });
+  const prescriptionAction = prescriptionActionForChart({ chart, context, medication, amendablePrescription, nextAction });
 
   if (appointmentMode) {
     return (
@@ -1422,7 +1595,9 @@ function PatientChart({
             <div className="patient-emr-actions">
               {onMessage ? <button className="btn-ghost" onClick={() => onMessage(patient.id, patient.customer_id)}>{I.message}<span>Message</span></button> : null}
               {onOpenPatient && mode !== "full" ? <button className="btn-ghost" onClick={() => onOpenPatient(patient.id, patient.customer_id)}>Open full chart</button> : null}
-              {prescriptionAction?.mode === "reissue" ? (
+              {recordOutcomeAction ? (
+                <button className="btn-primary" onClick={() => setOutcomeTarget({ appointmentId: recordOutcomeAppointmentId, patientName: patient.name })}>{I.check}<span>Record outcome</span></button>
+              ) : prescriptionAction?.mode === "reissue" ? (
                 <button className="btn-primary" onClick={() => onAmendPrescription?.(patientPayload, prescriptionAction.prescription)}>{I.pill}<span>{prescriptionAction.label}</span></button>
               ) : onPrescribe && prescriptionAction ? (
                 <button className="btn-primary" onClick={() => onPrescribe({ patientId: patient.id, customerId: patient.customer_id, trackKey, mode: prescriptionAction.mode, chart })}>{I.pill}<span>{prescriptionAction.label}</span></button>
@@ -1583,14 +1758,19 @@ function PatientChart({
         <ClinicalProfileModal
           chart={chart}
           onClose={() => setEditingProfile(false)}
-          onSaved={() => fetchPatientChart(chart.patient.id).then((data) => {
-            setChart(data);
-            onChartLoaded?.(data);
-          }).catch(() => undefined)}
+          onSaved={refreshChart}
         />
       ) : null}
+      <ConsultOutcomeModal
+        open={Boolean(outcomeTarget)}
+        appointmentId={outcomeTarget?.appointmentId || ""}
+        patientName={outcomeTarget?.patientName || patient.name}
+        onClose={() => setOutcomeTarget(null)}
+        onSaved={refreshChart}
+      />
     </>
   );
 }
 
 window.DD_PatientChart = PatientChart;
+window.DD_ConsultOutcomeModal = ConsultOutcomeModal;

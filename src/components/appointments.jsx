@@ -119,6 +119,22 @@ function prescriptionIssued(appointment) {
   return appointment?.workbench?.prescription?.status === "ISSUED";
 }
 
+function consultationOutcome(appointment) {
+  return String(appointment?.workbench?.consultation?.outcome || "").toUpperCase();
+}
+
+function consultationNeedsOutcome(appointment) {
+  const consultation = appointment?.workbench?.consultation || {};
+  const prescription = appointment?.workbench?.prescription || {};
+  return (
+    String(appointment?.source || "").toLowerCase() !== "quickwlp" &&
+    isCompletedStatus(appointment?.status) &&
+    Boolean(consultation.previous_prescription_exists) &&
+    !consultationOutcome(appointment) &&
+    prescription.status !== "ISSUED"
+  );
+}
+
 function consultationChecklist(appointment, nowMs) {
   const workbench = appointment?.workbench || {};
   const consultation = workbench.consultation || {};
@@ -129,6 +145,7 @@ function consultationChecklist(appointment, nowMs) {
   const noShow = normalized === "no_show" || String(consultation.status || "").toLowerCase() === "no_show";
   const completed = Boolean(consultation.completed_at) || normalized === "completed";
   const issued = prescription.status === "ISSUED";
+  const needsOutcome = consultationNeedsOutcome(appointment);
   const live = appointmentIsLiveNow(appointment, nowMs);
   const paid = Boolean(fulfillment.paid_at || fulfillment.order_id);
   const delivered = Boolean(fulfillment.delivered_at);
@@ -145,8 +162,8 @@ function consultationChecklist(appointment, nowMs) {
       state: noShow ? "risk" : completed ? "done" : live ? "current" : "pending"
     },
     {
-      label: issued ? "Prescription issued" : "Prescription not issued",
-      meta: issued ? formatDateTime(prescription.issued_at) : completed ? "Ready for doctor decision" : "Waiting for consultation",
+      label: needsOutcome ? "Outcome not recorded" : issued ? "Prescription issued" : "Prescription not issued",
+      meta: issued ? formatDateTime(prescription.issued_at) : needsOutcome ? "Record clinical outcome" : completed ? "Ready for doctor decision" : "Waiting for consultation",
       state: issued ? "done" : completed ? "current" : "pending"
     },
     {
@@ -184,7 +201,8 @@ function actionState(appointment, nowMs) {
       tone: "idle",
       canPrescribe: false,
       canComplete: false,
-      canNoShow: false
+      canNoShow: false,
+      canRecordOutcome: false
     };
   }
   const normalized = String(appointment.status || "").toLowerCase();
@@ -196,7 +214,8 @@ function actionState(appointment, nowMs) {
       tone: "risk",
       canPrescribe: false,
       canComplete: false,
-      canNoShow: false
+      canNoShow: false,
+      canRecordOutcome: false
     };
   }
   if (normalized === "cancelled" || normalized === "canceled") {
@@ -205,7 +224,18 @@ function actionState(appointment, nowMs) {
       tone: "idle",
       canPrescribe: false,
       canComplete: false,
-      canNoShow: false
+      canNoShow: false,
+      canRecordOutcome: false
+    };
+  }
+  if (consultationNeedsOutcome(appointment)) {
+    return {
+      label: "Consultation completed. Record the clinical outcome for this treatment cycle.",
+      tone: "current",
+      canPrescribe: false,
+      canComplete: false,
+      canNoShow: false,
+      canRecordOutcome: true
     };
   }
   if (issued) {
@@ -217,7 +247,8 @@ function actionState(appointment, nowMs) {
       tone: fulfillment.order_id && fulfillment.paid_at ? "done" : "idle",
       canPrescribe: false,
       canComplete: false,
-      canNoShow: false
+      canNoShow: false,
+      canRecordOutcome: false
     };
   }
   if (completed) {
@@ -226,7 +257,8 @@ function actionState(appointment, nowMs) {
       tone: "current",
       canPrescribe: true,
       canComplete: false,
-      canNoShow: false
+      canNoShow: false,
+      canRecordOutcome: false
     };
   }
   return {
@@ -238,7 +270,8 @@ function actionState(appointment, nowMs) {
     tone: "current",
     canPrescribe: false,
     canComplete: isCompletable(appointment.status),
-    canNoShow: isCompletable(appointment.status)
+    canNoShow: isCompletable(appointment.status),
+    canRecordOutcome: false
   };
 }
 
@@ -295,6 +328,7 @@ function appointmentNeedsAction(appointment, nowMs) {
   if (bucket === "no_show") return true;
   if (bucket === "upcoming") return appointmentIsLiveNow(appointment, nowMs);
   if (bucket !== "completed") return false;
+  if (consultationNeedsOutcome(appointment)) return true;
   return !prescriptionIssued(appointment);
 }
 
@@ -307,6 +341,7 @@ function nextStepLabel(appointment) {
   if (fulfillment.delivered_at) return "Medication delivered";
   if (fulfillment.order_id && !fulfillment.delivered_at) return "Medication paid, delivery pending";
   if (prescription.status === "ISSUED" && !fulfillment.order_id) return medicationOrderState(appointment);
+  if (consultationNeedsOutcome(appointment)) return "Record consultation outcome";
   if (normalized === "completed") return appointment.source === "quickwlp" ? "Issue prescription if clinically eligible" : "Open chart or message member";
   if (normalized === "no_show") return "Follow up and rebook if needed";
   if (normalized === "cancelled" || normalized === "canceled") return "No doctor action required";
@@ -482,6 +517,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const { I, Avatar, Topbar } = window.DD_UI;
   const PatientChatDrawer = window.DD_PatientChatDrawer;
   const PatientChart = window.DD_PatientChart;
+  const ConsultOutcomeModal = window.DD_ConsultOutcomeModal;
   const currentDate = useMemoA(() => dubaiToday(), []);
   const [selectedDate, setSelectedDate] = useStateA(currentDate);
   const [today, setToday] = useStateA([]);
@@ -504,6 +540,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [scheduleScope, setScheduleScope] = useStateA("day");
   const [nowMs, setNowMs] = useStateA(() => Date.now());
   const [chatTarget, setChatTarget] = useStateA(null);
+  const [outcomeTarget, setOutcomeTarget] = useStateA(null);
 
   const loadAppointments = React.useCallback(async () => {
     setLoading(true);
@@ -577,6 +614,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const selectedOutcomeUnlocked = selected ? appointmentOutcomeActionsAvailable(selected, nowMs) : false;
   const canCompleteSelected = selectedActionState.canComplete && selectedOutcomeUnlocked;
   const canNoShowSelected = selectedActionState.canNoShow && selectedOutcomeUnlocked;
+  const canRecordOutcomeSelected = selectedActionState.canRecordOutcome;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
   const selectedHasMedicationOrder = Boolean(
     selectedPrescriptionIssued ||
@@ -594,6 +632,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedHasJoinOrCall ||
     canCompleteSelected ||
     canNoShowSelected ||
+    canRecordOutcomeSelected ||
     canPrescribeSelectedRx ||
     canPrescribeSelectedQuickWlp
   );
@@ -961,6 +1000,11 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                         {I.warn}<span>{noShowingId === selected.id ? "Saving..." : "Mark No-show"}</span>
                       </button>
                     )}
+                    {canRecordOutcomeSelected && (
+                      <button className="workbench-action-button primary" onClick={() => setOutcomeTarget(selected)}>
+                        {I.check}<span>Record outcome</span>
+                      </button>
+                    )}
                     {canPrescribeSelectedQuickWlp && (
                       <button className="workbench-action-button primary" onClick={() => onPrescribeQuickWlp?.(selected)}>
                         {I.pill}<span>Issue prescription</span>
@@ -1167,6 +1211,18 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
         <div className="toast">
           {I.phone}<span>{callToast}</span>
         </div>
+      )}
+      {ConsultOutcomeModal && (
+        <ConsultOutcomeModal
+          open={Boolean(outcomeTarget)}
+          appointmentId={outcomeTarget?.id || ""}
+          patientName={outcomeTarget?.patient?.name || ""}
+          onClose={() => setOutcomeTarget(null)}
+          onSaved={async () => {
+            setOutcomeTarget(null);
+            await loadAppointments();
+          }}
+        />
       )}
       {PatientChatDrawer && (
         <PatientChatDrawer
