@@ -94,7 +94,7 @@ function taskCopy(task) {
 
 function sourceLabel(task) {
   const source = String(task?.source || "").toLowerCase();
-  if (source === "quickwlp" || source === "quick_wlp") return "Quick WLP";
+  if (source === "quickwlp" || source === "quick_wlp") return "Quick Consult";
   if (source === "rx") return "Lifestyle Rx";
   return titleCase(task?.source || "Clinical");
 }

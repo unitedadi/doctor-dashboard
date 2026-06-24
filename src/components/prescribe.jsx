@@ -244,11 +244,11 @@ function prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading) {
       success: "Prescription re-issued",
     },
     quickwlp: {
-      title: "Issue Quick WLP prescription",
+      title: `Issue ${trackLabel} prescription`,
       subtitle: "Select medication, quantity, and instructions. Checkout is sent after the prescription is issued.",
       reviewTitle: "Review prescription",
-      typeLabel: "Quick WLP prescription",
-      cta: "Issue Quick WLP prescription",
+      typeLabel: `${trackLabel} quick consult prescription`,
+      cta: `Issue ${trackLabel} prescription`,
       pendingCta: "Issuing...",
       success: "Prescription issued",
     },
@@ -559,6 +559,7 @@ function PrescribeView({
   initialQuickWlpWhatsapp,
   initialQuickWlpEmail,
   initialQuickWlpDoctorId,
+  initialQuickWlpTrackKey,
   initialAmendSource,
   initialAmendId,
   initialAmendItems,
@@ -593,6 +594,7 @@ function PrescribeView({
   const [patientChartLoading, setPatientChartLoading] = useStateR(false);
   const [patientChartError, setPatientChartError] = useStateR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
+  const quickWlpTrackKey = initialQuickWlpTrackKey === "peptides" ? "peptides" : "weight-loss";
   const amendSource = initialAmendSource || "";
   const amendItems = useMemoR(() => parseAmendItems(initialAmendItems), [initialAmendItems]);
   const isAmendMode = Boolean(initialAmendId && amendSource && amendItems.length);
@@ -602,7 +604,7 @@ function PrescribeView({
     const name = initialQuickWlpName || "Quick WLP customer";
     const phone = initialQuickWlpPhone || initialQuickWlpWhatsapp || "";
     return {
-      key: `quickwlp:${initialQuickWlpLeadId}`,
+      key: `quickwlp:${initialQuickWlpLeadId}:${quickWlpTrackKey}`,
       id: initialQuickWlpLeadId,
       customerId: "",
       name,
@@ -612,13 +614,13 @@ function PrescribeView({
       phone,
       email: initialQuickWlpEmail || "",
       whatsapp: initialQuickWlpWhatsapp || "",
-      trackKey: "weight-loss",
+      trackKey: quickWlpTrackKey,
       doctorId: quickWlpDoctorId,
-      subscriptionStatus: "Quick WLP",
+      subscriptionStatus: "Quick Consult",
       latestCompletedAt: null,
       canPrescribe: true,
     };
-  }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode, quickWlpDoctorId]);
+  }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode, quickWlpDoctorId, quickWlpTrackKey]);
 
   const amendmentPatient = useMemoR(() => {
     if (isQuickWlpMode || !isAmendMode || !initialPatientId) return null;
@@ -1098,7 +1100,7 @@ function PrescribeView({
                     <div className="nm">{patient.name}</div>
                     <div className="me">
                       {isQuickWlpMode
-                        ? [patient.phone, patient.email, "Quick WLP"].filter(Boolean).join(" · ")
+                        ? [patient.phone, patient.email, activeTrack.label, "Quick Consult"].filter(Boolean).join(" · ")
                         : [patient.age, patient.sex, activeTrack.label, `Completed ${formatDateTime(patient.latestCompletedAt)}`].filter(Boolean).join(" · ")}
                     </div>
                   </div>

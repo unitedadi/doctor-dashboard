@@ -59,6 +59,10 @@ function formatSourceTag(value) {
   return "Regular";
 }
 
+function quickConsultTrackLabel(value) {
+  return String(value || "").toLowerCase() === "peptides" ? "Peptides" : "Weight Loss";
+}
+
 function formatMetric(value, suffix) {
   if (value === null || value === undefined || value === "") return "";
   return `${value}${suffix}`;
@@ -107,6 +111,7 @@ function mapQuickWlpRequest(item) {
     leadId: item.lead_id || item.request_id,
     consultationId: item.consultation_id,
     doctorId: item.doctor_id || "",
+    trackKey: item.track_key || "weight-loss",
     status: item.status || "PENDING",
     scheduledAt: item.scheduled_start_at,
     scheduledEnd: item.scheduled_end_at,
@@ -222,8 +227,8 @@ function QuickWlpRequestDetail({ request, onFinalize, onPrescribe, onRecreate, r
       </div>
 
       <div className="refill-status-strip">
-        <span>{titleCase(request.status)}</span>
-        <strong>Quick WLP</strong>
+          <span>{titleCase(request.status)}</span>
+          <strong>{quickConsultTrackLabel(request.trackKey)} · Quick Consult</strong>
       </div>
 
       <div className="refill-kv-list">
@@ -492,7 +497,6 @@ function QuickWlpView({ onPrescribe }) {
   const [loading, setLoading] = useStateQ(true);
   const [error, setError] = useStateQ("");
   const [recreatingId, setRecreatingId] = useStateQ("");
-  const [createOpen, setCreateOpen] = useStateQ(false);
 
   const loadRequests = React.useCallback(async () => {
     setLoading(true);
@@ -563,18 +567,17 @@ function QuickWlpView({ onPrescribe }) {
   return (
     <>
       <Topbar
-        title="Quick WLP"
-        subtitle={loading ? "Loading Quick WLP requests" : `${requestCount} request${requestCount === 1 ? "" : "s"} from Jun 8`}
+        title="Quick Consult"
+        subtitle={loading ? "Loading Quick Consult requests" : `${requestCount} request${requestCount === 1 ? "" : "s"} from Jun 8`}
         right={(
           <div className="quickwlp-topbar-actions">
-            <button type="button" className="btn-primary" onClick={() => setCreateOpen(true)}>{I.plus}<span>New consultation</span></button>
             <button type="button" className="btn-ghost" onClick={loadRequests}>{I.checks}<span>Refresh</span></button>
           </div>
         )}
       />
       <div className="refills-layout">
         <div className="refills-main dd-scroll">
-          <div className="section-hdr"><div className="label">Quick WLP requests</div></div>
+          <div className="section-hdr"><div className="label">Quick Consult requests</div></div>
           <div className="rx-track-tabs quickwlp-tabs">
             {STATUS_FILTERS.map((filter) => (
               <button key={filter.key} className={status === filter.key ? "active" : ""} onClick={() => setStatus(filter.key)}>
@@ -588,7 +591,7 @@ function QuickWlpView({ onPrescribe }) {
               className="rx-search-input"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search Quick WLP requests"
+              placeholder="Search Quick Consult requests"
             />
           </div>
 
@@ -612,7 +615,7 @@ function QuickWlpView({ onPrescribe }) {
                 <div>
                   <div className="nm">{request.patient.name}</div>
                   <div className="ds">
-                    <MedicationLabel medication={request.assessment.preferredMedication || "Quick WLP"} compact />
+                    <MedicationLabel medication={request.assessment.preferredMedication || quickConsultTrackLabel(request.trackKey)} compact />
                     {[request.patient.phone, request.patient.whatsapp].filter(Boolean).map((value, index) => (
                       <React.Fragment key={`${value}-${index}`}> · {value}</React.Fragment>
                     ))}
@@ -624,7 +627,7 @@ function QuickWlpView({ onPrescribe }) {
                 </div>
               </button>
             )) : (
-              <div className="empty-state rx-product-empty">No Quick WLP requests found.</div>
+              <div className="empty-state rx-product-empty">No Quick Consult requests found.</div>
             )}
           </div>
         </div>
@@ -639,15 +642,6 @@ function QuickWlpView({ onPrescribe }) {
           />
         </aside>
       </div>
-      <QuickWlpCreateConsultationDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={async () => {
-          setCreateOpen(false);
-          setStatus("pending");
-          await loadRequests();
-        }}
-      />
     </>
   );
 }

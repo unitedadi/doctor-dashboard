@@ -334,7 +334,8 @@ function sourceTagLabel(value) {
 
 function appointmentContextLabel(appointment) {
   if (appointment.source === "quickwlp") {
-    return ["Quick WLP", appointment.sourceTag ? sourceTagLabel(appointment.sourceTag) : ""].filter(Boolean).join(" · ");
+    const track = appointment.trackKey === "peptides" ? "Peptides" : "Weight Loss";
+    return ["Quick Consult", track, appointment.sourceTag ? sourceTagLabel(appointment.sourceTag) : ""].filter(Boolean).join(" · ");
   }
   const track = appointment.trackKey === "weight-loss" ? "Weight Loss" : toTitle(appointment.trackKey || "Rx");
   return `${track} · Rx`;
@@ -901,7 +902,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
 
               <div className={`workbench-overview${hasMedicationOrderDetails ? "" : " compact"}`}>
                 <WorkbenchMetric label="Slot" value={`${selected.time} · ${selected.duration} min`} />
-                <WorkbenchMetric label="Source" value={selectedIsQuickWlp ? "Quick WLP" : "Lifestyle Rx"} />
+                <WorkbenchMetric label="Source" value={selectedIsQuickWlp ? "Quick Consult" : "Lifestyle Rx"} />
                 <WorkbenchMetric label="Track" value={selected.trackKey === "weight-loss" ? "Weight Loss" : toTitle(selected.trackKey || "Rx")} />
                 {hasMedicationOrderDetails && (
                   <WorkbenchMetric label="Order" value={medicationOrderState(selected)} tone={selectedFulfillment.delivered_at ? "done" : selectedPrescription.status === "ISSUED" ? "current" : ""} />
@@ -951,7 +952,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     )}
                     {canPrescribeSelectedQuickWlp && (
                       <button className="workbench-action-button primary" onClick={() => onPrescribeQuickWlp?.(selected)}>
-                        {I.pill}<span>Issue Quick WLP prescription</span>
+                        {I.pill}<span>Issue {selected.trackKey === "peptides" ? "Peptides" : "Weight Loss"} prescription</span>
                       </button>
                     )}
                     {canPrescribeSelectedRx && (

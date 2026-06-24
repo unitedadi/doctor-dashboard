@@ -175,6 +175,7 @@ function App() {
               quickWlpWhatsapp: task?.phone || '',
               quickWlpEmail: task?.email || '',
               quickWlpDoctorId: task?.doctorId || DOCTOR_ID,
+              quickWlpTrackKey: task?.trackKey || task?.track_key || 'weight-loss',
               prescriptionMode: 'quickwlp',
             })}
           />
@@ -195,6 +196,7 @@ function App() {
               quickWlpWhatsapp: appointment?.patient?.whatsapp || '',
               quickWlpEmail: appointment?.patient?.email || '',
               quickWlpDoctorId: appointment?.doctorId || DOCTOR_ID,
+              quickWlpTrackKey: appointment?.trackKey || appointment?.track_key || 'weight-loss',
               prescriptionMode: 'quickwlp',
             })}
           />
@@ -233,6 +235,7 @@ function App() {
               quickWlpWhatsapp: request?.patient?.whatsapp || '',
               quickWlpEmail: request?.patient?.email || '',
               quickWlpDoctorId: request?.doctorId || '',
+              quickWlpTrackKey: request?.trackKey || request?.track_key || 'weight-loss',
               prescriptionMode: 'quickwlp',
             })}
           />
@@ -250,6 +253,7 @@ function App() {
             initialQuickWlpWhatsapp={routeContext.quickWlpWhatsapp}
             initialQuickWlpEmail={routeContext.quickWlpEmail}
             initialQuickWlpDoctorId={routeContext.quickWlpDoctorId}
+            initialQuickWlpTrackKey={routeContext.quickWlpTrackKey}
             initialAmendSource={routeContext.amendSource}
             initialAmendId={routeContext.amendId}
             initialAmendItems={routeContext.amendItems}
