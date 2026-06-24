@@ -953,7 +953,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     )}
                     {canPrescribeSelectedQuickWlp && (
                       <button className="workbench-action-button primary" onClick={() => onPrescribeQuickWlp?.(selected)}>
-                        {I.pill}<span>Issue {selected.trackKey === "peptides" ? "Peptides" : "Weight Loss"} prescription</span>
+                        {I.pill}<span>Issue prescription</span>
                       </button>
                     )}
                     {canPrescribeSelectedRx && (
