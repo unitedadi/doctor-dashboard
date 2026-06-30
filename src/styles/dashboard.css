@@ -3602,6 +3602,7 @@ body {
 }
 
 .stream-kit-conversation {
+  width: 100%;
   min-width: 0;
   min-height: 0;
   background: var(--dd-bg);
@@ -4098,6 +4099,8 @@ body {
 
 .stream-kit-chat-workspace {
   display: grid;
+  flex: 1 1 auto;
+  width: 100%;
   grid-template-columns: minmax(420px, 1fr) minmax(380px, clamp(380px, 31vw, 520px));
   height: 100%;
   min-height: 0;
@@ -4123,13 +4126,14 @@ body {
 
 .clinical-chat-header {
   min-height: 74px;
-  gap: 16px;
-  padding: 12px 16px;
+  gap: 14px;
+  padding: 11px 14px;
 }
 
 .clinical-chat-main {
   display: flex;
-  min-width: 180px;
+  min-width: 0;
+  flex: 1 1 240px;
   align-items: center;
   gap: 10px;
 }
@@ -4147,8 +4151,8 @@ body {
 }
 
 .clinical-chat-avatar {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
 }
 
 .clinical-chat-identity {
@@ -4156,26 +4160,34 @@ body {
 }
 
 .clinical-chat-name {
+  overflow: hidden;
   margin: 0;
-  font: 400 15px/1.25 var(--dd-font);
+  color: var(--dd-text-primary);
+  font: 500 14px/1.25 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clinical-chat-meta {
+  overflow: hidden;
   margin-top: 3px;
-  font: 400 12px/1.35 var(--dd-font);
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.3 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clinical-chat-header-center {
-  flex: 1;
-  min-width: 280px;
+  flex: 0 1 360px;
+  min-width: 240px;
 }
 
 .clinical-memory-line {
   display: grid;
-  grid-template-columns: minmax(110px, 0.8fr) minmax(160px, 1fr) minmax(130px, 0.9fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(110px, 0.8fr);
   gap: 8px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border-radius: 10px;
   background: rgba(23,59,61,0.045);
 }
@@ -4554,28 +4566,48 @@ body {
 }
 
 .clinical-context-hero {
-  display: flex;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 18px 20px;
+  gap: 10px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--dd-divider);
 }
 
+.clinical-context-hero > div {
+  min-width: 0;
+}
+
+.clinical-context-hero .btn-ghost,
+.clinical-context-hero .btn-primary {
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font: 500 12px/1 var(--dd-font);
+  white-space: nowrap;
+}
+
 .clinical-context-avatar {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
 }
 
 .clinical-context-hero h3 {
+  overflow: hidden;
   margin: 0;
   color: var(--dd-text-primary);
-  font: 400 19px/1.2 var(--dd-font);
+  font: 500 16px/1.2 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clinical-context-hero p {
+  overflow: hidden;
   margin: 4px 0 0;
   color: var(--dd-text-secondary);
   font: 400 12px/1.25 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clinical-context-section {
@@ -4993,11 +5025,11 @@ body {
 
 @media (max-width: 1380px) {
   .stream-kit-layout {
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 292px minmax(0, 1fr);
   }
 
   .stream-kit-chat-workspace {
-    grid-template-columns: minmax(420px, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 25vw, 340px);
   }
 
   .clinical-chat-header-center,
@@ -5016,15 +5048,46 @@ body {
 
 @media (max-width: 1180px) {
   .stream-kit-layout {
-    grid-template-columns: 292px minmax(0, 1fr);
+    grid-template-columns: 272px minmax(0, 1fr);
   }
 
   .stream-kit-chat-workspace {
-    grid-template-columns: minmax(330px, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) 280px;
   }
 
   .clinical-chat-header-center {
     display: none;
+  }
+
+  .stream-kit-row {
+    gap: 10px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    min-height: 72px;
+    padding: 11px 12px;
+  }
+
+  .stream-kit-row-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+  }
+
+  .stream-kit-row-time,
+  .stream-kit-row-badge {
+    position: absolute;
+    right: 12px;
+    top: 14px;
+  }
+
+  .stream-kit-row-badge {
+    top: auto;
+    bottom: 12px;
+  }
+
+  .stream-kit-row-tags span {
+    max-width: 112px;
+    padding: 3px 6px;
+    letter-spacing: 0.35px;
   }
 
   .clinical-context-hero,
@@ -5061,6 +5124,129 @@ body {
 
   .patient-refill-answer-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  html:has(.patient-hub-lens),
+  body:has(.patient-hub-lens),
+  #root:has(.patient-hub-lens) {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .app:has(.patient-hub-lens) {
+    grid-template-columns: 248px minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .topbar:has(.patient-hub-lens) {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 14px 18px;
+  }
+
+  .topbar:has(.patient-hub-lens) > div:first-child {
+    flex-basis: 100%;
+  }
+
+  .topbar:has(.patient-hub-lens) .sub {
+    max-width: 680px;
+  }
+
+  .patient-hub-lens {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .stream-kit-layout {
+    grid-template-columns: minmax(238px, 30vw) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .stream-kit-chat-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(520px, 62vh) auto;
+    overflow-y: auto;
+  }
+
+  .stream-kit-thread-pane {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--dd-divider);
+  }
+
+  .clinical-context-panel {
+    overflow: visible;
+    border-left: 0;
+    background: rgba(255,255,255,0.20);
+  }
+
+  .clinical-context-hero {
+    padding-top: 16px;
+    padding-bottom: 14px;
+  }
+
+  .clinical-context-recall {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: grid;
+  }
+
+  .clinical-context-recall div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    align-content: start;
+  }
+
+  .clinical-context-actions {
+    position: static;
+  }
+
+  .stream-chat-kit-shell .str-chat__list,
+  .stream-chat-kit-shell .str-chat__message-list {
+    padding: 14px 18px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .app:has(.patient-hub-lens) {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .app:has(.patient-hub-lens) .sidebar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .stream-kit-layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .stream-kit-list {
+    max-height: 286px;
+    border-right: 0;
+    border-bottom: 1px solid var(--dd-divider);
+    overflow-y: auto;
+  }
+
+  .stream-kit-chat-workspace {
+    grid-template-rows: minmax(520px, 68vh) auto;
+  }
+
+  .clinical-chat-header {
+    align-items: flex-start;
+    min-height: 64px;
+    padding: 10px 12px;
+  }
+
+  .clinical-chat-actions .btn-ghost,
+  .clinical-chat-actions .btn-primary {
+    padding: 0 10px;
+  }
+
+  .clinical-context-recall {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -7123,6 +7309,78 @@ body {
 }
 
 /* ============================================================
+   Patient Hub responsive density
+   ============================================================ */
+@media (max-width: 1380px) {
+  .patient-hub-chart-shell .patient-layout {
+    grid-template-columns: 284px minmax(0, 1fr);
+  }
+
+  .patient-hub-chart-shell .patient-list {
+    padding: 16px 12px;
+  }
+
+  .patient-hub-chart-shell .p-row {
+    gap: 9px;
+    padding: 10px 8px;
+  }
+
+  .patient-hub-chart-shell .p-state {
+    max-width: 72px;
+  }
+
+  .patient-hub-chart-shell .patient-pane {
+    padding: 22px 24px 44px;
+  }
+
+  .patient-hub-chart-shell .patient-emr-head {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .patient-hub-chart-shell .patient-emr-actions {
+    justify-content: flex-start;
+  }
+
+  .patient-hub-chart-shell .patient-care-state-grid,
+  .patient-hub-chart-shell .patient-care-summary-strip,
+  .patient-hub-chart-shell .patient-emr-status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .patient-hub-chart-shell .patient-chart-full .patient-lifecycle-strip {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .patient-hub-chart-shell .patient-chart-section-head {
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .patient-hub-chart-shell .patient-embedded-toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .patient-hub-chart-shell .patient-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .patient-hub-chart-shell .patient-list {
+    max-height: 280px;
+    border-right: 0;
+    border-bottom: 1px solid var(--dd-divider);
+  }
+
+  .patient-hub-chart-shell .patient-pane {
+    overflow: visible;
+  }
+}
+
+/* ============================================================
    Empty + util
    ============================================================ */
 .empty-state {
@@ -7140,4 +7398,217 @@ body {
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   Patient Hub — surgical redesign
+   Decision-first clinical rail, triage rows, responsive panes.
+   Tokens only: --dd-* palette / type / radii.
+   ============================================================ */
+
+/* --- Chat clinical card: decision block --- */
+.chat-clinical-decision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 18px;
+  padding: 13px 14px;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-left: 3px solid var(--dd-accent);
+  border-radius: var(--dd-radius-sm);
+  background: rgba(247,238,224,0.5);
+}
+.chat-clinical-decision-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-clinical-decision-copy span {
+  color: var(--dd-text-tertiary);
+  font: 600 10px/1 var(--dd-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chat-clinical-decision-copy strong {
+  color: var(--dd-text-primary);
+  font: 400 16px/1.25 var(--dd-font);
+}
+.chat-clinical-decision-copy em {
+  overflow: hidden;
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.3 var(--dd-font);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-clinical-decision .btn-primary {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--dd-radius-cta);
+  white-space: nowrap;
+}
+
+/* Guardrails + section blocks inside the chat card align with other rows */
+.chat-clinical-card .patient-chart-section {
+  margin-inline: 18px;
+}
+.chat-clinical-card .patient-guardrails-section {
+  padding-top: 4px;
+}
+
+/* Treatment glance reads as 2x2 in the narrow rail, not 4 cramped columns */
+.chat-clinical-card .patient-care-summary-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* --- Triage rows: single status chip + allergy flag --- */
+.stream-kit-row-chip {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font: 600 10px/1 var(--dd-font);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stream-kit-row-chip.reply {
+  background: var(--dd-accent);
+  color: var(--dd-on-dark-1);
+}
+.stream-kit-row-chip.ready {
+  background: rgba(63,168,113,0.16);
+  color: #2C7A52;
+}
+.stream-kit-row-chip.track {
+  background: rgba(23,59,61,0.06);
+  color: rgba(23,59,61,0.58);
+}
+.stream-kit-row-allergy {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(176,74,38,0.12);
+  color: #B04A26;
+  font: 600 10px/1 var(--dd-font);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.stream-kit-row.needs-reply {
+  box-shadow: inset 3px 0 0 var(--dd-accent);
+}
+.stream-kit-row.needs-reply.active {
+  box-shadow: inset 3px 0 0 var(--dd-accent);
+}
+
+/* --- Clinical rail toggle + slide-over scrim (hidden on desktop) --- */
+.clinical-rail-toggle {
+  display: none;
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.clinical-rail-scrim {
+  display: none;
+}
+
+/* ============================================================
+   Patient Hub responsive — tablet & narrow (≤1180)
+   Rail becomes a right slide-over; conversation keeps full
+   height with a pinned composer. Touch targets ≥40px.
+   ============================================================ */
+@media (max-width: 1180px) {
+  .stream-kit-chat-workspace,
+  .stream-kit-chat-workspace.rail-open {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 100%;
+    overflow: hidden;
+  }
+
+  .stream-kit-thread-pane {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .clinical-rail-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .clinical-context-panel {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    width: min(440px, 92vw);
+    overflow-y: auto;
+    border-left: 1px solid var(--dd-divider);
+    background: var(--dd-bg);
+    box-shadow: var(--dd-shadow-prominent);
+    transform: translateX(100%);
+    transition: transform 0.22s var(--dd-ease);
+  }
+
+  .rail-open .clinical-context-panel {
+    transform: translateX(0);
+  }
+
+  .clinical-rail-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: none;
+    border: 0;
+    padding: 0;
+    background: rgba(23,59,61,0.18);
+    cursor: pointer;
+  }
+
+  .rail-open .clinical-rail-scrim {
+    display: block;
+  }
+
+  .patient-hub-lens button,
+  .clinical-rail-toggle {
+    min-height: 40px;
+  }
+}
+
+/* Tablet portrait keeps a 2-pane list | conversation (rail is the slide-over).
+   Only true phones (≤700) fall back to the stacked list-on-top layout. */
+@media (min-width: 701px) and (max-width: 1180px) {
+  .stream-kit-layout {
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .stream-kit-list {
+    max-height: none;
+    border-right: 1px solid var(--dd-divider);
+    border-bottom: 0;
+    overflow-y: auto;
+  }
+}
+
+/* Finger-first sizing on touch devices, desktop sizing untouched */
+@media (pointer: coarse) {
+  .patient-hub-lens button {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+  .stream-kit-row {
+    min-height: 84px;
+  }
+  .chat-clinical-decision .btn-primary,
+  .chat-clinical-head .btn-ghost,
+  .clinical-rail-toggle {
+    min-height: 44px;
+  }
 }

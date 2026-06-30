@@ -492,6 +492,7 @@ function mapAppointment(item) {
     status: item.status,
     patient: {
       id: patient.id || item.patient_id,
+      customerId: patient.customer_id || patient.customerId || item.customer_id || "",
       name: patient.name || "Unknown patient",
       initials: patient.initials || "P",
       age: patient.age,
@@ -1027,7 +1028,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   <div className="workbench-section-title">Patient access</div>
                   <div className="workbench-access-actions">
                     {selectedHasPatientChart ? (
-                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id)}>Open chart</button>
+                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id, selectedPatient.customerId)}>Open chart</button>
                     ) : null}
                     {selectedIsQuickWlp ? (
                       <div className="workbench-note">Quick Consult does not include in-app chat. Use phone or WhatsApp for follow-up.</div>
@@ -1036,6 +1037,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                         className="workbench-action-button secondary"
                         onClick={() => setChatTarget({
                           patientId: selectedPatient.id,
+                          customerId: selectedPatient.customerId,
                           patientName: selectedPatient.name,
                         })}
                       >
@@ -1060,7 +1062,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     focus="schedule"
                     context={{ appointment: selected, label: "Schedule" }}
                     onOpenPatient={onOpenPatient}
-                    onMessage={selectedIsQuickWlp ? undefined : (id) => setChatTarget({ patientId: id || selectedPatient.id, patientName: selectedPatient.name })}
+                    onMessage={selectedIsQuickWlp ? undefined : (id, customerId) => setChatTarget({ patientId: id || selectedPatient.id, customerId: customerId || selectedPatient.customerId, patientName: selectedPatient.name })}
                     onPrescribe={({ patientId, trackKey, mode }) => onPrescribeRx?.({ ...selected, patientId, trackKey, prescriptionMode: mode })}
                   />
                 </section>
@@ -1228,6 +1230,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
         <PatientChatDrawer
           open={Boolean(chatTarget)}
           patientId={chatTarget?.patientId || ""}
+          customerId={chatTarget?.customerId || ""}
           patientName={chatTarget?.patientName || ""}
           onClose={() => setChatTarget(null)}
           onOpenPatient={(id, customerId) => {

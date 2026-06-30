@@ -180,8 +180,8 @@ function App() {
         )}
         {route === 'appointments' && (
           <AppointmentsView
-            onOpenPatient={(id: string) => go('patient-hub', { patientId: id, hubMode: 'charts' })}
-            onOpenChat={(id: string) => go('patient-hub', { patientId: id, hubMode: 'all' })}
+            onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', hubMode: 'charts' })}
+            onOpenChat={(id: string, customerId?: string, channelId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', channelId: channelId || '', hubMode: 'all' })}
             onPrescribeRx={(appointment: any) => go('prescribe', {
               patientId: appointment?.patientId || appointment?.patient?.id || '',
               trackKey: appointment?.trackKey || 'weight-loss',
@@ -203,7 +203,7 @@ function App() {
           <PatientsView
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
-            onMessage={(id: string) => go('patient-hub', { patientId: id })}
+            onMessage={(id: string, customerId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', hubMode: 'all' })}
             onPrescribe={(id: string, customerId?: string, trackKey?: string, prescriptionMode?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '', prescriptionMode: prescriptionMode || 'issue' })}
             onAmendPrescription={openAmendPrescription}
           />

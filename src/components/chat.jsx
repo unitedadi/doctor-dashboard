@@ -631,8 +631,15 @@ function PatientHubLensControl({ active, needsReplyCount, loading, onChange }) {
   );
 }
 
-function StreamChannelRows({ channels, patientDirectory }) {
+function channelTriageChip({ needsReply, prescribablePatient, track, service }) {
+  if (needsReply) return { tone: "reply", label: "Needs reply" };
+  if (prescribablePatient?.can_prescribe) return { tone: "ready", label: "Rx ready" };
+  return { tone: "track", label: formatTrackKey(track || service) };
+}
+
+function StreamChannelRows({ channels, patientDirectory, prescribableDirectory = [], needsReplySet }) {
   const { channel: activeChannel, client, setActiveChannel } = useChatContext("StreamChannelRows");
+  const replySet = needsReplySet || new Set();
 
   return (
     <div className="stream-kit-row-list">
@@ -643,12 +650,16 @@ function StreamChannelRows({ channels, patientDirectory }) {
         const isActive = item.cid === activeChannel?.cid;
         const service = channelServiceName(item, patientName);
         const track = patient.track_key || item?.data?.track_key || item?.data?.trackKey || "";
+        const needsReply = replySet.has(item.id);
+        const prescribablePatient = findChannelPatient(item, client.userID, prescribableDirectory);
+        const allergies = asArray(patient.allergies);
+        const chip = channelTriageChip({ needsReply, prescribablePatient, track, service });
 
         return (
           <button
             key={item.cid}
             type="button"
-            className={"stream-kit-row" + (isActive ? " active" : "") + (unread ? " unread" : "")}
+            className={"stream-kit-row" + (isActive ? " active" : "") + (unread ? " unread" : "") + (needsReply ? " needs-reply" : "")}
             onClick={() => setActiveChannel(item)}
           >
             <span className="stream-kit-row-avatar">{patient.initials || "P"}</span>
@@ -659,8 +670,10 @@ function StreamChannelRows({ channels, patientDirectory }) {
               </span>
               {patient.phone ? <span className="stream-kit-row-phone">{patient.phone}</span> : null}
               <span className="stream-kit-row-tags">
-                <span>{formatTrackKey(track || service)}</span>
-                {service && service !== "Rx chat" ? <span>{service}</span> : null}
+                <span className={`stream-kit-row-chip ${chip.tone}`}>{chip.label}</span>
+                {allergies.length ? (
+                  <span className="stream-kit-row-allergy" title={`Allergies: ${allergies.join(", ")}`}>Allergy</span>
+                ) : null}
               </span>
               <span className="stream-kit-row-preview">{latestMessagePreview(item, client.userID)}</span>
             </span>
@@ -707,18 +720,10 @@ function ClinicalStateStrip({ context, canPrescribe }) {
   );
 }
 
-function ClinicalChatHeader({ channel, context, contextLoading, contextError, fallbackPatient, prescribablePatient, onOpenPatient, onPrescribe }) {
+function ClinicalChatHeader({ channel, context, contextLoading, contextError, fallbackPatient, prescribablePatient, onPrescribe, onToggleRail }) {
   const patient = chatContextPatient(context, fallbackPatient);
-  const chartPatientId = context?.patient?.id || patient?.id || channel?.data?.patient_id || channel?.data?.patientId;
-  const patientCustomerId = prescribablePatient?.customer_id || context?.patient?.customer_id || patient?.customer_id || channel?.data?.customer_id || channel?.data?.customerId;
-  const service = channelServiceName(channel, patient?.name);
-  const trackLabel = formatTrackKey(context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || service);
   const latestCompletedAt = formatContextDateTime(context?.rx?.latest_completed_at);
-  const meta = [
-    compactPatientSubtitle(patient),
-    trackLabel,
-  ].filter(Boolean).join(" · ");
-  const canOpenChart = context?.actions?.can_open_chart ?? Boolean(chartPatientId || patientCustomerId);
+  const meta = compactPatientSubtitle(patient);
   const canPrescribe = context?.actions?.can_prescribe ?? Boolean(prescribablePatient?.can_prescribe);
 
   return (
@@ -734,23 +739,15 @@ function ClinicalChatHeader({ channel, context, contextLoading, contextError, fa
       </div>
       <div className="clinical-chat-header-center">
         <div className="clinical-memory-line">
-          <strong>{trackLabel}</strong>
-          <span>{latestCompletedAt ? `Last consult ${latestCompletedAt}` : "No completed consult found"}</span>
+          <strong>{latestCompletedAt ? `Last consult ${latestCompletedAt}` : "No completed consult found"}</strong>
           <span>{canPrescribe ? "Prescription ready" : disabledReasonCopy(context?.rx?.can_prescribe_reason)}</span>
         </div>
       </div>
-      <div className="clinical-chat-actions">
-        <span className="clinical-chat-service">{trackLabel}</span>
-        <button
-          type="button"
-          className="btn-ghost"
-          disabled={!canOpenChart}
-          title={canOpenChart ? "Open patient chart" : "Waiting for patient mapping from backend"}
-          onClick={() => canOpenChart && onOpenPatient(chartPatientId, patientCustomerId)}
-        >
-          Patient
+      {onToggleRail ? (
+        <button type="button" className="clinical-rail-toggle btn-ghost" onClick={onToggleRail}>
+          Clinical file
         </button>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -889,7 +886,12 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
           initialChart={patientFile}
           mode="compact"
           focus="chat"
-          context={{ label: "Chat", prescribable: prescribablePatient }}
+          context={{
+            label: "Chat",
+            prescribable: prescribablePatient,
+            eligibilityReason: canPrescribe ? "" : disabledReasonCopy(context?.rx?.can_prescribe_reason),
+            lastConsultAt: latestCompletedAt,
+          }}
           onOpenPatient={onOpenPatient}
           onPrescribe={({ patientId: nextPatientId, trackKey, customerId, mode }) => onPrescribe?.(nextPatientId, trackKey, customerId, mode)}
           onAmendPrescription={onAmendPrescription}
@@ -1116,6 +1118,7 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
   const [contextError, setContextError] = useStateC("");
   const [patientFile, setPatientFile] = useStateC(null);
   const [patientFileLoading, setPatientFileLoading] = useStateC(false);
+  const [railOpen, setRailOpen] = useStateC(false);
 
   const prescribablePatient = activePrescribablePatient || directoryPrescribablePatient;
   const patientFileId = channelContext?.patient?.id || fallbackPatient?.id || channel?.data?.patient_id || channel?.data?.patientId || "";
@@ -1200,12 +1203,16 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
     return () => { cancelled = true; };
   }, [patientFileId]);
 
+  useEffectC(() => {
+    setRailOpen(false);
+  }, [channel?.id]);
+
   if (!channel) return <EmptyChatPanel />;
 
   return (
     <div className="stream-kit-conversation">
       <Channel channel={channel}>
-        <div className={`stream-kit-chat-workspace${compact ? " compact" : ""}`}>
+        <div className={`stream-kit-chat-workspace${compact ? " compact" : ""}${railOpen ? " rail-open" : ""}`}>
           <div className="stream-kit-thread-pane">
             <Window>
               {!compact && (
@@ -1218,6 +1225,7 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
                     fallbackPatient={fallbackPatient}
                     onOpenPatient={onOpenPatient}
                     onPrescribe={onPrescribe}
+                    onToggleRail={() => setRailOpen((value) => !value)}
                     prescribablePatient={prescribablePatient}
                   />
                 </div>
@@ -1228,19 +1236,27 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
             <Thread />
           </div>
           {!compact && (
-            <ClinicalContextPanel
-              channel={channel}
-              context={channelContext}
-              contextLoading={contextLoading}
-              fallbackPatient={fallbackPatient}
-              onOpenPatient={onOpenPatient}
-              onPatientFileUpdated={setPatientFile}
-              onPrescribe={onPrescribe}
-              onAmendPrescription={onAmendPrescription}
-              patientFile={patientFile}
-              patientFileLoading={patientFileLoading}
-              prescribablePatient={prescribablePatient}
-            />
+            <>
+              <button
+                type="button"
+                className="clinical-rail-scrim"
+                aria-label="Close clinical file"
+                onClick={() => setRailOpen(false)}
+              />
+              <ClinicalContextPanel
+                channel={channel}
+                context={channelContext}
+                contextLoading={contextLoading}
+                fallbackPatient={fallbackPatient}
+                onOpenPatient={onOpenPatient}
+                onPatientFileUpdated={setPatientFile}
+                onPrescribe={onPrescribe}
+                onAmendPrescription={onAmendPrescription}
+                patientFile={patientFile}
+                patientFileLoading={patientFileLoading}
+                prescribablePatient={prescribablePatient}
+              />
+            </>
           )}
         </div>
       </Channel>
@@ -1558,24 +1574,27 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
     let cancelled = false;
 
     async function openPatientChannel() {
-      const patient = patientDirectory.find((item) => item.id === hubPatientId || item.customer_id === hubCustomerId);
-      if (!patient?.chat?.available || !patient.customer_id || isQuickConsultOnlyPatientRecord(patient)) return;
+      const patient = patientDirectory.find((item) => item.id === hubPatientId || item.customer_id === hubCustomerId || item.customerId === hubCustomerId);
+      const customerId = patient?.customer_id || patient?.customerId || hubCustomerId;
+      const patientId = patient?.id || hubPatientId;
+      if (!patientId || !customerId || isQuickConsultOnlyPatientRecord(patient)) return;
       try {
         const opened = await fetchJson(`${API_BASE}/doctor/chat/channels`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             doctor_id: DOCTOR_ID,
-            patient_id: patient.id,
-            customer_id: patient.customer_id,
+            patient_id: patientId,
+            customer_id: customerId,
           }),
         });
         if (cancelled) return;
-        setInitialChannelId(opened.channel_id || "");
+        const openedChannelId = opened.channel_id || "";
+        setInitialChannelId(openedChannelId);
         const createdChannel = client.channel(opened.channel_type || "messaging", opened.channel_id, {
-          name: patient.name,
-          patient_id: patient.id,
-          patient: mapPatientForChannel(patient),
+          name: patient?.name || "Patient",
+          patient_id: patientId,
+          patient: patient ? mapPatientForChannel(patient) : undefined,
         });
         await createdChannel.watch().catch(() => {});
       } catch {
@@ -1593,10 +1612,10 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
       type: "messaging",
       members: { $in: [client.userID] },
     };
-    if (hubLens === "needs_reply") {
+    if (hubLens === "needs_reply" && needsReplyChannelIds.length) {
       return {
         ...filters,
-        id: { $in: needsReplyChannelIds.length ? needsReplyChannelIds : ["__no_needs_reply__"] },
+        id: { $in: needsReplyChannelIds },
       };
     }
     return filters;
@@ -1604,7 +1623,18 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
 
   const channelSort = useMemoC(() => ({ last_message_at: -1 }), []);
   const channelOptions = useMemoC(() => ({ limit: 30, presence: true, state: true, watch: true }), []);
-  const renderChannels = React.useCallback((channels) => <StreamChannelRows channels={channels} patientDirectory={patientDirectory} />, [patientDirectory]);
+  const needsReplySet = useMemoC(() => new Set(needsReplyChannelIds), [needsReplyChannelIds]);
+  const renderChannels = React.useCallback(
+    (channels) => (
+      <StreamChannelRows
+        channels={channels}
+        patientDirectory={patientDirectory}
+        prescribableDirectory={prescribableDirectory}
+        needsReplySet={needsReplySet}
+      />
+    ),
+    [patientDirectory, prescribableDirectory, needsReplySet],
+  );
 
   return (
     <>
@@ -1636,9 +1666,10 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
             embedded
             initialPatientId={hubPatientId}
             initialCustomerId={hubCustomerId}
-            onMessage={(id) => {
+            onMessage={(id, customerId) => {
               setHubPatientId(id || "");
-              setHubCustomerId("");
+              setHubCustomerId(customerId || "");
+              setInitialChannelId("");
               setHubLens("all");
             }}
             onPrescribe={(id, customerId, trackKey, prescriptionMode) => onPrescribe?.(id, trackKey, customerId, prescriptionMode)}
@@ -1655,9 +1686,9 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
                     <strong>No patient replies waiting</strong>
                     <span>Patient messages appear here only when there is no newer doctor or care-team reply.</span>
                   </div>
-                ) : null}
+                ) : (
                 <ChannelList
-                  key={`${hubLens}:${needsReplyChannelIds.join("|")}`}
+                  key={`${hubLens}:${initialChannelId || "default"}:${needsReplyChannelIds.join("|")}`}
                   customActiveChannel={initialChannelId || undefined}
                   filters={channelFilters}
                   options={channelOptions}
@@ -1666,6 +1697,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
                   showChannelSearch
                   sort={channelSort}
                 />
+                )}
               </div>
               <StreamConversation
                 onOpenPatient={(id, customerId) => {

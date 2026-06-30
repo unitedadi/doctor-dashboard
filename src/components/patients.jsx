@@ -634,7 +634,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
               mode="full"
               focus="patient-hub"
               context={{ prescribable: p.prescribe }}
-              onMessage={(id) => onMessage?.(id)}
+              onMessage={(id, customerId) => onMessage?.(id || p.id, customerId || p.customerId)}
               onPrescribe={({ patientId, customerId, trackKey, mode }) => onPrescribe?.(patientId, customerId, trackKey, mode)}
               onAmendPrescription={onAmendPrescription}
             />
@@ -1210,7 +1210,7 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
           <div className="patient-emr-actions">
             <button
               className="btn-ghost"
-              onClick={() => onMessage(p.id)}
+              onClick={() => onMessage(p.id, p.customerId)}
               disabled={!p.chat?.available}
               title={p.chat?.available ? "Message patient" : messageDisabledCopy}
               style={{ opacity: p.chat?.available ? 1 : 0.45, cursor: p.chat?.available ? "pointer" : "not-allowed" }}

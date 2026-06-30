@@ -703,6 +703,7 @@ function PrescriptionGuardrails({
   medication,
   latestPrescription,
   latestDelivery,
+  safetyOnly = false,
 }) {
   const allergies = asArray(clinical?.allergies);
   const conditions = asArray(clinical?.conditions);
@@ -712,7 +713,7 @@ function PrescriptionGuardrails({
     ? `${medicationStatusLabel(latestDelivery)}${latestDelivery.delivered_at || latestDelivery.paid_at ? ` · ${formatDate(latestDelivery.delivered_at || latestDelivery.paid_at)}` : ""}`
     : "No paid medication order";
 
-  const rows = [
+  const allRows = [
     {
       label: "Allergies",
       value: allergies.length ? allergies.join(", ") : "None reported",
@@ -741,9 +742,13 @@ function PrescriptionGuardrails({
       tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : latestDelivery ? "review" : "clear",
     },
   ];
+  const rows = safetyOnly ? allRows.slice(0, 2) : allRows;
 
   return (
-    <ChartSection title="Prescription guardrails" subtitle="Check these before issuing or re-issuing." className="patient-guardrails-section">
+    <ChartSection
+      title={safetyOnly ? "Safety check" : "Prescription guardrails"}
+      subtitle={safetyOnly ? "Allergies and conditions to clear before prescribing." : "Check these before issuing or re-issuing."}
+      className="patient-guardrails-section">
       <div className="patient-guardrail-list">
         {rows.map((row) => (
           <div key={row.label} className={`patient-guardrail-row ${row.tone}`}>
@@ -1055,17 +1060,21 @@ function ChatClinicalCard({
   chart,
   lifecycle,
   patient,
+  clinical,
   medication,
   latestPrescription,
   deliveries,
   refills,
+  careState,
+  eligibilityReason,
+  lastConsultAt,
+  primaryAction,
+  onPrimaryAction,
   onOpenPatient,
   onNoteSaved,
 }) {
   const { Avatar } = window.DD_UI;
   const latestDelivery = deliveries[0];
-  const prescriptionItems = itemLabel(latestPrescription?.items);
-  const deliveryItems = itemLabel(latestDelivery?.items);
 
   return (
     <section className="chat-clinical-card">
@@ -1089,6 +1098,28 @@ function ChatClinicalCard({
         ) : null}
       </div>
 
+      <div className="chat-clinical-decision">
+        <div className="chat-clinical-decision-copy">
+          <span>Current care state</span>
+          <strong>{careState || "No doctor action needed"}</strong>
+          <em>
+            {lastConsultAt ? `Last consult ${lastConsultAt}` : "No completed consult found"}
+            {eligibilityReason ? ` · ${eligibilityReason}` : ""}
+          </em>
+        </div>
+        {primaryAction ? (
+          <button type="button" className="btn-primary" onClick={onPrimaryAction}>{primaryAction.label}</button>
+        ) : null}
+      </div>
+
+      <PrescriptionGuardrails
+        safetyOnly
+        clinical={clinical}
+        medication={medication}
+        latestPrescription={latestPrescription}
+        latestDelivery={latestDelivery}
+      />
+
       <div className="chat-clinical-facts">
         <CareSummaryStrip
           medication={medication}
@@ -1099,36 +1130,6 @@ function ChatClinicalCard({
       </div>
 
       <CompactLifecycle steps={lifecycle} />
-
-      {latestPrescription ? (
-        <div className="appointment-clinical-block">
-          <div className="appointment-clinical-head">
-            <div>
-              <span>Latest prescription</span>
-              <strong>{prescriptionStatusLabel(latestPrescription)}</strong>
-            </div>
-          </div>
-          <div className="appointment-summary-row">
-            <strong>{prescriptionItems || latestPrescription.title || "Prescription"}</strong>
-            <span>{[formatMoneyFils(latestPrescription.amount_fils), formatDateTime(latestPrescription.issued_at)].filter(Boolean).join(" · ") || "Details unavailable"}</span>
-          </div>
-        </div>
-      ) : null}
-
-      {latestDelivery ? (
-        <div className="appointment-clinical-block">
-          <div className="appointment-clinical-head">
-            <div>
-              <span>Medication order</span>
-              <strong>{medicationStatusLabel(latestDelivery)}</strong>
-            </div>
-          </div>
-          <div className="appointment-summary-row">
-            <strong>{deliveryItems || "Medication order"}</strong>
-            <span>{[formatMoneyFils(latestDelivery.amount_fils), formatDate(latestDelivery.delivered_at || latestDelivery.paid_at)].filter(Boolean).join(" · ") || "No delivery date"}</span>
-          </div>
-        </div>
-      ) : null}
 
       <RefillRequestSummary refills={refills} />
 
@@ -1555,18 +1556,58 @@ function PatientChart({
   }
 
   if (compact) {
+    const chatPrimaryAction = recordOutcomeAction
+      ? { kind: "outcome", label: "Record outcome" }
+      : prescriptionAction?.mode === "reissue"
+        ? { kind: "amend", label: prescriptionAction.label, prescription: prescriptionAction.prescription }
+        : prescriptionAction
+          ? { kind: "prescribe", label: prescriptionAction.label, mode: prescriptionAction.mode }
+          : null;
+    const chatCareState = currentCareState({
+      chart,
+      context,
+      nextAction,
+      medication,
+      latestPrescription,
+      latestDelivery: deliveries[0],
+    });
+    const runChatPrimaryAction = () => {
+      if (!chatPrimaryAction) return;
+      if (chatPrimaryAction.kind === "outcome") {
+        setOutcomeTarget({ appointmentId: recordOutcomeAppointmentId, patientName: patient.name });
+        return;
+      }
+      if (chatPrimaryAction.kind === "amend") {
+        onAmendPrescription?.(patientPayload, chatPrimaryAction.prescription);
+        return;
+      }
+      onPrescribe?.({ patientId: patient.id, customerId: patient.customer_id, trackKey, mode: chatPrimaryAction.mode, chart });
+    };
     return (
       <div className={`patient-chart-unified patient-chart-${mode} focus-${focus}`}>
         <ChatClinicalCard
           chart={chart}
           lifecycle={lifecycle}
           patient={patient}
+          clinical={clinical}
           medication={medication}
           latestPrescription={latestPrescription}
           deliveries={deliveries}
           refills={enrichedRefills}
+          careState={chatCareState}
+          eligibilityReason={context?.eligibilityReason}
+          lastConsultAt={context?.lastConsultAt}
+          primaryAction={chatPrimaryAction}
+          onPrimaryAction={runChatPrimaryAction}
           onOpenPatient={onOpenPatient}
           onNoteSaved={saveNoteLocally}
+        />
+        <ConsultOutcomeModal
+          open={Boolean(outcomeTarget)}
+          appointmentId={outcomeTarget?.appointmentId || ""}
+          patientName={outcomeTarget?.patientName || patient.name}
+          onClose={() => setOutcomeTarget(null)}
+          onSaved={refreshChart}
         />
       </div>
     );
