@@ -262,7 +262,7 @@ function TaskRow({ task, selected, onSelect }) {
   );
 }
 
-function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome }) {
+function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId }) {
   const { I, Avatar } = window.DD_UI;
   const PatientChart = window.DD_PatientChart;
   if (!task) {
@@ -393,6 +393,15 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
             Open chat
           </button>
         )}
+        {task.category === "refill_review" && (
+          <button
+            className="clinical-secondary-action"
+            onClick={() => onDismissRefill?.(task)}
+            disabled={refillActionId === task.refillRequestId}
+          >
+            {refillActionId === task.refillRequestId ? "Saving..." : "No refill needed"}
+          </button>
+        )}
       </div>
     </aside>
   );
@@ -411,6 +420,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const [chatTask, setChatTask] = useStateI(null);
   const [outcomeTask, setOutcomeTask] = useStateI(null);
   const [reloadToken, setReloadToken] = useStateI(0);
+  const [refillActionId, setRefillActionId] = useStateI("");
 
   useEffectI(() => {
     let cancelled = false;
@@ -432,7 +442,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
       setTasks(nextTasks);
       setSelectedId((current) => nextTasks.some((task) => task.id === current) ? current : nextTasks[0]?.id || null);
       setLoading(false);
-      onCountChange?.(nextTasks.length);
     }
 
     loadInbox().catch(() => {
@@ -446,15 +455,49 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     return () => { cancelled = true; };
   }, [onCountChange, reloadToken]);
 
+  const dismissRefillReview = async (task) => {
+    const refillRequestId = task?.refillRequestId || task?.sourceId;
+    if (!refillRequestId) return;
+    const confirmed = window.confirm(`Mark ${task.patientName}'s refill request as no refill needed? This will close it for everyone.`);
+    if (!confirmed) return;
+
+    setRefillActionId(refillRequestId);
+    try {
+      await fetchJson(`${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(refillRequestId)}/mark-not-needed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          doctor_id: DOCTOR_ID,
+          reason: "NO_REFILL_NEEDED",
+        }),
+      });
+      const nextTasks = tasks.filter((item) => item.refillRequestId !== refillRequestId);
+      setTasks(nextTasks);
+      setSelectedId((selected) => nextTasks.some((item) => item.id === selected) ? selected : nextTasks[0]?.id || null);
+      onCountChange?.(nextTasks.length);
+      setReloadToken((value) => value + 1);
+    } catch (err) {
+      window.alert(err?.message || "Could not close refill request.");
+    } finally {
+      setRefillActionId("");
+    }
+  };
+
+  const activeTasks = tasks;
+
+  useEffectI(() => {
+    if (!loading && !error) onCountChange?.(activeTasks.length);
+  }, [activeTasks.length, error, loading, onCountChange]);
+
   const visibleTasks = useMemoI(() => {
     const query = search.trim().toLowerCase();
-    return tasks.filter((task) => {
+    return activeTasks.filter((task) => {
       if (filter !== "all" && task.category !== filter) return false;
       if (!query) return true;
       return [task.patientName, task.phone, task.email, task.title, task.track, task.summary].filter(Boolean).join(" ").toLowerCase().includes(query);
     });
-  }, [filter, search, tasks]);
-  const availableFilters = useMemoI(() => visibleClinicalFilters(tasks), [tasks]);
+  }, [activeTasks, filter, search]);
+  const availableFilters = useMemoI(() => visibleClinicalFilters(activeTasks), [activeTasks]);
 
   useEffectI(() => {
     if (filter === "all") return;
@@ -464,13 +507,13 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
 
   const selected = visibleTasks.find((task) => task.id === selectedId) || visibleTasks[0] || null;
   const counts = useMemoI(() => ({
-    open: tasks.length,
-    needsPrescription: tasks.filter((task) => task.category === "needs_prescription").length,
-    needsOutcome: tasks.filter((task) => task.category === "needs_outcome").length,
-    messages: tasks.filter((task) => task.category === "message_needs_response").length,
-    reissue: tasks.filter((task) => task.category === "reissue").length,
-    refills: tasks.filter((task) => task.category === "refill_review").length,
-  }), [tasks]);
+    open: activeTasks.length,
+    needsPrescription: activeTasks.filter((task) => task.category === "needs_prescription").length,
+    needsOutcome: activeTasks.filter((task) => task.category === "needs_outcome").length,
+    messages: activeTasks.filter((task) => task.category === "message_needs_response").length,
+    reissue: activeTasks.filter((task) => task.category === "reissue").length,
+    refills: activeTasks.filter((task) => task.category === "refill_review").length,
+  }), [activeTasks]);
 
   return (
     <div className="screen clinical-inbox-screen fade-in">
@@ -496,7 +539,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
             {availableFilters.map((item) => (
               <button key={item.key} className={filter === item.key ? "active" : ""} onClick={() => setFilter(item.key)}>
                 <span>{item.label}</span>
-                <strong>{clinicalTaskCountForFilter(tasks, item.key)}</strong>
+                <strong>{clinicalTaskCountForFilter(activeTasks, item.key)}</strong>
               </button>
             ))}
           </div>
@@ -516,7 +559,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
               ))
             ) : (
               <div className="clinical-inbox-empty">
-                {tasks.length ? "No doctor actions match this view." : "No doctor actions pending."}
+                {activeTasks.length ? "No doctor actions match this view." : "No doctor actions pending."}
               </div>
             )}
           </div>
@@ -530,6 +573,8 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onRecordOutcome={setOutcomeTask}
           onPrescribeRx={onPrescribeRx}
           onPrescribeQuickWlp={onPrescribeQuickWlp}
+          onDismissRefill={dismissRefillReview}
+          refillActionId={refillActionId}
         />
       </div>
       {ConsultOutcomeModal && (
