@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-07-01 13:24 +04 - Medication fulfillment state rendering
+
+- Source: Keswin reported Marwa Doctor Dashboard showed a cancelled/pending-payment Rx patient as paid awaiting delivery while Ops Portal did not list the patient in Rx Programs or Pharmacy Ops.
+- Changed Patient Chart and Patients views to prefer backend `lifecycle` / `medication_fulfillment` payment and delivery state before falling back to older delivered-medication rows.
+- Verification: `npm run build` passed.
+- Follow-up: deploy Doctor Dashboard frontend so the live UI consumes the backend contract now live.
+
 ### 2026-06-24 20:53 +04 - Consultation outcome frontend
 
 - Source: doctor-dashboard clinical workflow cleanup after backend introduced explicit consultation outcomes.

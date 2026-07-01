@@ -350,6 +350,26 @@ function orderItemsLabel(items) {
     .join(", ");
 }
 
+function fulfillmentState(value) {
+  return String(value?.state || value?.key || "").trim().toUpperCase();
+}
+
+function fulfillmentLabel(value) {
+  return String(value?.label || "").trim() || titleCase(fulfillmentState(value));
+}
+
+function fulfillmentIsPaid(value) {
+  const state = fulfillmentState(value);
+  const status = String(value?.status || "").trim().toUpperCase();
+  return Boolean(value?.paid_at) || ["PAID", "PAID_AWAITING_DELIVERY", "DELIVERED"].includes(state) || ["PAID", "DELIVERED", "COMPLETED"].includes(status);
+}
+
+function fulfillmentIsDelivered(value) {
+  const state = fulfillmentState(value);
+  const status = String(value?.status || "").trim().toUpperCase();
+  return Boolean(value?.delivered_at) || state === "DELIVERED" || ["DELIVERED", "COMPLETED"].includes(status);
+}
+
 function refillStatusLabel(value) {
   const normalized = String(value || "").toUpperCase();
   if (normalized === "PENDING_REVIEW") return "Pending review";
@@ -429,6 +449,7 @@ function mapPatient(item) {
     medications: asArray(item.medications),
     latestLabs: asArray(item.latest_labs),
     visitHistory: asArray(item.visit_history),
+    medicationFulfillment: item.medication_fulfillment || null,
     deliveredMedications: asArray(item.delivered_medications),
     refillHistory: asArray(item.refill_history),
     prescriptionHistory,
@@ -740,14 +761,18 @@ function patientLifecycleSteps(patient) {
   const latestPrescription = prescriptions[0];
   const latestUnpaid = prescriptions.find(isUnpaidEditablePrescription);
   const latestDelivery = deliveries[0];
+  const medicationFulfillment = patient.medicationFulfillment;
   const latestRefill = refills[0];
   const hasScheduledConsult = Boolean(patient.upcoming || latestVisit);
   const hasCompletedConsult = Boolean(latestVisit);
   const hasPrescription = Boolean(latestPrescription);
   const hasUnpaidPrescription = Boolean(latestUnpaid);
-  const paidAt = latestDelivery?.paid_at;
-  const deliveredAt = latestDelivery?.delivered_at;
-  const refillState = patientRefillLifecycle(latestRefill, Boolean(deliveredAt), Boolean(patient.prescribe));
+  const paidAt = medicationFulfillment?.paid_at || latestDelivery?.paid_at;
+  const deliveredAt = medicationFulfillment?.delivered_at || latestDelivery?.delivered_at;
+  const paymentPending = fulfillmentState(medicationFulfillment) === "PENDING_PAYMENT";
+  const paid = medicationFulfillment ? fulfillmentIsPaid(medicationFulfillment) : Boolean(paidAt);
+  const delivered = medicationFulfillment ? fulfillmentIsDelivered(medicationFulfillment) : Boolean(deliveredAt);
+  const refillState = patientRefillLifecycle(latestRefill, delivered, Boolean(patient.prescribe));
 
   return [
     {
@@ -767,18 +792,24 @@ function patientLifecycleSteps(patient) {
     },
     {
       label: "Issued but unpaid",
-      meta: hasUnpaidPrescription ? prescriptionMedicationLabel(latestUnpaid) || latestUnpaid.itemLabel : paidAt ? "Payment received" : "No unpaid prescription",
-      state: hasUnpaidPrescription ? "current" : paidAt ? "done" : "pending",
+      meta: paymentPending
+        ? orderItemsLabel(medicationFulfillment?.items) || fulfillmentLabel(medicationFulfillment) || "Payment pending"
+        : hasUnpaidPrescription
+          ? prescriptionMedicationLabel(latestUnpaid) || latestUnpaid.itemLabel
+          : paid
+            ? "Payment received"
+            : "No unpaid prescription",
+      state: paymentPending || hasUnpaidPrescription ? "current" : paid ? "done" : "pending",
     },
     {
       label: "Paid",
-      meta: paidAt ? formatDateTime(paidAt) : hasUnpaidPrescription ? "Awaiting payment" : "Not paid",
-      state: paidAt ? "done" : hasUnpaidPrescription ? "current" : "pending",
+      meta: paid ? formatDateTime(paidAt) || "Paid" : paymentPending || hasUnpaidPrescription ? "Awaiting payment" : "Not paid",
+      state: paid ? "done" : paymentPending || hasUnpaidPrescription ? "current" : "pending",
     },
     {
       label: "Delivered",
-      meta: deliveredAt ? formatDateTime(deliveredAt) : paidAt ? "Awaiting delivery" : "Not delivered",
-      state: deliveredAt ? "done" : paidAt ? "current" : "pending",
+      meta: delivered ? formatDateTime(deliveredAt) || "Delivered" : paid ? "Awaiting delivery" : "Not started",
+      state: delivered ? "done" : paid ? "current" : "pending",
     },
     {
       label: "Follow-up/refill due",
@@ -1156,6 +1187,8 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
   const latestVisit = p.visitHistory[0];
   const latestPrescription = p.prescriptionHistory[0];
   const latestDelivery = p.deliveredMedications[0];
+  const medicationFulfillment = p.medicationFulfillment;
+  const medicationFulfillmentState = fulfillmentState(medicationFulfillment);
   const latestRefill = p.refillHistory[0];
   const lifecycleSteps = patientLifecycleSteps(p);
   const nextAppointment = p.upcoming ? `${p.upcoming.service_name} · ${formatAppointmentDate(p.upcoming.date, p.upcoming.time)}` : "";
@@ -1163,7 +1196,15 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
   const prescriptionLockedCopy = hasActiveRxPrescription(p.prescriptionHistory) && !p.prescribe
     ? "Follow-up prescription is locked until the patient submits a refill request or completes a follow-up consultation."
     : "";
-  const primaryClinicalState = issuedUnpaidPrescriptions.length
+  const primaryClinicalState = medicationFulfillmentState === "DELIVERED"
+    ? "Medication delivered"
+    : medicationFulfillmentState === "PAID_AWAITING_DELIVERY"
+      ? "Paid, awaiting delivery"
+      : medicationFulfillmentState === "PENDING_PAYMENT"
+        ? "Prescription issued, payment pending"
+        : medicationFulfillmentState === "CANCELLED"
+          ? "Payment link cancelled"
+          : issuedUnpaidPrescriptions.length
     ? "Prescription issued, payment pending"
     : p.prescribe
       ? "Ready to issue"
@@ -1260,7 +1301,7 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
           <ChartFact label="Current medication" value={currentMedication?.name || "Not listed"} />
           <ChartFact label="Next visit" value={nextAppointment || "Not booked"} />
           <ChartFact label="Last prescription" value={latestPrescription ? formatDate(latestPrescription.issuedAt || latestPrescription.createdAt) : "None"} />
-          <ChartFact label="Last delivery" value={latestDelivery ? formatDate(latestDelivery.delivered_at || latestDelivery.paid_at) : "None"} />
+          <ChartFact label="Medication order" value={medicationFulfillment ? fulfillmentLabel(medicationFulfillment) : latestDelivery ? formatDate(latestDelivery.delivered_at || latestDelivery.paid_at) : "None"} />
         </div>
 
         <ChartSection

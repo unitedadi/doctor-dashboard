@@ -501,6 +501,33 @@ function medicationStatusLabel(delivery) {
   return titleCase(delivery?.status || "Medication order");
 }
 
+function lifecycleKey(value) {
+  return String(value?.key || value?.state || "").trim().toUpperCase();
+}
+
+function lifecycleLabel(value, fallback = "") {
+  return String(value?.label || "").trim() || titleCase(lifecycleKey(value) || fallback);
+}
+
+function lifecyclePaymentLabel(chart, latestPrescription, latestDelivery) {
+  const payment = chart?.lifecycle?.payment;
+  if (payment?.label) return payment.label;
+  if (lifecycleKey(payment) === "PAID") return "Paid";
+  if (lifecycleKey(payment) === "UNPAID") return "Unpaid";
+  if (latestDelivery?.paid_at) return "Paid";
+  return latestPrescription ? "Unpaid" : "Not started";
+}
+
+function lifecycleFulfillmentLabel(chart, latestDelivery) {
+  const fulfillment = chart?.lifecycle?.fulfillment;
+  if (fulfillment?.label) return fulfillment.label;
+  const key = lifecycleKey(fulfillment);
+  if (key === "DELIVERED") return "Delivered";
+  if (key === "NOT_STARTED") return "Not started";
+  if (key) return titleCase(key);
+  return latestDelivery ? medicationStatusLabel(latestDelivery) : "No paid order";
+}
+
 function consultationStatus(consultation) {
   const status = String(consultation?.status || consultation?.consultation_status || "").toUpperCase();
   if (status === "NO_SHOW" || status === "NO SHOW") return "no_show";
@@ -524,6 +551,8 @@ function chartHasCompletedConsult(chart) {
 }
 
 function chartHasPaidMedication(chart) {
+  const paymentKey = lifecycleKey(chart?.lifecycle?.payment);
+  if (paymentKey) return paymentKey === "PAID";
   return asArray(chart?.medication_delivery).some((delivery) => Boolean(delivery?.paid_at || delivery?.delivered_at));
 }
 
@@ -579,6 +608,8 @@ function buildLifecycle(chart, context = {}) {
   const consultation = chart?.consultations?.[0];
   const prescription = chart?.prescriptions?.[0];
   const delivery = chart?.medication_delivery?.[0];
+  const backendPayment = chart?.lifecycle?.payment;
+  const backendFulfillment = chart?.lifecycle?.fulfillment;
   const refill = chart?.refills?.[0];
   const prescriptionStatus = String(prescription?.status || "").toUpperCase();
   let consultState = consultationStatus(consultation);
@@ -590,8 +621,10 @@ function buildLifecycle(chart, context = {}) {
   if (taskCategory === "message_needs_response" && consultState === "none") {
     consultMeta = context?.task?.occurredAt || consultMeta;
   }
-  const delivered = Boolean(delivery?.delivered_at);
-  const paid = Boolean(delivery?.paid_at || delivery?.order_id);
+  const paymentKey = lifecycleKey(backendPayment);
+  const fulfillmentKey = lifecycleKey(backendFulfillment);
+  const delivered = fulfillmentKey ? fulfillmentKey === "DELIVERED" : Boolean(delivery?.delivered_at);
+  const paid = paymentKey ? paymentKey === "PAID" : Boolean(delivery?.paid_at || delivery?.delivered_at);
   const issued = Boolean(prescription?.issued_at || prescription?.id);
   const refillPending = String(refill?.status || "").toUpperCase() === "PENDING_REVIEW";
 
@@ -622,12 +655,24 @@ function buildLifecycle(chart, context = {}) {
     },
     {
       label: "Payment",
-      meta: paid ? formatDateTime(delivery?.paid_at) || "Paid" : issued ? "Issued but unpaid" : "Not started",
+      meta: backendPayment
+        ? formatDateTime(backendPayment.at) || lifecycleLabel(backendPayment, paid ? "Paid" : "Payment")
+        : paid
+          ? formatDateTime(delivery?.paid_at) || "Paid"
+          : issued
+            ? "Issued but unpaid"
+            : "Not started",
       state: paid ? "done" : issued ? "current" : "pending",
     },
     {
       label: "Delivery",
-      meta: delivered ? formatDateTime(delivery?.delivered_at) : paid ? "Awaiting delivery" : "Not delivered",
+      meta: backendFulfillment
+        ? formatDateTime(backendFulfillment.at) || lifecycleLabel(backendFulfillment, delivered ? "Delivered" : "Delivery")
+        : delivered
+          ? formatDateTime(delivery?.delivered_at)
+          : paid
+            ? "Awaiting delivery"
+            : "Not delivered",
       state: delivered ? "done" : paid ? "current" : "pending",
     },
     {
@@ -655,14 +700,19 @@ function currentCareState({ chart, context, nextAction, medication, latestPrescr
     ? "completed"
     : consultationStatus(consultation);
   const issued = Boolean(latestPrescription?.issued_at || latestPrescription?.id);
-  const paid = Boolean(latestDelivery?.paid_at || latestDelivery?.order_id);
-  const delivered = Boolean(latestDelivery?.delivered_at);
+  const payment = chart?.lifecycle?.payment;
+  const fulfillment = chart?.lifecycle?.fulfillment;
+  const paymentKey = lifecycleKey(payment);
+  const fulfillmentKey = lifecycleKey(fulfillment);
+  const paid = paymentKey ? paymentKey === "PAID" : Boolean(latestDelivery?.paid_at || latestDelivery?.delivered_at);
+  const delivered = fulfillmentKey ? fulfillmentKey === "DELIVERED" : Boolean(latestDelivery?.delivered_at);
   const refill = pendingRefill(chart);
 
   if (refill) return "Refill review due";
   if (needsOutcome) return "Consultation outcome needed";
   if (delivered) return "Medication delivered";
-  if (paid) return "Paid, awaiting delivery";
+  if (paid) return lifecycleLabel(fulfillment, "Paid, awaiting delivery") || "Paid, awaiting delivery";
+  if (paymentKey === "UNPAID") return payment?.label || "Prescription issued, unpaid";
   if (issued) return "Prescription issued, unpaid";
   if (canPrescribe) return "Ready for prescription";
   if (!nextActionIsNoop) return nextActionLabel;
@@ -691,8 +741,8 @@ function CareStatePanel({
       <div className="patient-care-state-grid">
         <ChartFact label="Medication" value={medication?.name || itemLabel(latestPrescription?.items) || "Not listed"} />
         <ChartFact label="Prescription" value={latestPrescription ? prescriptionStatusLabel(latestPrescription) : "Not issued"} />
-        <ChartFact label="Payment" value={latestDelivery?.paid_at ? "Paid" : latestPrescription ? "Unpaid" : "Not started"} />
-        <ChartFact label="Delivery" value={latestDelivery ? medicationStatusLabel(latestDelivery) : "No paid order"} />
+        <ChartFact label="Payment" value={lifecyclePaymentLabel(chart, latestPrescription, latestDelivery)} />
+        <ChartFact label="Delivery" value={lifecycleFulfillmentLabel(chart, latestDelivery)} />
       </div>
     </section>
   );
@@ -700,6 +750,7 @@ function CareStatePanel({
 
 function PrescriptionGuardrails({
   clinical,
+  chart,
   medication,
   latestPrescription,
   latestDelivery,
@@ -709,8 +760,12 @@ function PrescriptionGuardrails({
   const conditions = asArray(clinical?.conditions);
   const activeMedication = medication?.name || asArray(clinical?.current_medications)[0]?.name || "";
   const prescriptionItems = itemLabel(latestPrescription?.items);
-  const deliveryStatusText = latestDelivery
-    ? `${medicationStatusLabel(latestDelivery)}${latestDelivery.delivered_at || latestDelivery.paid_at ? ` · ${formatDate(latestDelivery.delivered_at || latestDelivery.paid_at)}` : ""}`
+  const fulfillment = chart?.lifecycle?.fulfillment;
+  const fulfillmentKey = lifecycleKey(fulfillment);
+  const deliveryStatusText = fulfillment
+    ? `${lifecycleFulfillmentLabel(chart, latestDelivery)}${fulfillment.at ? ` · ${formatDate(fulfillment.at)}` : ""}`
+    : latestDelivery
+      ? `${medicationStatusLabel(latestDelivery)}${latestDelivery.delivered_at || latestDelivery.paid_at ? ` · ${formatDate(latestDelivery.delivered_at || latestDelivery.paid_at)}` : ""}`
     : "No paid medication order";
 
   const allRows = [
@@ -739,7 +794,7 @@ function PrescriptionGuardrails({
     {
       label: "Medication order",
       value: deliveryStatusText,
-      tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : latestDelivery ? "review" : "clear",
+      tone: fulfillmentKey === "PAID_AWAITING_DELIVERY" || (latestDelivery?.paid_at && !latestDelivery?.delivered_at) ? "warn" : fulfillment || latestDelivery ? "review" : "clear",
     },
   ];
   const rows = safetyOnly ? allRows.slice(0, 2) : allRows;
@@ -1115,6 +1170,7 @@ function ChatClinicalCard({
       <PrescriptionGuardrails
         safetyOnly
         clinical={clinical}
+        chart={chart}
         medication={medication}
         latestPrescription={latestPrescription}
         latestDelivery={latestDelivery}
@@ -1774,6 +1830,7 @@ function PatientChart({
             <aside className="patient-emr-rail">
               <PrescriptionGuardrails
                 clinical={clinical}
+                chart={chart}
                 medication={medication}
                 latestPrescription={latestPrescription}
                 latestDelivery={deliveries[0]}
