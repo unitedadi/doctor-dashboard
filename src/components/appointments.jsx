@@ -509,6 +509,10 @@ function mapAppointment(item) {
     meetingLink: item.meeting_link,
     trackKey: item.track_key,
     sourceTag: item.source_tag,
+    b2bPartnerId: item.b2b_partner_id || "",
+    b2bPartnerName: item.b2b_partner_name || "",
+    b2bCommissionBps: item.b2b_commission_bps,
+    b2bPromoCode: item.b2b_promo_code || "",
     doctorId: item.doctor_id,
     workbench: item.workbench || null,
   };

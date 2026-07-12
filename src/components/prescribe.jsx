@@ -301,7 +301,7 @@ function listItems(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, typeLabel }) {
+function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, typeLabel, sellerName, promoCode }) {
   if (!patient) {
     return (
       <div className="rx-review-empty">
@@ -323,6 +323,18 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
         <span>Type</span>
         <strong>{typeLabel}</strong>
       </div>
+      {isQuickWlpMode && (
+        <div className="rx-review-row">
+          <span>Checkout seller</span>
+          <strong>{sellerName}</strong>
+        </div>
+      )}
+      {isQuickWlpMode && promoCode && (
+        <div className="rx-review-row">
+          <span>Customer promo</span>
+          <strong>{promoCode} · applied automatically</strong>
+        </div>
+      )}
       <div className="rx-review-row">
         <span>Items</span>
         <strong>{cart.length ? `${cart.length} item${cart.length === 1 ? "" : "s"}` : "None selected"}</strong>
@@ -560,6 +572,9 @@ function PrescribeView({
   initialQuickWlpEmail,
   initialQuickWlpDoctorId,
   initialQuickWlpTrackKey,
+  initialQuickWlpSellerId,
+  initialQuickWlpSellerName,
+  initialQuickWlpPromoCode,
   initialAmendSource,
   initialAmendId,
   initialAmendItems,
@@ -595,6 +610,9 @@ function PrescribeView({
   const [patientChartError, setPatientChartError] = useStateR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
   const quickWlpTrackKey = initialQuickWlpTrackKey === "peptides" ? "peptides" : "weight-loss";
+  const quickWlpSellerId = initialQuickWlpSellerId || SUPPLEMENT_SELLER_ID;
+  const quickWlpSellerName = initialQuickWlpSellerName || (initialQuickWlpSellerId ? initialQuickWlpSellerId : "DarDoc");
+  const quickWlpPromoCode = initialQuickWlpPromoCode || "";
   const amendSource = initialAmendSource || "";
   const amendItems = useMemoR(() => parseAmendItems(initialAmendItems), [initialAmendItems]);
   const isAmendMode = Boolean(initialAmendId && amendSource && amendItems.length);
@@ -763,7 +781,7 @@ function PrescribeView({
         if (isQuickWlpMode) {
           const params = new URLSearchParams({
             doctor_id: patient.doctorId || quickWlpDoctorId,
-            seller_id: SUPPLEMENT_SELLER_ID,
+            seller_id: quickWlpSellerId,
             catalog: productCatalogKey,
             limit: "100",
             offset: "0",
@@ -808,7 +826,7 @@ function PrescribeView({
       setProductsLoading(false);
     }
     return () => { cancelled = true; };
-  }, [isQuickWlpMode, patient, productCatalogKey, query, quickWlpDoctorId]);
+  }, [isQuickWlpMode, patient, productCatalogKey, query, quickWlpDoctorId, quickWlpSellerId]);
 
   const visibleProducts = useMemoR(() => {
     return products
@@ -886,7 +904,7 @@ function PrescribeView({
   const loadNeedlesProduct = React.useCallback(async () => {
     if (needlesProduct) return needlesProduct;
     const params = new URLSearchParams({
-      seller_id: SUPPLEMENT_SELLER_ID,
+      seller_id: isQuickWlpMode ? quickWlpSellerId : SUPPLEMENT_SELLER_ID,
       view: "full",
     });
     const data = await fetchJson(`${API_BASE}/verticals/shipments/products/${encodeURIComponent(NEEDLES_PRODUCT_ID)}?${params.toString()}`);
@@ -897,7 +915,7 @@ function PrescribeView({
     };
     setNeedlesProduct(productWithDetails);
     return productWithDetails;
-  }, [needlesProduct]);
+  }, [isQuickWlpMode, needlesProduct, quickWlpSellerId]);
 
   const addToCart = async () => {
     if (!selectedProduct) return;
@@ -977,7 +995,7 @@ function PrescribeView({
       const payload = isQuickWlpMode
         ? {
           doctor_id: patient.doctorId || quickWlpDoctorId,
-          seller_id: SUPPLEMENT_SELLER_ID,
+          seller_id: quickWlpSellerId,
           items,
           ...(isAmendMode ? { reason: amendReason.trim() } : {}),
         }
@@ -1248,6 +1266,8 @@ function PrescribeView({
                 activeTrack={activeTrack}
                 isQuickWlpMode={isQuickWlpMode}
                 typeLabel={workflowCopy.typeLabel}
+                sellerName={quickWlpSellerName}
+                promoCode={quickWlpPromoCode}
               />
               {!isQuickWlpMode && (
                 <PrescriptionSafetyPanel

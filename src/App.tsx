@@ -174,6 +174,9 @@ function App() {
               quickWlpEmail: task?.email || '',
               quickWlpDoctorId: task?.doctorId || DOCTOR_ID,
               quickWlpTrackKey: task?.trackKey || task?.track_key || 'weight-loss',
+              quickWlpSellerId: task?.b2bPartnerId || task?.b2b_partner_id || '',
+              quickWlpSellerName: task?.b2bPartnerName || task?.b2b_partner_name || '',
+              quickWlpPromoCode: task?.b2bPromoCode || task?.b2b_promo_code || '',
               prescriptionMode: 'quickwlp',
             })}
           />
@@ -195,6 +198,9 @@ function App() {
               quickWlpEmail: appointment?.patient?.email || '',
               quickWlpDoctorId: appointment?.doctorId || DOCTOR_ID,
               quickWlpTrackKey: appointment?.trackKey || appointment?.track_key || 'weight-loss',
+              quickWlpSellerId: appointment?.b2bPartnerId || appointment?.b2b_partner_id || '',
+              quickWlpSellerName: appointment?.b2bPartnerName || appointment?.b2b_partner_name || '',
+              quickWlpPromoCode: appointment?.b2bPromoCode || appointment?.b2b_promo_code || '',
               prescriptionMode: 'quickwlp',
             })}
           />
@@ -238,6 +244,9 @@ function App() {
             initialQuickWlpEmail={routeContext.quickWlpEmail}
             initialQuickWlpDoctorId={routeContext.quickWlpDoctorId}
             initialQuickWlpTrackKey={routeContext.quickWlpTrackKey}
+            initialQuickWlpSellerId={routeContext.quickWlpSellerId}
+            initialQuickWlpSellerName={routeContext.quickWlpSellerName}
+            initialQuickWlpPromoCode={routeContext.quickWlpPromoCode}
             initialAmendSource={routeContext.amendSource}
             initialAmendId={routeContext.amendId}
             initialAmendItems={routeContext.amendItems}

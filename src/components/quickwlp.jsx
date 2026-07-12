@@ -140,6 +140,10 @@ function mapQuickWlpRequest(item) {
       bmi: assessment.bmi,
     },
     sourceTag: item.source_tag || "REGULAR",
+    b2bPartnerId: item.b2b_partner_id || "",
+    b2bPartnerName: item.b2b_partner_name || "",
+    b2bCommissionBps: item.b2b_commission_bps,
+    b2bPromoCode: item.b2b_promo_code || "",
     prescriptions: (item.prescriptions || []).map(mapQuickWlpPrescription),
   };
 }
