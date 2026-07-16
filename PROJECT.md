@@ -38,7 +38,7 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 - API base:
   - Local development uses `VITE_API_BASE=/api`.
   - Vite proxies `/api` to `VITE_API_PROXY_TARGET`.
-  - Production should use `https://api-prod.dardoc.com`.
+  - Production should use `https://realbackend-api-prod.ambitiousmeadow-4e77b741.uaenorth.azurecontainerapps.io`.
 - Current doctor account defaults to `mp_sami` / `doctor_sami_dev`.
 
 ## Commands
