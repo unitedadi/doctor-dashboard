@@ -123,13 +123,24 @@ function consultationOutcome(appointment) {
   return String(appointment?.workbench?.consultation?.outcome || "").toUpperCase();
 }
 
+function closesConsultPrescriptionTask(outcome) {
+  return [
+    "PRESCRIPTION_ISSUED",
+    "CONTINUE_EXISTING_TREATMENT",
+    "NO_MEDICATION_NEEDED",
+    "NOT_ELIGIBLE",
+    "PATIENT_UNDECIDED",
+    "OPS_FOLLOW_UP_NEEDED",
+  ].includes(String(outcome || "").toUpperCase());
+}
+
 function consultationNeedsOutcome(appointment) {
   const consultation = appointment?.workbench?.consultation || {};
   const prescription = appointment?.workbench?.prescription || {};
+  const source = String(appointment?.source || "").toLowerCase();
   return (
-    String(appointment?.source || "").toLowerCase() !== "quickwlp" &&
     isCompletedStatus(appointment?.status) &&
-    Boolean(consultation.previous_prescription_exists) &&
+    (source === "quickwlp" || Boolean(consultation.previous_prescription_exists)) &&
     !consultationOutcome(appointment) &&
     prescription.status !== "ISSUED"
   );
@@ -208,6 +219,7 @@ function actionState(appointment, nowMs) {
   const normalized = String(appointment.status || "").toLowerCase();
   const issued = prescriptionIssued(appointment);
   const completed = isCompletedStatus(normalized);
+  const outcome = consultationOutcome(appointment);
   if (normalized === "no_show") {
     return {
       label: "No-show marked. Ops should follow up and rebook if the member still wants the consultation.",
@@ -245,6 +257,16 @@ function actionState(appointment, nowMs) {
         ? "Medication paid. No doctor action required here."
         : "Prescription issued. Payment is handled outside this view.",
       tone: fulfillment.order_id && fulfillment.paid_at ? "done" : "idle",
+      canPrescribe: false,
+      canComplete: false,
+      canNoShow: false,
+      canRecordOutcome: false
+    };
+  }
+  if (completed && closesConsultPrescriptionTask(outcome)) {
+    return {
+      label: "Consultation outcome recorded. No doctor action required.",
+      tone: "done",
       canPrescribe: false,
       canComplete: false,
       canNoShow: false,
@@ -329,6 +351,7 @@ function appointmentNeedsAction(appointment, nowMs) {
   if (bucket === "upcoming") return appointmentIsLiveNow(appointment, nowMs);
   if (bucket !== "completed") return false;
   if (consultationNeedsOutcome(appointment)) return true;
+  if (closesConsultPrescriptionTask(consultationOutcome(appointment))) return false;
   return !prescriptionIssued(appointment);
 }
 
@@ -342,6 +365,7 @@ function nextStepLabel(appointment) {
   if (fulfillment.order_id && !fulfillment.delivered_at) return "Medication paid, delivery pending";
   if (prescription.status === "ISSUED" && !fulfillment.order_id) return medicationOrderState(appointment);
   if (consultationNeedsOutcome(appointment)) return "Record consultation outcome";
+  if (closesConsultPrescriptionTask(consultationOutcome(appointment))) return "Consultation outcome recorded";
   if (normalized === "completed") return appointment.source === "quickwlp" ? "Issue prescription if clinically eligible" : "Open chart or message member";
   if (normalized === "no_show") return "Follow up and rebook if needed";
   if (normalized === "cancelled" || normalized === "canceled") return "No doctor action required";
