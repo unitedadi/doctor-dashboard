@@ -537,6 +537,9 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [completeConfirm, setCompleteConfirm] = useStateA(null);
   const [noShowingId, setNoShowingId] = useStateA(null);
   const [noShowConfirm, setNoShowConfirm] = useStateA(null);
+  const [cancellingId, setCancellingId] = useStateA(null);
+  const [cancelConfirm, setCancelConfirm] = useStateA(null);
+  const [feedbackMetrics, setFeedbackMetrics] = useStateA(null);
   const [patientProfiles, setPatientProfiles] = useStateA([]);
   const [profilesLoading, setProfilesLoading] = useStateA(false);
   const [profilesLoaded, setProfilesLoaded] = useStateA(false);
@@ -575,6 +578,20 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   useEffectA(() => {
     loadAppointments();
   }, [loadAppointments]);
+
+  useEffectA(() => {
+    let active = true;
+    fetchJson(`${API_BASE}/doctor/consultation-feedback/metrics?doctor_id=${encodeURIComponent(DOCTOR_ID)}&days=90`)
+      .then((data) => {
+        if (active) setFeedbackMetrics(data.metrics || null);
+      })
+      .catch(() => {
+        if (active) setFeedbackMetrics(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadPatientProfiles = React.useCallback(async () => {
     if (profilesLoaded || profilesLoading) return;
@@ -619,6 +636,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const selectedOutcomeUnlocked = selected ? appointmentOutcomeActionsAvailable(selected, nowMs) : false;
   const canCompleteSelected = selectedActionState.canComplete && selectedOutcomeUnlocked;
   const canNoShowSelected = selectedActionState.canNoShow && selectedOutcomeUnlocked;
+  const canCancelSelected = Boolean(selected && !isClosedStatus(selected.status));
   const canRecordOutcomeSelected = selectedActionState.canRecordOutcome;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
   const selectedHasMedicationOrder = Boolean(
@@ -637,6 +655,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedHasJoinOrCall ||
     canCompleteSelected ||
     canNoShowSelected ||
+    canCancelSelected ||
     canRecordOutcomeSelected ||
     canPrescribeSelectedRx ||
     canPrescribeSelectedQuickWlp
@@ -788,25 +807,16 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     setNoShowConfirm(null);
     setError("");
     try {
-      const response = await authFetch(
-        appointment.source === "quickwlp"
-          ? `${API_BASE}/doctor/quickwlp/requests/${encodeURIComponent(appointment.quickWlpLeadId || appointment.patientId)}/finalize`
-          : `${API_BASE}/doctor/appointments/${appointment.id}/no-show`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            appointment.source === "quickwlp"
-              ? { doctor_id: DOCTOR_ID, value: "No show" }
-              : {
-                  doctor_id: DOCTOR_ID,
-                  completion_notes_json: {
-                    note: "Marked no-show from doctor dashboard.",
-                  },
-                }
-          ),
-        }
-      );
+      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/no-show`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          doctor_id: DOCTOR_ID,
+          completion_notes_json: {
+            note: "Marked no-show from doctor dashboard.",
+          },
+        }),
+      });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "no_show_failed");
       setCallToast(`Marked ${appointment.patient.name} as no-show`);
@@ -816,6 +826,34 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
       setError("Could not mark this consultation as no-show.");
     } finally {
       setNoShowingId(null);
+    }
+  };
+  const cancelConsultation = async () => {
+    if (!cancelConfirm) return;
+    const appointment = cancelConfirm;
+    setCancellingId(appointment.id);
+    setCancelConfirm(null);
+    setError("");
+    try {
+      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          doctor_id: DOCTOR_ID,
+          completion_notes_json: {
+            note: "Cancelled from doctor dashboard.",
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "cancel_failed");
+      setCallToast(`Cancelled ${appointment.patient.name}'s consultation`);
+      setTimeout(() => setCallToast(""), 2400);
+      await loadAppointments();
+    } catch {
+      setError("Could not cancel this consultation.");
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -831,6 +869,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
             <div className="stat"><div className="v">{loading ? "..." : scheduleAppointments.length}</div><div className="l">{scheduleScope === "week" ? "Next 7 days" : "Appointments"}</div></div>
             <div className="stat"><div className="v">{loading ? "..." : upcomingCount}</div><div className="l">Upcoming</div></div>
             <div className="stat"><div className="v">{loading ? "..." : statusCounts.needs_action}</div><div className="l">Needs action</div></div>
+            <div className="stat"><div className="v">{feedbackMetrics?.minimum_sample_reached ? feedbackMetrics.average_rating?.toFixed(2) : "—"}</div><div className="l">{feedbackMetrics?.minimum_sample_reached ? "90-day rating" : "Rating · min 5"}</div></div>
           </div>
 
           <div className="section-hdr">
@@ -1003,6 +1042,15 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                         disabled={noShowingId === selected.id}
                       >
                         {I.warn}<span>{noShowingId === selected.id ? "Saving..." : "Mark No-show"}</span>
+                      </button>
+                    )}
+                    {canCancelSelected && (
+                      <button
+                        className="workbench-action-button secondary"
+                        onClick={() => setCancelConfirm(selected)}
+                        disabled={cancellingId === selected.id}
+                      >
+                        {I.x}<span>{cancellingId === selected.id ? "Cancelling..." : "Cancel consultation"}</span>
                       </button>
                     )}
                     {canRecordOutcomeSelected && (
@@ -1209,6 +1257,18 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
             <div className="confirm-actions">
               <button className="btn-ghost" onClick={() => setNoShowConfirm(null)}>Cancel</button>
               <button className="btn-primary" onClick={markNoShow}>{I.warn}<span>Mark No-show</span></button>
+            </div>
+          </div>
+        </div>
+      )}
+      {cancelConfirm && (
+        <div className="confirm-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-consultation-title">
+            <h2 id="cancel-consultation-title">Cancel consultation?</h2>
+            <p>Use cancellation only when the appointment will not go ahead. It remains distinct from a patient no-show and will offer a direct reschedule.</p>
+            <div className="confirm-actions">
+              <button className="btn-ghost" onClick={() => setCancelConfirm(null)}>Keep appointment</button>
+              <button className="btn-primary" onClick={cancelConsultation}>{I.x}<span>Cancel consultation</span></button>
             </div>
           </div>
         </div>
