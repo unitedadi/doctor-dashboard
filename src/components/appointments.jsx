@@ -137,10 +137,8 @@ function closesConsultPrescriptionTask(outcome) {
 function consultationNeedsOutcome(appointment) {
   const consultation = appointment?.workbench?.consultation || {};
   const prescription = appointment?.workbench?.prescription || {};
-  const source = String(appointment?.source || "").toLowerCase();
   return (
     isCompletedStatus(appointment?.status) &&
-    (source === "quickwlp" || Boolean(consultation.previous_prescription_exists)) &&
     !consultationOutcome(appointment) &&
     prescription.status !== "ISSUED"
   );
