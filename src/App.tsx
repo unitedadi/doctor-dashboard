@@ -163,10 +163,17 @@ function App() {
               patientId: task?.patientId || '',
               customerId: task?.customerId || '',
               trackKey: task?.trackKey || 'weight-loss',
+              consultationId: task?.appointmentId || task?.sourceId || '',
+              consultationSource: 'RX',
               refillRequestId: task?.refillRequestId || '',
               prescriptionMode: task?.refillRequestId || task?.category === 'refill_review' ? 'refill' : task?.category === 'reissue' ? 'reissue' : 'issue',
+              orderMode: task?.orderMode || '',
             })}
             onPrescribeQuickWlp={(task: any) => go('prescribe', {
+              patientId: task?.patientId || '',
+              customerId: task?.customerId || '',
+              consultationId: task?.appointmentId || task?.sourceId || '',
+              consultationSource: 'QUICKWLP',
               quickWlpLeadId: task?.quickWlpLeadId || task?.patientId || '',
               quickWlpName: task?.patientName || '',
               quickWlpPhone: task?.phone || '',
@@ -178,6 +185,7 @@ function App() {
               quickWlpSellerName: task?.b2bPartnerName || task?.b2b_partner_name || '',
               quickWlpPromoCode: task?.b2bPromoCode || task?.b2b_promo_code || '',
               prescriptionMode: 'quickwlp',
+              orderMode: task?.orderMode || '',
             })}
           />
         )}
@@ -187,10 +195,18 @@ function App() {
             onOpenChat={(id: string, customerId?: string, channelId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', channelId: channelId || '', hubMode: 'all' })}
             onPrescribeRx={(appointment: any) => go('prescribe', {
               patientId: appointment?.patientId || appointment?.patient?.id || '',
+              customerId: appointment?.patient?.customerId || '',
               trackKey: appointment?.trackKey || 'weight-loss',
+              consultationId: appointment?.id || '',
+              consultationSource: 'RX',
               prescriptionMode: 'issue',
+              orderMode: appointment?.orderMode || '',
             })}
             onPrescribeQuickWlp={(appointment: any) => go('prescribe', {
+              patientId: appointment?.patient?.id || appointment?.patientId || '',
+              customerId: appointment?.patient?.customerId || '',
+              consultationId: appointment?.id || '',
+              consultationSource: 'QUICKWLP',
               quickWlpLeadId: appointment?.quickWlpLeadId || appointment?.patientId || '',
               quickWlpName: appointment?.patient?.name || '',
               quickWlpPhone: appointment?.patient?.phone || '',
@@ -202,6 +218,7 @@ function App() {
               quickWlpSellerName: appointment?.b2bPartnerName || appointment?.b2b_partner_name || '',
               quickWlpPromoCode: appointment?.b2bPromoCode || appointment?.b2b_promo_code || '',
               prescriptionMode: 'quickwlp',
+              orderMode: appointment?.orderMode || '',
             })}
           />
         )}
@@ -210,7 +227,7 @@ function App() {
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
             onMessage={(id: string, customerId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', hubMode: 'all' })}
-            onPrescribe={(id: string, customerId?: string, trackKey?: string, prescriptionMode?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '', prescriptionMode: prescriptionMode || 'issue' })}
+            onPrescribe={(id: string, customerId?: string, trackKey?: string, prescriptionMode?: string, orderMode?: string, consultationId?: string, consultationSource?: string) => go('prescribe', { patientId: id, customerId: customerId || '', trackKey: trackKey || '', prescriptionMode: prescriptionMode || 'issue', orderMode: orderMode || '', consultationId: consultationId || '', consultationSource: consultationSource || '' })}
             onAmendPrescription={openAmendPrescription}
           />
         )}
@@ -221,7 +238,7 @@ function App() {
             initialChannelId={routeContext.channelId}
             initialHubMode={routeContext.hubMode}
             onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id || '', customerId: customerId || '' })}
-            onPrescribe={(id: string, trackKey?: string, customerId?: string, prescriptionMode?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || '', customerId: customerId || '', prescriptionMode: prescriptionMode || 'issue' })}
+            onPrescribe={(id: string, trackKey?: string, customerId?: string, prescriptionMode?: string, orderMode?: string, consultationId?: string, consultationSource?: string) => go('prescribe', { patientId: id || '', trackKey: trackKey || '', customerId: customerId || '', prescriptionMode: prescriptionMode || 'issue', orderMode: orderMode || '', consultationId: consultationId || '', consultationSource: consultationSource || '' })}
             onAmendPrescription={openAmendPrescription}
           />
         )}
@@ -235,8 +252,11 @@ function App() {
             initialPatientId={routeContext.patientId}
             initialCustomerId={routeContext.customerId}
             initialTrackKey={routeContext.trackKey}
+            initialConsultationId={routeContext.consultationId}
+            initialConsultationSource={routeContext.consultationSource}
             initialRefillRequestId={routeContext.refillRequestId}
             initialPrescriptionMode={routeContext.prescriptionMode}
+            initialOrderMode={routeContext.orderMode}
             initialQuickWlpLeadId={routeContext.quickWlpLeadId}
             initialQuickWlpName={routeContext.quickWlpName}
             initialQuickWlpPhone={routeContext.quickWlpPhone}

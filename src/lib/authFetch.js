@@ -10,9 +10,13 @@ function shouldAttachAuth(url) {
 
   try {
     const parsed = new URL(raw, window.location.origin);
-    return parsed.pathname.startsWith("/doctor/") || parsed.pathname.includes("/doctor/");
+    return parsed.pathname.startsWith("/doctor/")
+      || parsed.pathname.includes("/doctor/")
+      || /\/orders\/[^/]+\/results\/pdf$/.test(parsed.pathname);
   } catch {
-    return raw.startsWith("/doctor/") || raw.includes("/doctor/");
+    return raw.startsWith("/doctor/")
+      || raw.includes("/doctor/")
+      || /\/orders\/[^/]+\/results\/pdf$/.test(raw);
   }
 }
 

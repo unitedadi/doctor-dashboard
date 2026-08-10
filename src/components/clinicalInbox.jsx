@@ -1,6 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
-import { fetchJson } from "../lib/authFetch.js";
+import { authFetch, fetchJson } from "../lib/authFetch.js";
 
 /* global React */
 const { useEffect: useEffectI, useMemo: useMemoI, useState: useStateI } = React;
@@ -12,6 +12,7 @@ const FILTERS = [
   { key: "message_needs_response", label: "Needs reply" },
   { key: "reissue", label: "Re-issue" },
   { key: "refill_review", label: "Refill review" },
+  { key: "lab_results_ready", label: "Lab results" },
 ];
 
 const DOCTOR_TASK_CATEGORIES = new Set([
@@ -20,6 +21,7 @@ const DOCTOR_TASK_CATEGORIES = new Set([
   "message_needs_response",
   "reissue",
   "refill_review",
+  "lab_results_ready",
 ]);
 
 const CATEGORY_COPY = {
@@ -68,7 +70,31 @@ const CATEGORY_COPY = {
     actionFallback: "Issue refill prescription",
     tone: "steady",
   },
+  lab_results_ready: {
+    label: "Lab results ready",
+    queueLabel: "Review lab results",
+    reason: "A doctor-prescribed lab order now has its final report.",
+    decision: "Review the report before the free follow-up consultation.",
+    closes: "Closed when the lab follow-up consultation is booked.",
+    actionFallback: "View results",
+    tone: "critical",
+  },
 };
+
+async function downloadLabReport(reportUrl) {
+  if (!reportUrl) return;
+  const response = await authFetch(reportUrl.startsWith("http") ? reportUrl : `${API_BASE}${reportUrl}`);
+  if (!response.ok) throw new Error("Could not open the lab report.");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = "lab-results.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+}
 
 function titleCase(value) {
   return String(value || "")
@@ -112,6 +138,14 @@ function sourceLabel(task) {
 
 function lifecycleForTask(task) {
   const category = String(task?.category || "").toLowerCase();
+  if (category === "lab_results_ready") {
+    return [
+      { label: "Lab prescribed", meta: "Doctor request created", state: "done" },
+      { label: "Lab booked", meta: "Customer completed checkout", state: "done" },
+      { label: "Results ready", meta: formatDateTime(task?.occurredAt) || "Report available", state: "current" },
+      { label: "Free follow-up", meta: "Customer invited to book", state: "pending" },
+    ];
+  }
   const isNeedsPrescription = category === "needs_prescription";
   const isNeedsOutcome = category === "needs_outcome";
   const isReissue = category === "reissue";
@@ -206,6 +240,9 @@ function mapClinicalTask(item) {
     quickWlpLeadId: item.quickwlp_lead_id || item.quickWlpLeadId || "",
     doctorId: item.doctor_id || DOCTOR_ID,
     refillRequestId: item.refill_request_id || "",
+    labRequestId: item.lab_request_id || "",
+    orderId: item.order_id || "",
+    reportUrl: item.report_url || "",
     trackKey: item.track_key || "weight-loss",
     track: item.track || "",
     source: String(item.source || "").toLowerCase(),
@@ -231,6 +268,7 @@ function isDoctorClinicalTask(task) {
     "REISSUE_PRESCRIPTION",
     "AMEND_PRESCRIPTION",
     "RECORD_CONSULT_OUTCOME",
+    "REVIEW_LAB_RESULTS",
   ].includes(action);
 }
 
@@ -281,6 +319,9 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
   const copy = taskCopy(task);
   const actionLabel = task.actionLabel || copy.actionFallback;
   const primaryAction = () => {
+    if (task.action === "REVIEW_LAB_RESULTS" || task.category === "lab_results_ready") {
+      return downloadLabReport(task.reportUrl).catch((err) => window.alert(err.message));
+    }
     if (task.action === "RECORD_CONSULT_OUTCOME" || task.category === "needs_outcome") {
       return onRecordOutcome?.(task);
     }
@@ -513,13 +554,14 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     messages: activeTasks.filter((task) => task.category === "message_needs_response").length,
     reissue: activeTasks.filter((task) => task.category === "reissue").length,
     refills: activeTasks.filter((task) => task.category === "refill_review").length,
+    labs: activeTasks.filter((task) => task.category === "lab_results_ready").length,
   }), [activeTasks]);
 
   return (
     <div className="screen clinical-inbox-screen fade-in">
       <Topbar
         title="Clinical Inbox"
-        subtitle="Doctor actions only: prescriptions, re-issues, refill reviews, and patient messages that still need a reply."
+        subtitle="Doctor actions only: prescriptions, lab results, refill reviews, outcomes, and patient replies."
         search={search}
         onSearch={setSearch}
       />
@@ -533,6 +575,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
             <div><span>Needs reply</span><strong>{counts.messages}</strong></div>
             <div><span>Re-issue</span><strong>{counts.reissue}</strong></div>
             <div><span>Refills</span><strong>{counts.refills}</strong></div>
+            <div><span>Lab results</span><strong>{counts.labs}</strong></div>
           </div>
 
           <div className="clinical-inbox-filters">
@@ -586,6 +629,15 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onSaved={() => {
             setOutcomeTask(null);
             setReloadToken((value) => value + 1);
+          }}
+          onPrescribeLabs={() => {
+            const task = outcomeTask;
+            setOutcomeTask(null);
+            if (task?.source === "quickwlp" || task?.source === "quick_wlp") {
+              onPrescribeQuickWlp?.({ ...task, orderMode: "lab" });
+              return;
+            }
+            onPrescribeRx?.({ ...task, orderMode: "lab" });
           }}
         />
       )}

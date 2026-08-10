@@ -136,11 +136,9 @@ function closesConsultPrescriptionTask(outcome) {
 
 function consultationNeedsOutcome(appointment) {
   const consultation = appointment?.workbench?.consultation || {};
-  const prescription = appointment?.workbench?.prescription || {};
   return (
     isCompletedStatus(appointment?.status) &&
-    !consultationOutcome(appointment) &&
-    prescription.status !== "ISSUED"
+    !consultationOutcome(appointment)
   );
 }
 
@@ -372,7 +370,8 @@ function nextStepLabel(appointment) {
 }
 
 function appointmentRowContext(appointment) {
-  return [appointmentContextLabel(appointment), appointment.service].filter(Boolean).join(" · ");
+  const consultationTag = String(appointment.consultationKind || "").toUpperCase() === "LAB_REVIEW" ? "Lab review" : "";
+  return [appointmentContextLabel(appointment), consultationTag, appointment.service].filter(Boolean).join(" · ");
 }
 
 function appointmentRowTime(appointment, selectedDate) {
@@ -530,6 +529,7 @@ function mapAppointment(item) {
     scheduledEndAt: item.scheduled_end_at,
     meetingLink: item.meeting_link,
     trackKey: item.track_key,
+    consultationKind: item.consultation_kind,
     sourceTag: item.source_tag,
     b2bPartnerId: item.b2b_partner_id || "",
     b2bPartnerName: item.b2b_partner_name || "",
@@ -1309,6 +1309,15 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
           onSaved={async () => {
             setOutcomeTarget(null);
             await loadAppointments();
+          }}
+          onPrescribeLabs={() => {
+            const appointment = outcomeTarget;
+            setOutcomeTarget(null);
+            if (appointment?.source === "quickwlp") {
+              onPrescribeQuickWlp?.({ ...appointment, orderMode: "lab" });
+              return;
+            }
+            onPrescribeRx?.({ ...appointment, orderMode: "lab" });
           }}
         />
       )}

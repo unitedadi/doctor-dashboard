@@ -1,9 +1,9 @@
 import * as React from "react";
-import { API_BASE, DOCTOR_ID, NEEDLES_PRODUCT_ID, SUPPLEMENT_SELLER_ID } from "../config.js";
+import { API_BASE, DOCTOR_ID, LAB_CATALOG_API_BASE, LAB_CATALOG_SELLER_ID, NEEDLES_PRODUCT_ID, SUPPLEMENT_SELLER_ID } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
 
 /* global React */
-const { useEffect: useEffectR, useMemo: useMemoR, useState: useStateR } = React;
+const { useEffect: useEffectR, useMemo: useMemoR, useRef: useRefR, useState: useStateR } = React;
 
 const TRACKS = [
   { key: "weight-loss", label: "Weight loss", summary: "Doctor-prescribed weight loss medication with ongoing support." },
@@ -91,6 +91,72 @@ function compactList(value) {
     .map((item) => item.trim())
     .filter(Boolean)
     .join(", ");
+}
+
+function labCatalogNameKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function labProductMetadata(product) {
+  return product?.attributes_json?.lab || {};
+}
+
+function mapDevLabBiomarker(product) {
+  const lab = labProductMetadata(product);
+  return {
+    product_id: product.product_uuid,
+    kind: "BIOMARKER",
+    name: product.seller_offer?.display_name || product.default_name || lab.name || product.product_uuid,
+    price_fils: Number(product.seller_offer?.price_aed_fils || lab.pricing?.price_aed_fils || 0),
+    vat_included: product.vat_included !== false,
+    sample_type: lab.sample_type_display || titleCase(lab.sample_type),
+    tat_hours: toNumber(lab.tat_hours),
+    tat_display: lab.tat_display || "",
+    fasting_required: lab.fasting_required === true,
+    biomarker_name: lab.biomarker_name || lab.name || product.default_name,
+    included_biomarkers: [],
+  };
+}
+
+function mapDevLabPackage(product, biomarkersByName) {
+  const lab = labProductMetadata(product);
+  const rawBiomarkers = Array.isArray(lab.biomarkers_v2) && lab.biomarkers_v2.length
+    ? lab.biomarkers_v2
+    : Array.isArray(lab.biomarkers_full) && lab.biomarkers_full.length
+      ? lab.biomarkers_full
+      : Array.isArray(lab.biomarkers) ? lab.biomarkers : [];
+  const includedBiomarkers = rawBiomarkers.map((entry, index) => {
+    const name = typeof entry === "string" ? entry : entry?.name;
+    const matched = biomarkersByName.get(labCatalogNameKey(name));
+    return {
+      product_id: matched?.product_id || null,
+      name: name || matched?.name || "Biomarker",
+      sort_order: Number((typeof entry === "object" ? entry?.sort_order : null) || index + 1),
+    };
+  });
+  return {
+    product_id: product.product_uuid,
+    kind: "PACKAGE",
+    name: product.seller_offer?.display_name || product.default_name || lab.name || product.product_uuid,
+    price_fils: Number(product.seller_offer?.price_aed_fils || lab.pricing?.price_aed_fils || 0),
+    vat_included: product.vat_included !== false,
+    sample_type: lab.sample_type_display || titleCase(lab.sample_type),
+    tat_hours: toNumber(lab.tat_hours),
+    tat_display: lab.tat_display || "",
+    fasting_required: lab.fasting_required === true,
+    biomarker_name: null,
+    included_biomarkers: includedBiomarkers,
+  };
+}
+
+function labTatLabel(item) {
+  if (item?.tat_display) return item.tat_display;
+  if (!item?.tat_hours) return "TAT not listed";
+  if (item.tat_hours % 24 === 0) {
+    const days = item.tat_hours / 24;
+    return days === 1 ? "Within 1 day" : `Within ${days} days`;
+  }
+  return `Within ${item.tat_hours} hours`;
 }
 
 function formatDateTime(value) {
@@ -555,6 +621,12 @@ function errorCopy(error, payload) {
     quickwlp_request_not_found: "This Quick WLP request is no longer available.",
     quickwlp_prescription_product_not_allowed: "One of the selected products is not allowed for Quick WLP checkout.",
     quickwlp_prescription_product_not_found: "One of the selected products is no longer available in the catalog.",
+    doctor_lab_consultation_not_completed: "Complete the consultation before prescribing lab tests.",
+    doctor_lab_patient_customer_mismatch: "This member is not linked to the selected customer.",
+    doctor_lab_catalog_selection_invalid: "One or more selected lab tests are no longer available.",
+    doctor_lab_product_not_found: "One of the selected lab tests is no longer available. Refresh the catalog and try again.",
+    doctor_lab_request_already_active: "This consultation already has an active lab request.",
+    valid_idempotency_key_required: "Could not safely submit this lab request. Please try again.",
   };
   return copy[error] || error || "Could not issue this prescription.";
 }
@@ -563,8 +635,11 @@ function PrescribeView({
   initialPatientId,
   initialCustomerId,
   initialTrackKey,
+  initialConsultationId,
+  initialConsultationSource,
   initialRefillRequestId,
   initialPrescriptionMode,
+  initialOrderMode,
   initialQuickWlpLeadId,
   initialQuickWlpName,
   initialQuickWlpPhone,
@@ -608,6 +683,19 @@ function PrescribeView({
   const [patientChart, setPatientChart] = useStateR(null);
   const [patientChartLoading, setPatientChartLoading] = useStateR(false);
   const [patientChartError, setPatientChartError] = useStateR("");
+  const [orderMode, setOrderMode] = useStateR(initialOrderMode === "lab" ? "lab" : "medication");
+  const [labPackages, setLabPackages] = useStateR([]);
+  const [labBiomarkers, setLabBiomarkers] = useStateR([]);
+  const [labCatalogView, setLabCatalogView] = useStateR("packages");
+  const [labPackageQuery, setLabPackageQuery] = useStateR("");
+  const [labBiomarkerQuery, setLabBiomarkerQuery] = useStateR("");
+  const [labCatalogLoading, setLabCatalogLoading] = useStateR(false);
+  const [selectedLabPackageId, setSelectedLabPackageId] = useStateR("");
+  const [selectedLabBiomarkerIds, setSelectedLabBiomarkerIds] = useStateR([]);
+  const [labDoctorNote, setLabDoctorNote] = useStateR("");
+  const [labSubmitting, setLabSubmitting] = useStateR(false);
+  const [createdLabRequest, setCreatedLabRequest] = useStateR(null);
+  const labIdempotencyKey = useRefR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
   const quickWlpTrackKey = initialQuickWlpTrackKey === "peptides" ? "peptides" : "weight-loss";
   const quickWlpSellerId = initialQuickWlpSellerId || SUPPLEMENT_SELLER_ID;
@@ -624,7 +712,8 @@ function PrescribeView({
     return {
       key: `quickwlp:${initialQuickWlpLeadId}:${quickWlpTrackKey}`,
       id: initialQuickWlpLeadId,
-      customerId: "",
+      labPatientId: initialPatientId || "",
+      customerId: initialCustomerId || "",
       name,
       initials: patientInitials(name),
       age: null,
@@ -636,9 +725,11 @@ function PrescribeView({
       doctorId: quickWlpDoctorId,
       subscriptionStatus: "Quick Consult",
       latestCompletedAt: null,
+      latestCompletedConsultationId: initialConsultationId || "",
+      labConsultationSource: initialConsultationSource || "QUICKWLP",
       canPrescribe: true,
     };
-  }, [initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode, quickWlpDoctorId, quickWlpTrackKey]);
+  }, [initialConsultationId, initialConsultationSource, initialCustomerId, initialPatientId, initialQuickWlpEmail, initialQuickWlpLeadId, initialQuickWlpName, initialQuickWlpPhone, initialQuickWlpWhatsapp, isQuickWlpMode, quickWlpDoctorId, quickWlpTrackKey]);
 
   const amendmentPatient = useMemoR(() => {
     if (isQuickWlpMode || !isAmendMode || !initialPatientId) return null;
@@ -679,6 +770,10 @@ function PrescribeView({
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
   const productCatalogs = [...TRACKS, SUPPLEMENTS_CATALOG];
   const canPublish = Boolean(cart.length && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
+  const labPatientId = isQuickWlpMode ? patient?.labPatientId : patient?.id;
+  const labConsultationId = initialConsultationId || patient?.latestCompletedConsultationId || "";
+  const labConsultationSource = initialConsultationSource || (isQuickWlpMode ? "QUICKWLP" : "RX");
+  const labContextReady = Boolean(patient && labPatientId && patient.customerId && labConsultationId);
 
   const loadPatients = React.useCallback(async () => {
     if (isQuickWlpMode) {
@@ -739,7 +834,66 @@ function PrescribeView({
     setSelectedProduct(null);
     setInstructions("");
     setQuery("");
-  }, [patient?.key]);
+    setOrderMode(initialOrderMode === "lab" ? "lab" : "medication");
+    setSelectedLabPackageId("");
+    setSelectedLabBiomarkerIds([]);
+    setLabCatalogView("packages");
+    setLabPackageQuery("");
+    setLabBiomarkerQuery("");
+    setLabDoctorNote("");
+    setCreatedLabRequest(null);
+    labIdempotencyKey.current = "";
+  }, [initialOrderMode, patient?.key]);
+
+  useEffectR(() => {
+    if (!patient || orderMode !== "lab") return undefined;
+    let cancelled = false;
+    setLabCatalogLoading(true);
+    setError("");
+    const loadCatalog = async () => {
+      if (!LAB_CATALOG_API_BASE) {
+        const params = new URLSearchParams({ doctor_id: patient.doctorId || DOCTOR_ID, limit: "500", offset: "0" });
+        return fetchJson(`${API_BASE}/doctor/lab/catalog?${params.toString()}`);
+      }
+      const baseParams = {
+        seller_id: LAB_CATALOG_SELLER_ID,
+        view: "full",
+        limit: "500",
+        offset: "0",
+      };
+      const [packagesPayload, biomarkersPayload] = await Promise.all([
+        fetchJson(`${LAB_CATALOG_API_BASE}/verticals/laboratory/products?${new URLSearchParams({ ...baseParams, product_type: "PACKAGE" }).toString()}`),
+        fetchJson(`${LAB_CATALOG_API_BASE}/verticals/laboratory/products?${new URLSearchParams({ ...baseParams, product_type: "ADDON" }).toString()}`),
+      ]);
+      const biomarkers = (Array.isArray(biomarkersPayload.products) ? biomarkersPayload.products : []).map(mapDevLabBiomarker);
+      const biomarkersByName = new Map();
+      for (const biomarker of biomarkers) {
+        biomarkersByName.set(labCatalogNameKey(biomarker.name), biomarker);
+        biomarkersByName.set(labCatalogNameKey(biomarker.biomarker_name), biomarker);
+      }
+      return {
+        packages: (Array.isArray(packagesPayload.products) ? packagesPayload.products : []).map((item) => mapDevLabPackage(item, biomarkersByName)),
+        biomarkers,
+      };
+    };
+    loadCatalog()
+      .then((data) => {
+        if (cancelled) return;
+        setLabPackages(Array.isArray(data.packages) ? data.packages : []);
+        setLabBiomarkers(Array.isArray(data.biomarkers) ? data.biomarkers : []);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLabPackages([]);
+          setLabBiomarkers([]);
+          setError(errorCopy(err.message, err.payload) || "Could not load the lab catalog.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLabCatalogLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [orderMode, patient?.doctorId, patient?.key]);
 
   useEffectR(() => {
     let cancelled = false;
@@ -820,13 +974,13 @@ function PrescribeView({
         if (!cancelled) setProductsLoading(false);
       }
     };
-    if (patient) loadProducts();
+    if (patient && orderMode === "medication") loadProducts();
     else {
       setProducts([]);
       setProductsLoading(false);
     }
     return () => { cancelled = true; };
-  }, [isQuickWlpMode, patient, productCatalogKey, query, quickWlpDoctorId, quickWlpSellerId]);
+  }, [isQuickWlpMode, orderMode, patient, productCatalogKey, query, quickWlpDoctorId, quickWlpSellerId]);
 
   const visibleProducts = useMemoR(() => {
     return products
@@ -972,6 +1126,83 @@ function PrescribeView({
     });
   };
 
+  const selectedLabPackage = labPackages.find((item) => item.product_id === selectedLabPackageId) || null;
+  const visibleLabPackages = useMemoR(() => {
+    const normalized = labCatalogNameKey(labPackageQuery);
+    if (!normalized) return labPackages;
+    return labPackages.filter((item) => {
+      const searchable = [item.name, ...(item.included_biomarkers || []).map((biomarker) => biomarker.name)].join(" ");
+      return labCatalogNameKey(searchable).includes(normalized);
+    });
+  }, [labPackageQuery, labPackages]);
+  const visibleLabBiomarkers = useMemoR(() => {
+    const normalized = labCatalogNameKey(labBiomarkerQuery);
+    if (!normalized) return labBiomarkers;
+    return labBiomarkers.filter((item) => labCatalogNameKey([item.name, item.sample_type].filter(Boolean).join(" ")).includes(normalized));
+  }, [labBiomarkerQuery, labBiomarkers]);
+  const includedLabBiomarkerIds = new Set((selectedLabPackage?.included_biomarkers || []).map((item) => item.product_id));
+  const selectedLabBiomarkers = labBiomarkers.filter((item) => selectedLabBiomarkerIds.includes(item.product_id));
+  const additionalLabBiomarkers = selectedLabBiomarkers.filter((item) => !includedLabBiomarkerIds.has(item.product_id));
+  const labTotalFils = Number(selectedLabPackage?.price_fils || 0)
+    + additionalLabBiomarkers.reduce((sum, item) => sum + Number(item.price_fils || 0), 0);
+  const canSubmitLab = Boolean(
+    labContextReady
+      && (selectedLabPackageId || selectedLabBiomarkerIds.length)
+      && !labSubmitting
+  );
+
+  const resetLabIdempotency = () => {
+    labIdempotencyKey.current = "";
+    setCreatedLabRequest(null);
+  };
+
+  const chooseLabPackage = (productId) => {
+    setSelectedLabPackageId((current) => current === productId ? "" : productId);
+    resetLabIdempotency();
+  };
+
+  const toggleLabBiomarker = (productId) => {
+    setSelectedLabBiomarkerIds((current) => current.includes(productId)
+      ? current.filter((item) => item !== productId)
+      : [...current, productId]);
+    resetLabIdempotency();
+  };
+
+  const submitLabRequest = async () => {
+    if (!patient || !canSubmitLab) return;
+    if (!labIdempotencyKey.current) labIdempotencyKey.current = `doctor-lab:${crypto.randomUUID()}`;
+    setLabSubmitting(true);
+    setError("");
+    setSentToast("");
+    try {
+      const data = await fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(labPatientId)}/lab-requests`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": labIdempotencyKey.current,
+        },
+        body: JSON.stringify({
+          doctor_id: patient.doctorId || DOCTOR_ID,
+          customer_id: patient.customerId,
+          consultation_source: labConsultationSource,
+          consultation_id: labConsultationId,
+          track_key: patient.trackKey,
+          package_product_id: selectedLabPackageId || null,
+          biomarker_product_ids: selectedLabBiomarkerIds,
+          doctor_note: labDoctorNote.trim() || null,
+        }),
+      });
+      setCreatedLabRequest(data);
+      setSentToast(data.replayed ? "Lab request already prescribed" : "Lab tests prescribed");
+      setTimeout(() => setSentToast(""), 2600);
+      if (onSent) onSent();
+    } catch (err) {
+      setError(errorCopy(err.message, err.payload) || "Could not prescribe these lab tests.");
+    } finally {
+      setLabSubmitting(false);
+    }
+  };
+
   const publishPrescription = async () => {
     if (!patient || !cart.length) return;
     setPublishing(true);
@@ -1038,8 +1269,10 @@ function PrescribeView({
   return (
     <>
       <Topbar
-        title={workflowCopy.title}
-        subtitle={workflowCopy.subtitle}
+        title={orderMode === "lab" ? "Prescribe lab tests" : workflowCopy.title}
+        subtitle={orderMode === "lab"
+          ? "Choose a package, individual biomarkers, or both. The customer receives one guided booking link."
+          : workflowCopy.subtitle}
       />
       <div className="rx-layout">
         <div className="rx-main">
@@ -1127,6 +1360,156 @@ function PrescribeView({
 
                 {isAmendMode && <AmendmentOriginalPrescription items={amendItems} />}
 
+                {!isAmendMode && (
+                  <div className="rx-order-mode" aria-label="Prescription type">
+                    <button aria-pressed={orderMode === "medication"} className={orderMode === "medication" ? "active" : ""} onClick={() => setOrderMode("medication")}>Medication & supplements</button>
+                    <button aria-pressed={orderMode === "lab"} className={orderMode === "lab" ? "active" : ""} onClick={() => setOrderMode("lab")}>Lab tests</button>
+                  </div>
+                )}
+
+                {orderMode === "lab" && !isAmendMode ? (
+                  <div className="rx-lab-builder">
+                    <div className="rx-lab-catalog-toggle" aria-label="Lab catalog type">
+                      <span
+                        className="rx-lab-catalog-toggle-indicator"
+                        style={{ transform: `translateX(${labCatalogView === "biomarkers" ? "100%" : "0"})` }}
+                        aria-hidden="true"
+                      />
+                      <button
+                        type="button"
+                        aria-pressed={labCatalogView === "packages"}
+                        className={labCatalogView === "packages" ? "active" : ""}
+                        onClick={() => setLabCatalogView("packages")}
+                      >
+                        <span>Packages</span>
+                        <small>{labPackages.length}</small>
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={labCatalogView === "biomarkers"}
+                        className={labCatalogView === "biomarkers" ? "active" : ""}
+                        onClick={() => setLabCatalogView("biomarkers")}
+                      >
+                        <span>Biomarkers</span>
+                        <small>{labBiomarkers.length}</small>
+                      </button>
+                    </div>
+                    {labCatalogView === "packages" ? (
+                      <>
+                        <div className="section-hdr"><div className="label">Choose a package</div></div>
+                        <p className="rx-lab-help">Choose one package. You can switch to biomarkers and add individual tests too.</p>
+                        <div className="rx-search rx-lab-search">
+                          <span className="rx-search-icon">{I.search}</span>
+                          <input
+                            className="rx-search-input"
+                            value={labPackageQuery}
+                            onChange={(event) => setLabPackageQuery(event.target.value)}
+                            placeholder={`Search ${labPackages.length} packages or included biomarkers`}
+                          />
+                        </div>
+                        {labCatalogLoading ? (
+                          <div className="patient-loading"><div /><div /><div /></div>
+                        ) : visibleLabPackages.length ? (
+                          <div className="rx-lab-options">
+                            {visibleLabPackages.map((item) => (
+                              <React.Fragment key={item.product_id}>
+                                <button
+                                  type="button"
+                                  className={`rx-lab-option${selectedLabPackageId === item.product_id ? " selected" : ""}`}
+                                  aria-pressed={selectedLabPackageId === item.product_id}
+                                  onClick={() => chooseLabPackage(item.product_id)}
+                                >
+                                  <span className="rx-lab-check" aria-hidden="true" />
+                                  <span>
+                                    <strong>{item.name}</strong>
+                                    <em>{[
+                                      `${item.included_biomarkers?.length || 0} biomarkers`,
+                                      item.sample_type || "Sample not listed",
+                                      labTatLabel(item),
+                                      item.fasting_required ? "Fasting required" : "",
+                                    ].filter(Boolean).join(" · ")}</em>
+                                  </span>
+                                  <b>{formatPrice(item.price_fils)}</b>
+                                </button>
+                                {selectedLabPackageId === item.product_id ? (
+                                  <div className="rx-lab-package-detail">
+                                    <div className="rx-lab-package-detail-head">
+                                      <div>
+                                        <strong>{item.name}</strong>
+                                        <span>{[item.sample_type, labTatLabel(item)].filter(Boolean).join(" · ")}</span>
+                                      </div>
+                                      <b>{item.included_biomarkers?.length || 0} biomarkers</b>
+                                    </div>
+                                    <div className="rx-lab-package-biomarkers">
+                                      {(item.included_biomarkers || []).map((biomarker) => (
+                                        <span key={`${biomarker.product_id || biomarker.name}:${biomarker.sort_order || ""}`}>{biomarker.name}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="empty-state rx-product-empty">No matching lab packages.</div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="section-hdr"><div className="label">Add individual biomarkers</div></div>
+                        <p className="rx-lab-help">Choose individual tests. Anything already inside the selected package is counted only once.</p>
+                        <div className="rx-search rx-lab-search">
+                          <span className="rx-search-icon">{I.search}</span>
+                          <input
+                            className="rx-search-input"
+                            value={labBiomarkerQuery}
+                            onChange={(event) => setLabBiomarkerQuery(event.target.value)}
+                            placeholder={`Search ${labBiomarkers.length} biomarkers`}
+                          />
+                        </div>
+                        {labCatalogLoading ? (
+                          <div className="patient-loading"><div /><div /><div /></div>
+                        ) : visibleLabBiomarkers.length ? (
+                          <div className="rx-lab-options rx-lab-biomarkers">
+                            {visibleLabBiomarkers.map((item) => {
+                              const selected = selectedLabBiomarkerIds.includes(item.product_id);
+                              const included = includedLabBiomarkerIds.has(item.product_id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={item.product_id}
+                                  className={`rx-lab-option${selected ? " selected" : ""}`}
+                                  aria-pressed={selected}
+                                  onClick={() => toggleLabBiomarker(item.product_id)}
+                                >
+                                  <span className="rx-lab-check" aria-hidden="true" />
+                                  <span>
+                                    <strong>{item.name}</strong>
+                                    <em>{included ? "Already included in package · no extra charge" : [item.sample_type, labTatLabel(item)].filter(Boolean).join(" · ")}</em>
+                                  </span>
+                                  <b>{included ? "Included" : formatPrice(item.price_fils)}</b>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="empty-state rx-product-empty">No matching biomarkers.</div>
+                        )}
+                      </>
+                    )}
+
+                    <div className="field-block rx-lab-note">
+                      <label htmlFor="rx-lab-doctor-note">Note for the patient and reviewing doctor (optional)</label>
+                      <textarea
+                        id="rx-lab-doctor-note"
+                        value={labDoctorNote}
+                        onChange={(event) => { setLabDoctorNote(event.target.value); resetLabIdempotency(); }}
+                        placeholder="Why these tests are needed or what should be reviewed."
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 <div className="section-hdr"><div className="label">Medication catalog</div></div>
                 <div className="rx-track-tabs rx-product-source-tabs">
                   {productCatalogs.map((catalog) => (
@@ -1175,11 +1558,13 @@ function PrescribeView({
                     <div className="empty-state rx-product-empty">No products found in this catalog.</div>
                   )}
                 </div>
+                  </>
+                )}
               </>
             )}
           </div>
 
-          {patient && selectedProduct && (
+          {patient && orderMode === "medication" && selectedProduct && (
             <div className="rx-selection-tray fade-in" key={selectedProduct.product_id}>
               {(() => {
                 const quantityLimit = productQuantityLimit(selectedProduct, productCatalogKey);
@@ -1256,6 +1641,65 @@ function PrescribeView({
               publishing={publishing}
               I={I}
             />
+          ) : orderMode === "lab" ? (
+            <>
+              <div className="section-hdr"><div className="label">Review lab request</div></div>
+              <div className="rx-review">
+                <div className="rx-review-row"><span>Member</span><strong>{patient?.name || "Choose a patient"}</strong></div>
+                <div className="rx-review-row"><span>Platform</span><strong>{labConsultationSource === "QUICKWLP" ? "Quick WLP" : "Lifestyle Rx"}</strong></div>
+                <div className="rx-review-row"><span>Track</span><strong>{activeTrack.label}</strong></div>
+                <div className="rx-review-row"><span>Package</span><strong>{selectedLabPackage?.name || "None"}</strong></div>
+                <div className="rx-review-row"><span>Extra biomarkers</span><strong>{additionalLabBiomarkers.length}</strong></div>
+                <div className="rx-review-row"><span>Estimated total</span><strong>{selectedLabPackage || selectedLabBiomarkers.length ? formatPrice(labTotalFils) : "Not ready"}</strong></div>
+              </div>
+
+              {!labContextReady && patient ? (
+                <div className="api-state rx-api-state">
+                  This consultation is missing a linked member or completed consultation ID, so a lab request cannot be issued safely.
+                </div>
+              ) : null}
+
+              <div className="rx-cart rx-lab-review-list">
+                {!selectedLabPackage && !selectedLabBiomarkers.length ? (
+                  <div className="empty">Choose a package or biomarker to build the lab request.</div>
+                ) : (
+                  <>
+                    {selectedLabPackage ? (
+                      <div className="rx-cart-item">
+                        <div className="nm">{selectedLabPackage.name}</div>
+                        <div className="rx-cart-meta"><span>Package</span><span>{formatPrice(selectedLabPackage.price_fils)}</span></div>
+                      </div>
+                    ) : null}
+                    {selectedLabBiomarkers.map((item) => (
+                      <div className="rx-cart-item" key={item.product_id}>
+                        <div className="nm">{item.name}</div>
+                        <div className="rx-cart-meta"><span>Biomarker</span><span>{includedLabBiomarkerIds.has(item.product_id) ? "Included" : formatPrice(item.price_fils)}</span></div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+
+              {createdLabRequest ? (
+                <div className="rx-lab-created">
+                  <strong>Lab request created</strong>
+                  <span>Status: {titleCase(createdLabRequest.lab_request?.status)}</span>
+                </div>
+              ) : (
+                <button
+                  className="dd-btn-block"
+                  disabled={!canSubmitLab}
+                  style={{ opacity: canSubmitLab ? 1 : 0.4, cursor: canSubmitLab ? "pointer" : "not-allowed", marginTop: 16 }}
+                  onClick={submitLabRequest}
+                >
+                  {labSubmitting ? "Prescribing..." : "Prescribe lab tests"}
+                </button>
+              )}
+
+              <div className="rx-lab-flow-note">
+                After this, the customer receives the guided booking link. When results arrive, they appear in the Clinical Inbox automatically.
+              </div>
+            </>
           ) : (
             <>
               <div className="section-hdr"><div className="label">{workflowCopy.reviewTitle}</div></div>

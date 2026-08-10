@@ -1,6 +1,6 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
-import { fetchJson } from "../lib/authFetch.js";
+import { authFetch, fetchJson } from "../lib/authFetch.js";
 
 /* global React */
 const { useEffect: useEffectPC, useMemo: useMemoPC, useState: useStatePC } = React;
@@ -39,6 +39,52 @@ function formatDateTime(value) {
     minute: "2-digit",
     timeZone: "Asia/Dubai",
   }).format(date);
+}
+
+async function downloadLabReport(reportUrl) {
+  if (!reportUrl) return;
+  const response = await authFetch(reportUrl.startsWith("http") ? reportUrl : `${API_BASE}${reportUrl}`);
+  if (!response.ok) throw new Error("Could not open the lab report.");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = "lab-results.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+}
+
+function LabRequestsSummary({ requests }) {
+  const items = asArray(requests);
+  if (!items.length) return null;
+  return (
+    <ChartSection title="Lab requests" subtitle="Tests prescribed by the doctor and their current journey state.">
+      <div className="patient-lab-request-list">
+        {items.map((request) => {
+          const selection = request.selection || {};
+          const packageName = selection.package?.name || "Custom lab tests";
+          const biomarkers = asArray(selection.biomarkers).map((item) => item.name).filter(Boolean);
+          return (
+            <article className="patient-lab-request" key={request.lab_request_id}>
+              <div>
+                <strong>{packageName}</strong>
+                <span>{titleCase(request.status)} · {titleCase(request.source_platform)} · {formatDateTime(request.updated_at || request.created_at)}</span>
+                {biomarkers.length ? <p>{biomarkers.join(", ")}</p> : null}
+                {request.doctor_note ? <p>Doctor note: {request.doctor_note}</p> : null}
+              </div>
+              {request.report_url ? (
+                <button type="button" className="btn-ghost" onClick={() => downloadLabReport(request.report_url).catch((err) => window.alert(err.message))}>
+                  Download results
+                </button>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </ChartSection>
+  );
 }
 
 function formatMoneyFils(value) {
@@ -1258,7 +1304,7 @@ function ClinicalProfileModal({ chart, onClose, onSaved }) {
   );
 }
 
-function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSaved }) {
+function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSaved, onPrescribeLabs }) {
   const [outcome, setOutcome] = useStatePC("");
   const [note, setNote] = useStatePC("");
   const [saving, setSaving] = useStatePC(false);
@@ -1311,6 +1357,20 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSave
         </div>
 
         <div className="consult-outcome-options">
+          {onPrescribeLabs ? (
+            <button
+              type="button"
+              className="consult-outcome-option consult-outcome-option-labs"
+              onClick={onPrescribeLabs}
+              disabled={saving}
+            >
+              <div className="consult-outcome-option-title">
+                <strong>Prescribe lab tests</strong>
+                <span className="consult-outcome-new-badge">New</span>
+              </div>
+              <span>Choose a package, individual biomarkers, or both.</span>
+            </button>
+          ) : null}
           {CONSULT_OUTCOME_OPTIONS.map((option) => (
             <button
               type="button"
@@ -1549,6 +1609,19 @@ function PatientChart({
       })
       .catch(() => undefined);
   };
+  const startLabPrescription = () => {
+    setOutcomeTarget(null);
+    onPrescribe?.({
+      patientId: patient.id,
+      customerId: patient.customer_id,
+      trackKey,
+      mode: "issue",
+      orderMode: "lab",
+      consultationId: recordOutcomeAppointmentId,
+      consultationSource: quickConsultChart ? "QUICKWLP" : "RX",
+      chart,
+    });
+  };
   const saveNoteAndRefreshChart = (note) => {
     saveNoteLocally(note);
     refreshChart();
@@ -1664,6 +1737,7 @@ function PatientChart({
           patientName={outcomeTarget?.patientName || patient.name}
           onClose={() => setOutcomeTarget(null)}
           onSaved={refreshChart}
+          onPrescribeLabs={onPrescribe ? startLabPrescription : undefined}
         />
       </div>
     );
@@ -1751,6 +1825,8 @@ function PatientChart({
             </div>
           </ChartSection>
         ) : null}
+
+        <LabRequestsSummary requests={chart.lab_requests} />
 
         <ChartSection title="Prescription lifecycle" subtitle={focusedMode ? "" : "Consult, prescription, payment, delivery, and refill state in one place."} className="patient-lifecycle-section">
           <RxLifecycleStrip steps={lifecycle} />
@@ -1865,6 +1941,7 @@ function PatientChart({
         patientName={outcomeTarget?.patientName || patient.name}
         onClose={() => setOutcomeTarget(null)}
         onSaved={refreshChart}
+        onPrescribeLabs={onPrescribe ? startLabPrescription : undefined}
       />
     </>
   );

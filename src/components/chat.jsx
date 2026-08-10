@@ -893,7 +893,7 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
             lastConsultAt: latestCompletedAt,
           }}
           onOpenPatient={onOpenPatient}
-          onPrescribe={({ patientId: nextPatientId, trackKey, customerId, mode }) => onPrescribe?.(nextPatientId, trackKey, customerId, mode)}
+          onPrescribe={({ patientId: nextPatientId, trackKey, customerId, mode, orderMode, consultationId, consultationSource }) => onPrescribe?.(nextPatientId, trackKey, customerId, mode, orderMode, consultationId, consultationSource)}
           onAmendPrescription={onAmendPrescription}
           onChartLoaded={onPatientFileUpdated}
         />
@@ -1672,7 +1672,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
               setInitialChannelId("");
               setHubLens("all");
             }}
-            onPrescribe={(id, customerId, trackKey, prescriptionMode) => onPrescribe?.(id, trackKey, customerId, prescriptionMode)}
+            onPrescribe={(id, customerId, trackKey, prescriptionMode, orderMode, consultationId, consultationSource) => onPrescribe?.(id, trackKey, customerId, prescriptionMode, orderMode, consultationId, consultationSource)}
             onAmendPrescription={onAmendPrescription}
           />
         </div>

@@ -656,7 +656,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
               focus="patient-hub"
               context={{ prescribable: p.prescribe }}
               onMessage={(id, customerId) => onMessage?.(id || p.id, customerId || p.customerId)}
-              onPrescribe={({ patientId, customerId, trackKey, mode }) => onPrescribe?.(patientId, customerId, trackKey, mode)}
+              onPrescribe={({ patientId, customerId, trackKey, mode, orderMode, consultationId, consultationSource }) => onPrescribe?.(patientId, customerId, trackKey, mode, orderMode, consultationId, consultationSource)}
               onAmendPrescription={onAmendPrescription}
             />
           ) : p ? (

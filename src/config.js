@@ -1,4 +1,6 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV ? "/api" : "");
+export const LAB_CATALOG_API_BASE = import.meta.env.VITE_LAB_CATALOG_API_BASE || "";
+export const LAB_CATALOG_SELLER_ID = import.meta.env.VITE_LAB_CATALOG_SELLER_ID || "seller_655656ac86b8";
 export const CLERK_PUBLISHABLE_KEY =
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ||
   import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
