@@ -19,6 +19,7 @@ function previewInbox() {
   const patient = (patient_id, name, age, gender) => ({ patient_id, name, age, gender });
   const base = {
     assigned_doctor_id: DOCTOR_ID,
+    owner: { doctor_id: DOCTOR_ID, name: "Dr. Sami", email: "dr.sami@dardoc.com" },
     assigned_at: isoOffset(-45),
     track_key: "weight-loss",
     created_at: isoOffset(-45),
@@ -149,7 +150,8 @@ function clockLabel(item, now) {
   return `Acknowledge in ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function statusCopy(item) {
+function statusCopy(item, readOnly = false) {
+  if (item.attention_state === "FINAL_ESCALATION" && readOnly) return `This urgent task missed both acknowledgement clocks. It remains assigned to ${item.owner?.name || "the original clinician"}.`;
   if (item.attention_state === "FINAL_ESCALATION") return "This urgent task missed both acknowledgement clocks. It remains assigned to you until another clinician explicitly takes ownership.";
   if (item.attention_state === "ESCALATED" || item.attention_state === "OVERDUE") return "The first acknowledgement clock expired. TrueSight raised its visibility without telling the patient that a doctor reviewed it.";
   if (item.status === "ACKNOWLEDGED") return "You opened this task. The patient is not told it was reviewed until you mark it reviewed.";
@@ -176,7 +178,7 @@ function TrueSightRow({ item, selected, now, onSelect }) {
   );
 }
 
-function TrueSightDetail({ item, now, actionPending, onTransition, onOpenChat }) {
+function TrueSightDetail({ item, now, actionPending, onTransition, onOpenChat, readOnly }) {
   const { Avatar } = window.DD_UI;
   if (!item) {
     return <aside className="ts-inbox-detail ts-inbox-detail-empty"><strong>No task selected</strong><p>Select a TrueSight task to review its provenance, clock and next action.</p></aside>;
@@ -197,9 +199,9 @@ function TrueSightDetail({ item, now, actionPending, onTransition, onOpenChat })
 
       <div className={`ts-clock-card ${item.overdue ? "overdue" : ""}`}>
         <div><span>{item.attention_state.replaceAll("_", " ")}</span><strong>{clockLabel(item, now)}</strong></div>
-        <p>{statusCopy(item)}</p>
+        <p>{statusCopy(item, readOnly)}</p>
         <dl>
-          <div><dt>Owner</dt><dd>{window.DD_DATA.DOCTOR.name}</dd></div>
+          <div><dt>Owner</dt><dd>{item.owner?.name || window.DD_DATA.DOCTOR.name}</dd></div>
           <div><dt>Assigned</dt><dd>{formatTime(item.assigned_at)}</dd></div>
           <div><dt>Escalations</dt><dd>{item.escalation_count || 0}</dd></div>
         </dl>
@@ -221,9 +223,10 @@ function TrueSightDetail({ item, now, actionPending, onTransition, onOpenChat })
       </div>
 
       <div className="ts-detail-actions">
-        {canAcknowledge ? <button className="ts-primary" disabled={actionPending} onClick={() => onTransition(item, "ACKNOWLEDGED")}>{actionPending ? "Saving" : "Acknowledge"}</button> : null}
-        {canReview ? <button className="ts-primary" disabled={actionPending} onClick={() => onTransition(item, "REVIEWED")}>Mark reviewed</button> : null}
-        {canResolve ? <button className="ts-secondary" disabled={actionPending} onClick={() => onTransition(item, "RESOLVED")}>Resolve task</button> : null}
+        {readOnly ? <p className="ts-escalation-owner-note">Assigned to {item.owner?.name || "the original clinician"}. Clinical administrators can see the missed clock without silently taking over clinical ownership.</p> : null}
+        {!readOnly && canAcknowledge ? <button className="ts-primary" disabled={actionPending} onClick={() => onTransition(item, "ACKNOWLEDGED")}>{actionPending ? "Saving" : "Acknowledge"}</button> : null}
+        {!readOnly && canReview ? <button className="ts-primary" disabled={actionPending} onClick={() => onTransition(item, "REVIEWED")}>Mark reviewed</button> : null}
+        {!readOnly && canResolve ? <button className="ts-secondary" disabled={actionPending} onClick={() => onTransition(item, "RESOLVED")}>Resolve task</button> : null}
         <button className="ts-secondary" onClick={() => onOpenChat(item)}>Open patient chat</button>
       </div>
     </aside>
@@ -234,31 +237,40 @@ function TrueSightInboxView({ onCountChange, onOpenChat }) {
   const { Topbar } = window.DD_UI;
   const [payload, setPayload] = useState(null);
   const [state, setState] = useState("OPEN");
+  const [scope, setScope] = useState("ASSIGNED");
   const [urgency, setUrgency] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionPending, setActionPending] = useState("");
   const [now, setNow] = useState(Date.now());
+  const [canViewEscalations, setCanViewEscalations] = useState(false);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
     try {
-      const params = new URLSearchParams({ doctor_id: DOCTOR_ID, state, limit: "100" });
-      if (urgency) params.set("urgency", urgency);
-      const next = await fetchJson(`${API_BASE}/doctor/truesight/inbox?${params.toString()}`);
+      const params = scope === "ESCALATIONS"
+        ? new URLSearchParams({ limit: "100" })
+        : new URLSearchParams({ doctor_id: DOCTOR_ID, state, limit: "100" });
+      if (urgency && scope === "ASSIGNED") params.set("urgency", urgency);
+      const endpoint = scope === "ESCALATIONS" ? "escalations" : "inbox";
+      const next = await fetchJson(`${API_BASE}/doctor/truesight/${endpoint}?${params.toString()}`);
       setPayload(next);
+      setCanViewEscalations(Boolean(next.capabilities?.can_view_escalations));
       setError("");
       setSelectedId((current) => next.items?.some((item) => item.handoff_id === current) ? current : next.items?.[0]?.handoff_id || "");
       onCountChange?.(next.summary?.open ?? null);
     } catch (requestError) {
       if (import.meta.env.VITE_SKIP_CLERK === "1" || import.meta.env.VITE_SKIP_CLERK === "true") {
         const preview = previewInbox();
-        const previewItems = preview.items.filter((item) =>
-          (state === "OPEN" ? item.status === "DELIVERED" : item.status === state) &&
-          (!urgency || item.urgency === urgency)
-        );
-        setPayload({ ...preview, items: previewItems });
+        const previewItems = scope === "ESCALATIONS"
+          ? preview.items.filter((item) => item.escalation_count > 0 && item.status === "DELIVERED")
+          : preview.items.filter((item) =>
+            (state === "OPEN" ? item.status === "DELIVERED" : item.status === state) &&
+            (!urgency || item.urgency === urgency)
+          );
+        setPayload({ ...preview, items: previewItems, read_only: scope === "ESCALATIONS" });
+        setCanViewEscalations(true);
         setSelectedId((current) => previewItems.some((item) => item.handoff_id === current) ? current : previewItems[0]?.handoff_id || "");
         setError("local-preview");
         onCountChange?.(preview.summary.open);
@@ -269,7 +281,7 @@ function TrueSightInboxView({ onCountChange, onOpenChat }) {
     } finally {
       setLoading(false);
     }
-  }, [onCountChange, state, urgency]);
+  }, [onCountChange, scope, state, urgency]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -340,18 +352,22 @@ function TrueSightInboxView({ onCountChange, onOpenChat }) {
         <div><span>Acknowledged</span><strong>{summary.acknowledged ?? "·"}</strong></div>
         <div><span>Reviewed</span><strong>{summary.reviewed ?? "·"}</strong></div>
       </div>
-      {error === "local-preview" ? <div className="ts-preview-note">Local preview. Production loads only tasks assigned to the signed-in clinician.</div> : error ? <div className="clinical-inbox-warning">{error}</div> : null}
+      {error === "local-preview" ? <div className="ts-preview-note">{scope === "ESCALATIONS" ? "Local preview of the clinical-admin escalation queue." : "Local preview. Production loads only tasks assigned to the signed-in clinician."}</div> : error ? <div className="clinical-inbox-warning">{error}</div> : null}
       <div className="ts-inbox-toolbar">
+        {canViewEscalations ? <div className="ts-scope-switch" aria-label="TrueSight inbox scope">
+          <button className={scope === "ASSIGNED" ? "active" : ""} onClick={() => setScope("ASSIGNED")}>Assigned</button>
+          <button className={scope === "ESCALATIONS" ? "active" : ""} onClick={() => setScope("ESCALATIONS")}>Escalations</button>
+        </div> : null}
         <div>{FILTERS.map((filter) => <button key={filter.key} className={state === filter.key ? "active" : ""} onClick={() => setState(filter.key)}>{filter.label}</button>)}</div>
-        <select value={urgency} onChange={(event) => setUrgency(event.target.value)} aria-label="Filter by urgency">
+        {scope === "ASSIGNED" ? <select value={urgency} onChange={(event) => setUrgency(event.target.value)} aria-label="Filter by urgency">
           <option value="">All urgency</option><option value="URGENT">Urgent</option><option value="PRIORITY">Priority</option><option value="ROUTINE">Routine</option>
-        </select>
+        </select> : <span className="ts-escalation-label">Missed acknowledgement clocks across all clinicians</span>}
       </div>
       <div className="ts-inbox-layout">
         <div className="ts-inbox-list">
           {loading && !payload ? <div className="clinical-inbox-empty">Loading assigned tasks...</div> : items.length ? items.map((item) => <TrueSightRow key={item.handoff_id} item={item} selected={selected?.handoff_id === item.handoff_id} now={now} onSelect={setSelectedId} />) : <div className="clinical-inbox-empty">No TrueSight tasks in this view.</div>}
         </div>
-        <TrueSightDetail item={selected} now={now} actionPending={Boolean(actionPending)} onTransition={transition} onOpenChat={onOpenChat} />
+        <TrueSightDetail item={selected} now={now} actionPending={Boolean(actionPending)} onTransition={transition} onOpenChat={onOpenChat} readOnly={Boolean(payload?.read_only)} />
       </div>
     </div>
   );
