@@ -181,11 +181,42 @@ body {
 .sidebar-doctor {
   margin-top: auto;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   padding: 12px 8px;
   border-top: 1px solid var(--dd-divider);
 }
+.sidebar-doctor-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.doctor-alert-toggle {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 8px;
+  background: rgba(254,249,239,0.72);
+  color: var(--dd-accent);
+  font: 500 12px/1 var(--dd-font);
+  cursor: pointer;
+}
+.doctor-alert-toggle:hover:not(:disabled) { background: var(--dd-bg); }
+.doctor-alert-toggle.active {
+  background: rgba(23,59,61,0.08);
+  border-color: rgba(23,59,61,0.16);
+}
+.doctor-alert-toggle:disabled {
+  cursor: default;
+  color: var(--dd-text-tertiary);
+  opacity: 0.72;
+}
+.doctor-alert-toggle svg { flex-shrink: 0; }
 .avatar {
   width: 36px; height: 36px;
   border-radius: 999px;

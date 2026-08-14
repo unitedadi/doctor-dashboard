@@ -1,6 +1,8 @@
 import * as React from "react";
 import {
   BookOpenCheck,
+  Bell,
+  BellOff,
   CalendarCheck2,
   Check,
   CheckCheck,
@@ -81,6 +83,8 @@ const I = {
   stethoscope: L(Stethoscope),
   shield: L(BookOpenCheck),
   shieldCheck: L(ShieldCheck),
+  bell: L(Bell),
+  bellOff: L(BellOff),
   drop: L(Droplet),
   dot: <Circle size={12} fill="currentColor" strokeWidth={0} />,
 };
@@ -114,7 +118,17 @@ function Avatar({ initials, name, size = "md", online }) {
 // ============================================================
 // Sidebar
 // ============================================================
-function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, unreadChats }) {
+function Sidebar({
+  active,
+  onNav,
+  appointmentCount,
+  clinicalInboxCount,
+  unreadChats,
+  notificationState,
+  notificationLabel,
+  notificationDisabled,
+  onToggleNotification,
+}) {
   const items = [
     { id: "appointments", label: "Schedule", icon: I.calendar, count: appointmentCount },
     { id: "clinical-inbox", label: "Clinical Inbox", icon: I.shieldCheck, count: clinicalInboxCount, urgent: true },
@@ -141,11 +155,23 @@ function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, unreadCh
       ))}
 
       <div className="sidebar-doctor">
-        <Avatar initials={D.initials} name={D.name} size="md" />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ font: "500 13px/1.2 var(--dd-font)", color: "var(--dd-text-primary)" }}>{D.name}</div>
-          <div style={{ font: "400 11px/1.3 var(--dd-font)", color: "var(--dd-text-secondary)", marginTop: 2 }}>{D.title}</div>
+        <div className="sidebar-doctor-profile">
+          <Avatar initials={D.initials} name={D.name} size="md" />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ font: "500 13px/1.2 var(--dd-font)", color: "var(--dd-text-primary)" }}>{D.name}</div>
+            <div style={{ font: "400 11px/1.3 var(--dd-font)", color: "var(--dd-text-secondary)", marginTop: 2 }}>{D.title}</div>
+          </div>
         </div>
+        <button
+          type="button"
+          className={"doctor-alert-toggle" + (notificationState === "on" ? " active" : "")}
+          disabled={notificationDisabled}
+          onClick={onToggleNotification}
+          title={notificationState === "blocked" ? "Allow notifications in your browser settings" : notificationLabel}
+        >
+          {notificationState === "blocked" ? I.bellOff : I.bell}
+          <span>{notificationLabel}</span>
+        </button>
       </div>
     </aside>
   );
