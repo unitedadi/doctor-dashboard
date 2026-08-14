@@ -7331,6 +7331,466 @@ body {
 }
 
 /* ============================================================
+   TrueSight clinician operating inbox
+   ============================================================ */
+.ts-inbox-screen {
+  min-height: 100%;
+  padding-bottom: 28px;
+}
+
+.ts-inbox-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ts-inbox-summary > div {
+  min-height: 76px;
+  padding: 14px 16px;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.46);
+}
+
+.ts-inbox-summary span {
+  display: block;
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.2 var(--dd-font);
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+}
+
+.ts-inbox-summary strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--dd-accent);
+  font: 500 25px/1 var(--dd-font);
+}
+
+.ts-inbox-summary .urgent {
+  background: rgba(156,54,35,0.08);
+  border-color: rgba(156,54,35,0.14);
+}
+
+.ts-inbox-summary .urgent strong,
+.ts-inbox-summary .overdue strong {
+  color: #8E3526;
+}
+
+.ts-inbox-summary .overdue {
+  background: rgba(205,132,46,0.09);
+  border-color: rgba(205,132,46,0.16);
+}
+
+.ts-preview-note {
+  margin: -2px 0 12px;
+  color: rgba(23,59,61,0.48);
+  font: 400 11px/1.4 var(--dd-font);
+}
+
+.ts-inbox-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.ts-inbox-toolbar > div {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+}
+
+.ts-inbox-toolbar button,
+.ts-inbox-toolbar select {
+  height: 34px;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.42);
+  color: rgba(23,59,61,0.58);
+  font: 400 12px/1 var(--dd-font);
+}
+
+.ts-inbox-toolbar button {
+  min-width: 72px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.ts-inbox-toolbar button.active {
+  background: var(--dd-accent);
+  border-color: var(--dd-accent);
+  color: white;
+}
+
+.ts-inbox-toolbar select {
+  min-width: 132px;
+  padding: 0 14px;
+}
+
+.ts-inbox-layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.84fr) minmax(480px, 1.16fr);
+  gap: 16px;
+  height: calc(100vh - 254px);
+  min-height: 620px;
+}
+
+.ts-inbox-list,
+.ts-inbox-detail {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 12px;
+  background: rgba(254,249,239,0.94);
+}
+
+.ts-inbox-list {
+  padding: 7px;
+}
+
+.ts-inbox-row {
+  position: relative;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  margin: 0 0 5px;
+  padding: 14px 13px 14px 16px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ts-inbox-row:hover {
+  background: rgba(247,238,224,0.54);
+}
+
+.ts-inbox-row.selected {
+  border-color: rgba(23,59,61,0.11);
+  background: rgba(247,238,224,0.78);
+}
+
+.ts-inbox-rail {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 4px;
+  border-radius: 0 5px 5px 0;
+  background: rgba(23,59,61,0.18);
+}
+
+.ts-inbox-row.priority .ts-inbox-rail {
+  background: #D28A39;
+}
+
+.ts-inbox-row.urgent .ts-inbox-rail {
+  background: #9C3623;
+}
+
+.ts-inbox-row-copy {
+  min-width: 0;
+}
+
+.ts-inbox-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.ts-inbox-row-top strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dd-accent);
+  font: 500 14px/1.25 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ts-inbox-row-top em {
+  flex: 0 0 auto;
+  color: #8E3526;
+  font: 500 10px/1.2 var(--dd-font);
+  font-style: normal;
+}
+
+.ts-inbox-row-copy b {
+  display: -webkit-box;
+  margin-top: 7px;
+  overflow: hidden;
+  color: rgba(23,59,61,0.72);
+  font: 400 12px/1.42 var(--dd-font);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ts-inbox-row-copy small {
+  display: block;
+  margin-top: 8px;
+  color: var(--dd-text-tertiary);
+  font: 400 11px/1.35 var(--dd-font);
+}
+
+.ts-inbox-detail {
+  padding: 22px;
+}
+
+.ts-inbox-detail.final {
+  border-color: rgba(156,54,35,0.22);
+  box-shadow: inset 4px 0 0 #9C3623;
+}
+
+.ts-inbox-detail-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.ts-inbox-detail-empty strong {
+  font: 500 17px/1.25 var(--dd-font);
+}
+
+.ts-inbox-detail-empty p {
+  max-width: 330px;
+  color: var(--dd-text-secondary);
+  font: 400 13px/1.5 var(--dd-font);
+}
+
+.ts-detail-patient {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(23,59,61,0.08);
+}
+
+.ts-detail-patient h2 {
+  margin: 0;
+  color: var(--dd-accent);
+  font: 500 20px/1.2 var(--dd-font);
+}
+
+.ts-detail-patient p {
+  margin: 5px 0 0;
+  color: var(--dd-text-tertiary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+
+.ts-urgency {
+  padding: 6px 9px;
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 999px;
+  color: var(--dd-text-secondary);
+  font: 500 10px/1 var(--dd-font);
+  letter-spacing: .5px;
+}
+
+.ts-urgency.priority {
+  color: #80500E;
+  border-color: rgba(205,132,46,0.23);
+  background: rgba(205,132,46,0.10);
+}
+
+.ts-urgency.urgent {
+  color: #8E3526;
+  border-color: rgba(156,54,35,0.22);
+  background: rgba(156,54,35,0.08);
+}
+
+.ts-clock-card {
+  margin: 17px 0;
+  padding: 14px;
+  border: 1px solid rgba(23,59,61,0.09);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.48);
+}
+
+.ts-clock-card.overdue {
+  border-color: rgba(156,54,35,0.16);
+  background: rgba(156,54,35,0.055);
+}
+
+.ts-clock-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ts-clock-card span,
+.ts-report > span,
+.ts-provenance span {
+  color: var(--dd-text-tertiary);
+  font: 400 10px/1.2 var(--dd-font);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+}
+
+.ts-clock-card > div:first-child strong {
+  color: #8E3526;
+  font: 500 12px/1.2 var(--dd-font);
+}
+
+.ts-clock-card > p {
+  margin: 10px 0 12px;
+  color: rgba(23,59,61,0.64);
+  font: 400 12px/1.48 var(--dd-font);
+}
+
+.ts-clock-card dl {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr .7fr;
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 7px;
+  background: rgba(23,59,61,0.07);
+}
+
+.ts-clock-card dl div {
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(254,249,239,0.94);
+}
+
+.ts-clock-card dt {
+  color: var(--dd-text-tertiary);
+  font: 400 10px/1.2 var(--dd-font);
+}
+
+.ts-clock-card dd {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--dd-accent);
+  font: 500 11px/1.35 var(--dd-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ts-report {
+  padding: 17px;
+  border: 1px solid rgba(23,59,61,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.42);
+}
+
+.ts-report h3 {
+  margin: 8px 0 16px;
+  color: var(--dd-accent);
+  font: 500 18px/1.3 var(--dd-font);
+}
+
+.ts-report > div {
+  padding: 12px 0;
+  border-top: 1px solid rgba(23,59,61,0.07);
+}
+
+.ts-report > div strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--dd-accent);
+  font: 500 12px/1.3 var(--dd-font);
+}
+
+.ts-report p,
+.ts-report li {
+  color: rgba(23,59,61,0.62);
+  font: 400 12px/1.55 var(--dd-font);
+}
+
+.ts-report p {
+  margin: 0;
+}
+
+.ts-report ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.ts-provenance {
+  margin: 13px 0;
+  padding: 13px 14px;
+  border-radius: 9px;
+  background: rgba(247,238,224,0.54);
+}
+
+.ts-provenance strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--dd-accent);
+  font: 500 12px/1.3 var(--dd-font);
+}
+
+.ts-provenance p {
+  margin: 5px 0 0;
+  color: var(--dd-text-secondary);
+  font: 400 11px/1.45 var(--dd-font);
+}
+
+.ts-detail-actions {
+  position: sticky;
+  bottom: -22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 -22px -22px;
+  padding: 14px 22px 22px;
+  border-top: 1px solid rgba(23,59,61,0.08);
+  background: rgba(254,249,239,0.96);
+  backdrop-filter: blur(10px);
+}
+
+.ts-detail-actions button {
+  min-height: 40px;
+  border-radius: 8px;
+  font: 500 12px/1 var(--dd-font);
+  cursor: pointer;
+}
+
+.ts-primary {
+  border: 1px solid var(--dd-accent);
+  background: var(--dd-accent);
+  color: white;
+}
+
+.ts-secondary {
+  border: 1px solid rgba(23,59,61,0.12);
+  background: transparent;
+  color: var(--dd-accent);
+}
+
+.ts-detail-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+}
+
+@media (max-width: 1120px) {
+  .ts-inbox-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ts-inbox-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .ts-inbox-list,
+  .ts-inbox-detail {
+    max-height: none;
+  }
+}
+
+/* ============================================================
    Patient Hub responsive density
    ============================================================ */
 @media (max-width: 1380px) {

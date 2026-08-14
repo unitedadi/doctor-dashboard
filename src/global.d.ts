@@ -20,6 +20,7 @@ declare global {
     }
     DD_PatientChart: ComponentType<Record<string, unknown>>
     DD_ClinicalInboxView: ComponentType<Record<string, unknown>>
+    DD_TrueSightInboxView: ComponentType<Record<string, unknown>>
     DD_AppointmentsView: ComponentType<Record<string, unknown>>
     DD_PatientsView: ComponentType<Record<string, unknown>>
     DD_ChatView: ComponentType<Record<string, unknown>>

@@ -4,6 +4,7 @@ import './data.js'
 import './components/shell.jsx'
 import './components/patientChart.jsx'
 import './components/clinicalInbox.jsx'
+import './components/truesightInbox.jsx'
 import './components/appointments.jsx'
 import './components/patients.jsx'
 import './components/chat.jsx'
@@ -24,6 +25,12 @@ type ChatTokenPayload = {
   user?: {
     name?: string
   }
+}
+
+type TrueSightChatTask = {
+  patient_id?: string
+  customer_id?: string
+  channel_id?: string
 }
 
 function dubaiToday() {
@@ -48,10 +55,12 @@ function App() {
   const [routeContext, setRouteContext] = useState<Record<string, string>>({})
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
+  const [trueSightInboxCount, setTrueSightInboxCount] = useState<number | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
 
   const Sidebar = window.DD_UI.Sidebar
   const ClinicalInboxView = window.DD_ClinicalInboxView
+  const TrueSightInboxView = window.DD_TrueSightInboxView
   const AppointmentsView = window.DD_AppointmentsView
   const PatientsView = window.DD_PatientsView
   const ChatView = window.DD_ChatView
@@ -151,9 +160,21 @@ function App() {
         onNav={(id: string) => go(id)}
         appointmentCount={appointmentCount}
         clinicalInboxCount={clinicalInboxCount}
+        trueSightInboxCount={trueSightInboxCount}
         unreadChats={unreadChats}
       />
       <main className="main">
+        {route === 'truesight-inbox' && (
+          <TrueSightInboxView
+            onCountChange={setTrueSightInboxCount}
+            onOpenChat={(task: TrueSightChatTask) => go('patient-hub', {
+              patientId: task?.patient_id || '',
+              customerId: task?.customer_id || '',
+              channelId: task?.channel_id || '',
+              hubMode: 'all',
+            })}
+          />
+        )}
         {route === 'clinical-inbox' && (
           <ClinicalInboxView
             onCountChange={setClinicalInboxCount}

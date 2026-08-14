@@ -12,6 +12,7 @@ import {
   Droplet,
   FlaskConical,
   House,
+  Eye,
   ListFilter,
   MapPin,
   MessageSquareText,
@@ -81,6 +82,7 @@ const I = {
   stethoscope: L(Stethoscope),
   shield: L(BookOpenCheck),
   shieldCheck: L(ShieldCheck),
+  eye: L(Eye),
   drop: L(Droplet),
   dot: <Circle size={12} fill="currentColor" strokeWidth={0} />,
 };
@@ -114,10 +116,11 @@ function Avatar({ initials, name, size = "md", online }) {
 // ============================================================
 // Sidebar
 // ============================================================
-function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, unreadChats }) {
+function Sidebar({ active, onNav, appointmentCount, clinicalInboxCount, trueSightInboxCount, unreadChats }) {
   const items = [
     { id: "appointments", label: "Schedule", icon: I.calendar, count: appointmentCount },
     { id: "clinical-inbox", label: "Clinical Inbox", icon: I.shieldCheck, count: clinicalInboxCount, urgent: true },
+    { id: "truesight-inbox", label: "TrueSight", icon: I.eye, count: trueSightInboxCount, urgent: true },
     { id: "patient-hub", label: "Patient Hub", icon: I.message, count: unreadChats },
   ];
   const D = window.DD_DATA.DOCTOR;

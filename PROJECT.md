@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-08-14 - TrueSight clinician operating inbox
+
+- Source: launch-hardening request to make care-team ownership, acknowledgement clocks, and escalations operational before shadow mode.
+- Added a dedicated TrueSight Inbox backed by `/doctor/truesight/inbox`, with assigned-clinician visibility, live acknowledgement clocks, escalation state, evidence-aware clinical briefs, status transitions, and patient-chat routing.
+- Verification: `npm run build` passed; local skip-Clerk browser proof rendered urgent, overdue, and routine tasks and verified that acknowledgement removes the task from the open queue. Full lint remains blocked only by the pre-existing `App.tsx` and `main.tsx` findings recorded by the project.
+- Follow-up: deploy only after the matching backend migrations and authenticated TrueSight inbox endpoints are live; do not begin patient shadow mode until the clinical team has confirmed ownership and acknowledgement staffing.
+
 ### 2026-07-01 13:24 +04 - Medication fulfillment state rendering
 
 - Source: Keswin reported Marwa Doctor Dashboard showed a cancelled/pending-payment Rx patient as paid awaiting delivery while Ops Portal did not list the patient in Rx Programs or Pharmacy Ops.
