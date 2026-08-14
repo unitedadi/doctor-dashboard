@@ -720,7 +720,7 @@ function ClinicalStateStrip({ context, canPrescribe }) {
   );
 }
 
-function ClinicalChatHeader({ channel, context, contextLoading, contextError, fallbackPatient, prescribablePatient, onPrescribe, onToggleRail }) {
+function ClinicalChatHeader({ channel, context, contextLoading, contextError, fallbackPatient, prescribablePatient, responseTask, responseTaskError, responseTaskSaving, onNoReplyNeeded, onPrescribe, onToggleRail }) {
   const patient = chatContextPatient(context, fallbackPatient);
   const latestCompletedAt = formatContextDateTime(context?.rx?.latest_completed_at);
   const meta = compactPatientSubtitle(patient);
@@ -743,11 +743,24 @@ function ClinicalChatHeader({ channel, context, contextLoading, contextError, fa
           <span>{canPrescribe ? "Prescription ready" : disabledReasonCopy(context?.rx?.can_prescribe_reason)}</span>
         </div>
       </div>
-      {onToggleRail ? (
-        <button type="button" className="clinical-rail-toggle btn-ghost" onClick={onToggleRail}>
-          Clinical file
-        </button>
-      ) : null}
+      <div className="clinical-chat-actions">
+        {responseTaskError ? <span className="clinical-chat-resolution-error" role="alert">{responseTaskError}</span> : null}
+        {responseTask?.stream_message_id && responseTask?.no_reply_needed?.endpoint ? (
+          <button
+            type="button"
+            className="btn-ghost clinical-chat-no-reply"
+            disabled={responseTaskSaving}
+            onClick={onNoReplyNeeded}
+          >
+            {responseTaskSaving ? "Clearing..." : "No reply needed"}
+          </button>
+        ) : null}
+        {onToggleRail ? (
+          <button type="button" className="clinical-rail-toggle btn-ghost" onClick={onToggleRail}>
+            Clinical file
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1107,9 +1120,10 @@ function ClinicalContextPanel({ channel, context, contextLoading, fallbackPatien
   );
 }
 
-function StreamConversation({ directChannel, compact = false, onOpenPatient, onPrescribe, onAmendPrescription, patientDirectory, prescribableDirectory }) {
+function StreamConversation({ directChannel, compact = false, directResponseTask, responseTaskByChannel, onResponseTaskResolved, onOpenPatient, onPrescribe, onAmendPrescription, patientDirectory, prescribableDirectory }) {
   const { channel: activeChannel, client } = useChatContext("StreamConversation");
   const channel = directChannel || activeChannel;
+  const responseTask = directResponseTask || responseTaskByChannel?.get(String(channel?.id || "")) || null;
   const fallbackPatient = channelPatient(channel, client.userID, patientDirectory);
   const directoryPrescribablePatient = findChannelPatient(channel, client.userID, prescribableDirectory);
   const [activePrescribablePatient, setActivePrescribablePatient] = useStateC(null);
@@ -1119,6 +1133,8 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
   const [patientFile, setPatientFile] = useStateC(null);
   const [patientFileLoading, setPatientFileLoading] = useStateC(false);
   const [railOpen, setRailOpen] = useStateC(false);
+  const [responseTaskSaving, setResponseTaskSaving] = useStateC(false);
+  const [responseTaskError, setResponseTaskError] = useStateC("");
 
   const prescribablePatient = activePrescribablePatient || directoryPrescribablePatient;
   const patientFileId = channelContext?.patient?.id || fallbackPatient?.id || channel?.data?.patient_id || channel?.data?.patientId || "";
@@ -1205,7 +1221,45 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
 
   useEffectC(() => {
     setRailOpen(false);
-  }, [channel?.id]);
+    setResponseTaskSaving(false);
+    setResponseTaskError("");
+  }, [channel?.id, responseTask?.stream_message_id]);
+
+  const markNoReplyNeeded = async () => {
+    if (!channel?.id || !responseTask?.stream_message_id || responseTaskSaving) return;
+    const confirmed = window.confirm(
+      "Clear this conversation from Needs reply? It will return automatically when the patient sends another message."
+    );
+    if (!confirmed) return;
+
+    setResponseTaskSaving(true);
+    setResponseTaskError("");
+    try {
+      const endpoint = responseTask.no_reply_needed?.endpoint;
+      if (!endpoint) return;
+      await fetchJson(`${API_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          doctor_id: DOCTOR_ID,
+          stream_message_id: responseTask.stream_message_id,
+        }),
+      });
+      if (typeof channel.markRead === "function") {
+        await channel.markRead().catch(() => {});
+      }
+      onResponseTaskResolved?.(channel.id, true);
+    } catch (err) {
+      setResponseTaskError(
+        err?.status === 409
+          ? "A newer message arrived. Needs reply has been refreshed."
+          : "Could not clear this conversation. Please try again."
+      );
+      onResponseTaskResolved?.(channel.id, false);
+    } finally {
+      setResponseTaskSaving(false);
+    }
+  };
 
   if (!channel) return <EmptyChatPanel />;
 
@@ -1223,6 +1277,10 @@ function StreamConversation({ directChannel, compact = false, onOpenPatient, onP
                     contextError={contextError}
                     contextLoading={contextLoading}
                     fallbackPatient={fallbackPatient}
+                    responseTask={responseTask}
+                    responseTaskError={responseTaskError}
+                    responseTaskSaving={responseTaskSaving}
+                    onNoReplyNeeded={markNoReplyNeeded}
                     onOpenPatient={onOpenPatient}
                     onPrescribe={onPrescribe}
                     onToggleRail={() => setRailOpen((value) => !value)}
@@ -1474,7 +1532,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
   const [patientDirectory, setPatientDirectory] = useStateC([]);
   const [prescribableDirectory, setPrescribableDirectory] = useStateC([]);
   const [hubLens, setHubLens] = useStateC(initialHubMode || "all");
-  const [needsReplyChannelIds, setNeedsReplyChannelIds] = useStateC([]);
+  const [needsReplyTasks, setNeedsReplyTasks] = useStateC([]);
   const [needsReplyLoading, setNeedsReplyLoading] = useStateC(true);
   const [loading, setLoading] = useStateC(true);
   const [error, setError] = useStateC("");
@@ -1489,36 +1547,47 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
     if (initialHubMode) setHubLens(initialHubMode);
   }, [initialHubMode]);
 
-  useEffectC(() => {
-    let cancelled = false;
-
-    async function loadNeedsReplyChannels() {
-      setNeedsReplyLoading(true);
-      try {
-        const payload = await fetchClinicalInboxTasks();
-        if (cancelled) return;
-        const channelIds = asArray(payload.tasks)
-          .filter((task) => task?.category === "message_needs_response" && task?.channel_id)
-          .map((task) => String(task.channel_id))
-          .filter(Boolean);
-        const nextChannelIds = [...new Set(channelIds)];
-        setNeedsReplyChannelIds((current) => (
-          current.join("|") === nextChannelIds.join("|") ? current : nextChannelIds
-        ));
-      } catch {
-        if (!cancelled) setNeedsReplyChannelIds((current) => (current.length ? [] : current));
-      } finally {
-        if (!cancelled) setNeedsReplyLoading(false);
-      }
+  const loadNeedsReplyTasks = React.useCallback(async () => {
+    setNeedsReplyLoading(true);
+    try {
+      const payload = await fetchClinicalInboxTasks();
+      const nextTasks = asArray(payload.tasks)
+        .filter((task) => task?.category === "message_needs_response" && task?.channel_id);
+      const nextKey = nextTasks.map((task) => `${task.channel_id}:${task.stream_message_id || ""}`).join("|");
+      setNeedsReplyTasks((current) => (
+        current.map((task) => `${task.channel_id}:${task.stream_message_id || ""}`).join("|") === nextKey
+          ? current
+          : nextTasks
+      ));
+    } catch {
+      setNeedsReplyTasks((current) => (current.length ? [] : current));
+    } finally {
+      setNeedsReplyLoading(false);
     }
+  }, []);
 
-    loadNeedsReplyChannels();
-    const interval = window.setInterval(loadNeedsReplyChannels, 60000);
+  useEffectC(() => {
+    loadNeedsReplyTasks();
+    const interval = window.setInterval(loadNeedsReplyTasks, 60000);
     return () => {
-      cancelled = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [loadNeedsReplyTasks]);
+
+  const needsReplyChannelIds = useMemoC(
+    () => [...new Set(needsReplyTasks.map((task) => String(task.channel_id)).filter(Boolean))],
+    [needsReplyTasks],
+  );
+  const needsReplyTaskByChannel = useMemoC(
+    () => new Map(needsReplyTasks.map((task) => [String(task.channel_id), task])),
+    [needsReplyTasks],
+  );
+  const handleResponseTaskResolved = React.useCallback((channelId, resolved) => {
+    if (resolved) {
+      setNeedsReplyTasks((current) => current.filter((task) => String(task.channel_id) !== String(channelId)));
+    }
+    loadNeedsReplyTasks();
+  }, [loadNeedsReplyTasks]);
 
   const loadChat = React.useCallback(async () => {
     const loadId = loadIdRef.current + 1;
@@ -1700,6 +1769,8 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
                 )}
               </div>
               <StreamConversation
+                responseTaskByChannel={needsReplyTaskByChannel}
+                onResponseTaskResolved={handleResponseTaskResolved}
                 onOpenPatient={(id, customerId) => {
                   setHubPatientId(id || "");
                   setHubCustomerId(customerId || "");
