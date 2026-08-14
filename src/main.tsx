@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useEffect, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ClerkProvider, SignIn, useAuth, useUser } from '@clerk/react'
 import './index.css'
@@ -17,6 +17,61 @@ setActiveDoctorAccount(resolveDoctorAccountFromLocation() || undefined)
 const SKIP_CLERK =
   import.meta.env.VITE_SKIP_CLERK === '1' ||
   import.meta.env.VITE_SKIP_CLERK === 'true'
+
+function isMobileDevice() {
+  if (typeof window === 'undefined') return false
+
+  const nav = window.navigator as Navigator & {
+    userAgentData?: { mobile?: boolean }
+  }
+  const userAgent = nav.userAgent || ''
+  const platform = nav.platform || ''
+  const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet|Kindle|Silk/i.test(userAgent)
+  const iPadOsDesktopMode = platform === 'MacIntel' && nav.maxTouchPoints > 1
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
+  const screenWidth = window.screen?.width || window.innerWidth
+  const screenHeight = window.screen?.height || window.innerHeight
+  const tabletOrPhoneScreen = Math.min(screenWidth, screenHeight) <= 1024
+
+  return Boolean(nav.userAgentData?.mobile || mobileUserAgent || iPadOsDesktopMode || (coarsePointer && tabletOrPhoneScreen))
+}
+
+function MobileDeviceBlocked() {
+  return (
+    <div className="doctor-auth-page mobile-device-blocked-page">
+      <div className="doctor-auth-card mobile-device-blocked-card">
+        <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
+        <p className="doctor-auth-kicker">For Doctors</p>
+        <h1>Mobile use is not allowed</h1>
+        <p className="doctor-auth-copy">
+          This portal is available only on desktop devices. Please login via Desktop.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function DesktopOnlyGate({ children }: { children: ReactNode }) {
+  const [blocked, setBlocked] = useState(() => isMobileDevice())
+
+  useEffect(() => {
+    const updateBlocked = () => setBlocked(isMobileDevice())
+    const coarsePointerQuery = window.matchMedia?.('(pointer: coarse)')
+
+    window.addEventListener('resize', updateBlocked)
+    window.addEventListener('orientationchange', updateBlocked)
+    coarsePointerQuery?.addEventListener?.('change', updateBlocked)
+
+    return () => {
+      window.removeEventListener('resize', updateBlocked)
+      window.removeEventListener('orientationchange', updateBlocked)
+      coarsePointerQuery?.removeEventListener?.('change', updateBlocked)
+    }
+  }, [])
+
+  if (blocked) return <MobileDeviceBlocked />
+  return <>{children}</>
+}
 
 function MissingClerkConfig() {
   return (
@@ -149,14 +204,16 @@ function DoctorAuthShell() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {SKIP_CLERK ? (
-      <App />
-    ) : CLERK_PUBLISHABLE_KEY ? (
-      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl={window.location.href}>
-        <DoctorAuthShell />
-      </ClerkProvider>
-    ) : (
-      <MissingClerkConfig />
-    )}
+    <DesktopOnlyGate>
+      {SKIP_CLERK ? (
+        <App />
+      ) : CLERK_PUBLISHABLE_KEY ? (
+        <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl={window.location.href}>
+          <DoctorAuthShell />
+        </ClerkProvider>
+      ) : (
+        <MissingClerkConfig />
+      )}
+    </DesktopOnlyGate>
   </StrictMode>,
 )

@@ -25,7 +25,7 @@ export const DOCTOR_ACCOUNTS = {
     doctorId: "doctor_marwa",
     profile: {
       name: "Dr. Marwa",
-      title: "Quick WLP Physician",
+      title: "Staff Physician",
       initials: "M",
       license: "",
     },
