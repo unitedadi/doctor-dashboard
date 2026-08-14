@@ -36,6 +36,12 @@ function isMobileDevice() {
   return Boolean(nav.userAgentData?.mobile || mobileUserAgent || iPadOsDesktopMode || (coarsePointer && tabletOrPhoneScreen))
 }
 
+function syncMobileBlockedRootClass(blocked: boolean) {
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.toggle('mobile-device-blocked-root', blocked)
+  document.body?.classList.toggle('mobile-device-blocked-root', blocked)
+}
+
 function MobileDeviceBlocked() {
   return (
     <div className="doctor-auth-page mobile-device-blocked-page">
@@ -52,10 +58,22 @@ function MobileDeviceBlocked() {
 }
 
 function DesktopOnlyGate({ children }: { children: ReactNode }) {
-  const [blocked, setBlocked] = useState(() => isMobileDevice())
+  const [blocked, setBlocked] = useState(() => {
+    const initialBlocked = isMobileDevice()
+    syncMobileBlockedRootClass(initialBlocked)
+    return initialBlocked
+  })
 
   useEffect(() => {
-    const updateBlocked = () => setBlocked(isMobileDevice())
+    syncMobileBlockedRootClass(blocked)
+  }, [blocked])
+
+  useEffect(() => {
+    const updateBlocked = () => {
+      const nextBlocked = isMobileDevice()
+      syncMobileBlockedRootClass(nextBlocked)
+      setBlocked(nextBlocked)
+    }
     const coarsePointerQuery = window.matchMedia?.('(pointer: coarse)')
 
     window.addEventListener('resize', updateBlocked)
