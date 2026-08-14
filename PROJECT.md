@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-08-14 14:00 +04 - Doctor chat browser alerts
+
+- Source: Keswin approved the lean first alert boundary for Doctor Dashboard chat: GetStream event, RealBackend verification, generic browser notification, and exact-chat deep link.
+- Added an authenticated browser-push opt-in control, service worker, subscription sync/removal, and direct Patient Hub channel routing. Notifications deliberately exclude patient names, message text, and clinical details.
+- Verification: `npm run build` passed; service-worker JavaScript checks passed; local Chrome QA confirmed the alert control, unavailable state, and direct Patient Hub URL routing. Focused RealBackend tests passed 12/12 and backend TypeScript passed in the paired clean worktree.
+- Follow-up: RealBackend DEV now has the migration, VAPID keys, and an isolated GetStream DEV webhook. The frontend Preview and full browser delivery still need DEV proof; no Production release was applied. Local skip-Clerk still proxies Production by default, so use the authenticated Preview against RealBackend DEV for release QA.
+
 ### 2026-07-01 13:24 +04 - Medication fulfillment state rendering
 
 - Source: Keswin reported Marwa Doctor Dashboard showed a cancelled/pending-payment Rx patient as paid awaiting delivery while Ops Portal did not list the patient in Rx Programs or Pharmacy Ops.

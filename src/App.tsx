@@ -12,6 +12,12 @@ import './components/refills.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
+import {
+  disableDoctorChatPush,
+  enableDoctorChatPush,
+  readDoctorChatPushState,
+  type DoctorChatPushState,
+} from './lib/doctorChatPush.js'
 
 type AppointmentCountPayload = {
   today?: unknown[]
@@ -43,12 +49,31 @@ async function fetchChatToken() {
   })
 }
 
+function initialNavigation(): { route: string; context: Record<string, string> } {
+  const params = new URLSearchParams(window.location.search)
+  const view = params.get('view')
+  const channelId = params.get('channel_id') || ''
+  if ((view === 'patient-hub' || view === 'chat') && channelId) {
+    return {
+      route: 'patient-hub',
+      context: {
+        channelId,
+        hubMode: params.get('hub_mode') || 'needs_reply',
+      },
+    }
+  }
+  return { route: 'appointments', context: {} }
+}
+
 function App() {
-  const [route, setRoute] = useState('appointments')
-  const [routeContext, setRouteContext] = useState<Record<string, string>>({})
+  const [initialNavigationState] = useState(initialNavigation)
+  const [route, setRoute] = useState(initialNavigationState.route)
+  const [routeContext, setRouteContext] = useState<Record<string, string>>(initialNavigationState.context)
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
+  const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })
+  const [pushBusy, setPushBusy] = useState(false)
 
   const Sidebar = window.DD_UI.Sidebar
   const ClinicalInboxView = window.DD_ClinicalInboxView
@@ -62,6 +87,35 @@ function App() {
     setRoute(id)
     setRouteContext(ctx)
     window.scrollTo(0, 0)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    readDoctorChatPushState({ apiBase: API_BASE, doctorId: DOCTOR_ID })
+      .then((state) => {
+        if (!cancelled) setPushState(state)
+      })
+      .catch(() => {
+        if (!cancelled) setPushState({ status: 'unavailable', label: 'Alerts unavailable' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const togglePush = async () => {
+    if (pushBusy || ['loading', 'unsupported', 'unavailable', 'blocked'].includes(pushState.status)) return
+    setPushBusy(true)
+    try {
+      const state = pushState.status === 'on'
+        ? await disableDoctorChatPush({ apiBase: API_BASE, doctorId: DOCTOR_ID })
+        : await enableDoctorChatPush({ apiBase: API_BASE, doctorId: DOCTOR_ID })
+      setPushState(state)
+    } catch {
+      setPushState({ status: 'error', label: 'Try alerts again' })
+    } finally {
+      setPushBusy(false)
+    }
   }
 
   const openAmendPrescription = (patient: any, prescription: any) => {
@@ -152,6 +206,10 @@ function App() {
         appointmentCount={appointmentCount}
         clinicalInboxCount={clinicalInboxCount}
         unreadChats={unreadChats}
+        notificationState={pushState.status}
+        notificationLabel={pushBusy ? 'Updating alerts' : pushState.label}
+        notificationDisabled={pushBusy || ['loading', 'unsupported', 'unavailable', 'blocked'].includes(pushState.status)}
+        onToggleNotification={togglePush}
       />
       <main className="main">
         {route === 'clinical-inbox' && (
