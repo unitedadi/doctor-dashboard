@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-08-15 22:20 +04 - All-time physician review rating
+
+- Source: Keswin confirmed Doctor Dashboard must show each physician's all-time review rating rather than a 90-day window.
+- Changed the dashboard to consume RealBackend's `response_count` field so the authenticated all-time average and review count can render in the account row and menu.
+- Verification: paired RealBackend all-time/eligibility contract tests passed 12/12, backend typecheck passed, and frontend lint/build passed. Signed-in DEV Preview isolation remains pending.
+- Follow-up: RealBackend owns genuine-patient eligibility and excludes staff/canary feedback; Production remains gated on authenticated DEV proof.
+
 ### 2026-08-15 20:10 +04 - Re-issue prescription price hydration
 
 - Source: Keswin reported the DEV-backed re-issue review displayed AED 0 even though the current catalogue had non-zero prices.

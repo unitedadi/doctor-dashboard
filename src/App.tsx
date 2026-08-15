@@ -41,7 +41,7 @@ type FeedbackMetricsPayload = {
   metrics?: {
     minimum_sample_reached?: boolean
     average_rating?: number
-    count?: number
+    response_count?: number
   }
 }
 
@@ -192,8 +192,8 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
     fetchJson<FeedbackMetricsPayload>(`${API_BASE}/doctor/consultation-feedback/metrics?doctor_id=${encodeURIComponent(DOCTOR_ID)}`)
       .then((data) => {
         const metrics = data.metrics
-        if (!cancelled && metrics?.minimum_sample_reached && Number.isFinite(metrics.average_rating) && Number.isFinite(metrics.count)) {
-          setRating({ average: Number(metrics.average_rating), count: Number(metrics.count) })
+        if (!cancelled && metrics?.minimum_sample_reached && Number.isFinite(metrics.average_rating) && Number.isFinite(metrics.response_count)) {
+          setRating({ average: Number(metrics.average_rating), count: Number(metrics.response_count) })
         }
       })
       .catch(() => {
