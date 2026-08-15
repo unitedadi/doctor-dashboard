@@ -5,14 +5,13 @@ import { authFetch, fetchJson } from "../lib/authFetch.js";
 /* global React */
 const { useEffect: useEffectI, useMemo: useMemoI, useState: useStateI } = React;
 
-const FILTERS = [
-  { key: "all", label: "All" },
+const GROUPS = [
   { key: "needs_prescription", label: "Needs prescription" },
-  { key: "needs_outcome", label: "Needs outcome" },
-  { key: "message_needs_response", label: "Needs reply" },
   { key: "reissue", label: "Re-issue" },
+  { key: "needs_outcome", label: "Needs outcome" },
   { key: "refill_review", label: "Refill review" },
-  { key: "lab_results_ready", label: "Lab results" },
+  { key: "lab_results_ready", label: "Lab results ready" },
+  { key: "message_needs_response", label: "Needs reply" },
 ];
 
 const DOCTOR_TASK_CATEGORIES = new Set([
@@ -28,7 +27,7 @@ const CATEGORY_COPY = {
   needs_prescription: {
     label: "Needs prescription",
     queueLabel: "Issue prescription",
-    reason: "The backend has marked the consultation completed and no prescription has been issued. It is not based on estimated slot time.",
+    reason: "The backend marked the consultation completed with no prescription issued. Never inferred from slot time.",
     decision: "Review the chart, confirm medication choice, and issue the prescription if clinically appropriate.",
     closes: "Closed when the prescription is issued.",
     actionFallback: "Issue prescription",
@@ -37,9 +36,9 @@ const CATEGORY_COPY = {
   needs_outcome: {
     label: "Needs outcome",
     queueLabel: "Record outcome",
-    reason: "The consultation is complete, but the doctor has not recorded the clinical outcome for this cycle.",
+    reason: "The consultation is complete but no clinical outcome has been recorded for this cycle.",
     decision: "Record whether the patient continues existing treatment, needs a new prescription, is undecided, or is not eligible.",
-    closes: "Closed when the consultation outcome is saved.",
+    closes: "Closed when the outcome is saved.",
     actionFallback: "Record outcome",
     tone: "steady",
   },
@@ -48,16 +47,16 @@ const CATEGORY_COPY = {
     queueLabel: "Re-issue unpaid prescription",
     reason: "An unpaid prescription can still be clinically changed before payment.",
     decision: "Review the original prescription and issue a replacement with a documented reason.",
-    closes: "Closed when the replacement prescription is issued.",
+    closes: "Closed when the replacement is issued.",
     actionFallback: "Re-issue prescription",
     tone: "critical",
   },
   message_needs_response: {
     label: "Needs reply",
     queueLabel: "Needs reply",
-    reason: "The patient sent an app message and there is no newer doctor or care-team reply.",
+    reason: "The patient sent a message and there is no newer doctor or care-team reply.",
     decision: "Read the message in context and reply from Chat.",
-    closes: "Closed when the doctor replies in the patient chat.",
+    closes: "Closed when you reply in the conversation.",
     actionFallback: "Reply to patient",
     tone: "steady",
   },
@@ -74,9 +73,9 @@ const CATEGORY_COPY = {
     label: "Lab results ready",
     queueLabel: "Review lab results",
     reason: "A doctor-prescribed lab order now has its final report.",
-    decision: "Review the report before the free follow-up consultation.",
-    closes: "Closed when the lab follow-up consultation is booked.",
-    actionFallback: "View results",
+    decision: "Open the signed report and review it through the current PDF workflow.",
+    closes: "Task closure is not available from this dashboard yet.",
+    actionFallback: "Download PDF",
     tone: "critical",
   },
 };
@@ -116,6 +115,28 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function formatQueueTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const dateKey = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Dubai",
+  }).format(date);
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Dubai",
+  }).format(new Date());
+  return new Intl.DateTimeFormat("en-US", dateKey === todayKey
+    ? { hour: "numeric", minute: "2-digit", timeZone: "Asia/Dubai" }
+    : { month: "short", day: "numeric", timeZone: "Asia/Dubai" }
+  ).format(date);
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
@@ -136,14 +157,21 @@ function sourceLabel(task) {
   return titleCase(task?.source || "Clinical");
 }
 
+function sourceMeta(task) {
+  const source = String(task?.source || "").toLowerCase();
+  if (source === "rx") return "Rx";
+  if (source === "quickwlp" || source === "quick_wlp") return "Quick Consult";
+  return titleCase(task?.source || "");
+}
+
 function lifecycleForTask(task) {
   const category = String(task?.category || "").toLowerCase();
   if (category === "lab_results_ready") {
     return [
-      { label: "Lab prescribed", meta: "Doctor request created", state: "done" },
-      { label: "Lab booked", meta: "Customer completed checkout", state: "done" },
+      { label: "Prescribed", meta: "Doctor request created", state: "done" },
+      { label: "Booked", meta: "Patient completed checkout", state: "done" },
       { label: "Results ready", meta: formatDateTime(task?.occurredAt) || "Report available", state: "current" },
-      { label: "Free follow-up", meta: "Customer invited to book", state: "pending" },
+      { label: "Follow-up", meta: "To be decided", state: "pending" },
     ];
   }
   const isNeedsPrescription = category === "needs_prescription";
@@ -153,65 +181,53 @@ function lifecycleForTask(task) {
   const isMessage = category === "message_needs_response";
   const when = formatDateTime(task?.occurredAt);
 
+  if (isMessage) {
+    return [
+      { label: "Received", meta: when || "Patient message", state: "done" },
+      { label: "Doctor reply", meta: "Reply from the conversation", state: "current" },
+      { label: "Resolved", meta: "After a reply or no-reply decision", state: "pending" },
+    ];
+  }
+  if (isRefill) {
+    return [
+      { label: "Request", meta: when || "Patient submitted", state: "done" },
+      { label: "Clinical review", meta: "Doctor decision needed", state: "current" },
+      { label: "Prescription", meta: "Pending", state: "pending" },
+      { label: "Fulfilment", meta: "Pending", state: "pending" },
+    ];
+  }
   return [
     {
-      label: "Consultation scheduled",
-      meta: isMessage ? "Check chart if needed" : "Completed before this task",
-      state: isMessage ? "pending" : "done",
+      label: "Consultation",
+      meta: "Completed",
+      state: "done",
     },
     {
-      label: "Consultation completed",
-      meta: isNeedsPrescription || isNeedsOutcome ? when || "Complete" : isMessage ? "Depends on chart" : "Complete",
-      state: isMessage ? "pending" : "done",
+      label: "Outcome",
+      meta: isNeedsOutcome ? "Not recorded" : "Recorded",
+      state: isNeedsOutcome ? "current" : "done",
     },
     {
-      label: isNeedsOutcome ? "Outcome not recorded" : isNeedsPrescription ? "Prescription not issued" : "Prescription issued",
-      meta: isNeedsOutcome ? "Clinical decision needed" : isNeedsPrescription ? "Doctor decision needed" : isReissue ? "Unpaid prescription can change" : isRefill ? "Previous treatment exists" : "Check chart",
-      state: isNeedsOutcome || isNeedsPrescription ? "current" : isMessage ? "pending" : "done",
+      label: "Prescription",
+      meta: isReissue ? "Issued, unpaid · replaceable" : isNeedsPrescription ? "Not issued" : "Pending",
+      state: isReissue || isNeedsPrescription ? "current" : "pending",
     },
-    {
-      label: "Issued but unpaid",
-      meta: isReissue ? "Re-issue before payment" : "No unpaid prescription in this task",
-      state: isReissue ? "current" : "pending",
-    },
-    {
-      label: "Paid",
-      meta: isRefill ? "Review before next order" : "Outside this task",
-      state: "pending",
-    },
-    {
-      label: "Delivered",
-      meta: isRefill ? "Prior treatment complete" : "Outside this task",
-      state: isRefill ? "done" : "pending",
-    },
-    {
-      label: "Follow-up/refill due",
-      meta: isRefill ? "Needs refill decision" : isMessage ? "Patient reply due" : isNeedsOutcome ? "Depends on outcome" : "Not due yet",
-      state: isRefill || isMessage ? "current" : "pending",
-    },
+    { label: "Payment", meta: "Pending", state: "pending" },
+    { label: "Delivery", meta: "Pending", state: "pending" },
   ];
 }
 
 function ClinicalLifecycleStrip({ task }) {
-  return (
-    <div className="rx-lifecycle-strip clinical-lifecycle-strip">
-      {lifecycleForTask(task).map((step) => (
-        <div key={step.label} className={`rx-lifecycle-step ${step.state}`}>
-          <span className="workbench-check-dot" />
-          <div>
-            <strong>{step.label}</strong>
-            <em>{step.meta || (step.state === "pending" ? "Pending" : "In progress")}</em>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  const ClinicalThread = window.DD_UI.ClinicalThread;
+  return <ClinicalThread steps={lifecycleForTask(task)} layout="horizontal" />;
 }
 
 function memberMeta(task) {
   return [
     task?.patientAge ? `${task.patientAge}y` : "",
     task?.patientSex,
+    task?.track,
+    sourceMeta(task),
   ].filter(Boolean).join(" · ");
 }
 
@@ -272,37 +288,20 @@ function isDoctorClinicalTask(task) {
   ].includes(action);
 }
 
-function clinicalTaskCountForFilter(tasks, key) {
-  if (key === "all") return tasks.length;
-  return tasks.filter((task) => task.category === key).length;
-}
-
-function visibleClinicalFilters(tasks) {
-  return FILTERS.filter((item) => item.key === "all" || clinicalTaskCountForFilter(tasks, item.key) > 0);
-}
-
 function TaskRow({ task, selected, onSelect }) {
-  const { Avatar } = window.DD_UI;
-  const copy = taskCopy(task);
   return (
     <button className={`clinical-task-row${selected ? " selected" : ""}`} onClick={() => onSelect(task.id)}>
-      <Avatar initials={task.initials} name={task.patientName} size="sm" />
       <span className="clinical-task-main">
         <strong>{task.patientName}</strong>
-        <em>{[task.phone, memberMeta(task), task.track].filter(Boolean).join(" · ")}</em>
+        <em>{task.summary || task.title}</em>
       </span>
-      <span className={`clinical-task-priority ${copy.tone} ${task.category}`}>{copy.queueLabel}</span>
-      <span className="clinical-task-type">
-        <strong>{task.summary || task.title}</strong>
-        <em>{[formatDateTime(task.occurredAt), sourceLabel(task)].filter(Boolean).join(" · ")}</em>
-      </span>
+      <time>{formatQueueTime(task.occurredAt) || "Time unavailable"}</time>
     </button>
   );
 }
 
 function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId }) {
-  const { I, Avatar } = window.DD_UI;
-  const PatientChart = window.DD_PatientChart;
+  const { I, Avatar, StatusChip, ClinicalContextBanner } = window.DD_UI;
   if (!task) {
     return (
       <div className="clinical-inbox-empty-detail">
@@ -318,6 +317,12 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
   const canOpenChat = !isQuickWlp && Boolean(task.patientId || task.channelId);
   const copy = taskCopy(task);
   const actionLabel = task.actionLabel || copy.actionFallback;
+  const rawPatient = task.raw?.patient || {};
+  const allergies = asArray(rawPatient.allergies || task.raw?.allergies);
+  const conditions = asArray(rawPatient.conditions || task.raw?.conditions);
+  const currentMedication = asArray(rawPatient.medications || task.raw?.medications)
+    .map((item) => typeof item === "string" ? item : item?.name || item?.title)
+    .find(Boolean) || "Not listed";
   const primaryAction = () => {
     if (task.action === "REVIEW_LAB_RESULTS" || task.category === "lab_results_ready") {
       return downloadLabReport(task.reportUrl).catch((err) => window.alert(err.message));
@@ -350,60 +355,37 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
         <Avatar initials={task.initials} name={task.patientName} size="lg" />
         <div>
           <h2>{task.patientName}</h2>
-          <p>{[task.phone, task.email, memberMeta(task)].filter(Boolean).join(" · ")}</p>
+          <p>{[task.phone, memberMeta(task)].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
 
       <div className="clinical-detail-status">
-        <span>{copy.label}</span>
-        <strong>Doctor action required</strong>
+        <StatusChip label={actionLabel} tone={copy.tone === "critical" ? "risk" : task.category === "message_needs_response" ? "reply" : "active"} />
       </div>
-
-      {!PatientChart && (
-      <section className="clinical-detail-section">
-        <div className="clinical-detail-label">Prescription lifecycle</div>
-        <ClinicalLifecycleStrip task={task} />
-      </section>
-      )}
 
       <section className="clinical-decision-summary">
-        <div>
-          <span>Decision needed</span>
-          <h3>{task.summary || task.title}</h3>
-          <p>{copy.decision || task.detail || "Review the patient context and complete the clinical action."}</p>
-        </div>
-        <dl>
-          <div>
-            <dt>Why shown</dt>
-            <dd>{copy.reason}</dd>
-          </div>
-          <div>
-            <dt>Leaves inbox when</dt>
-            <dd>{copy.closes}</dd>
-          </div>
-        </dl>
+        <span>Decision needed</span>
+        <h3>{task.summary || task.title}</h3>
+        <p>{copy.reason}</p>
+        <p>{copy.closes}</p>
       </section>
 
-      {PatientChart && task.patientId ? (
-        <section className="clinical-detail-section clinical-detail-patient-chart">
-          <PatientChart
-            patientId={task.patientId}
-            mode="task"
-            focus="clinical-inbox"
-            context={{ task, label: "Clinical Inbox" }}
-            onOpenPatient={onOpenPatient}
-            onMessage={() => onOpenContextChat?.(task)}
-            onPrescribe={({ patientId, customerId, trackKey, mode }) => onPrescribeRx?.({ ...task, patientId, customerId, trackKey, prescriptionMode: mode })}
-          />
-        </section>
-      ) : null}
+      <section className="clinical-detail-section">
+        <div className="clinical-detail-label">Clinical thread</div>
+        <ClinicalLifecycleStrip task={task} />
+      </section>
 
-      <div className="clinical-detail-meta-line">
-        <span>{task.track || "Track not available"}</span>
-        <span>{formatDateTime(task.occurredAt) || "Time not available"}</span>
-        <span>{sourceLabel(task)}</span>
-        <span>{task.service || task.track || "Service not available"}</span>
-      </div>
+      <ClinicalContextBanner allergies={allergies} conditions={conditions} label="Safety" always />
+
+      <section className="clinical-detail-section clinical-detail-context">
+        <div className="clinical-detail-label">Patient context</div>
+        <dl className="clinical-detail-facts">
+          <div><dt>Service</dt><dd>{task.service || task.track || "Not available"}</dd></div>
+          <div><dt>Entered queue</dt><dd>{formatDateTime(task.occurredAt) ? `${formatDateTime(task.occurredAt)} · Dubai` : "Not available"}</dd></div>
+          <div><dt>Source</dt><dd>{sourceLabel(task)}</dd></div>
+          <div><dt>Current medication</dt><dd>{currentMedication}</dd></div>
+        </dl>
+      </section>
 
       {isQuickWlp ? (
         <div className="clinical-detail-note">
@@ -431,7 +413,7 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
               onOpenChat?.(task.patientId, task.channelId);
             }}
           >
-            Open chat
+            Open conversation
           </button>
         )}
         {task.category === "refill_review" && (
@@ -449,12 +431,11 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
 }
 
 function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp, onCountChange }) {
-  const { Topbar } = window.DD_UI;
+  const { Topbar, ConfirmationModal, ActionToast } = window.DD_UI;
   const PatientChatDrawer = window.DD_PatientChatDrawer;
   const ConsultOutcomeModal = window.DD_ConsultOutcomeModal;
   const [tasks, setTasks] = useStateI([]);
   const [selectedId, setSelectedId] = useStateI(null);
-  const [filter, setFilter] = useStateI("all");
   const [search, setSearch] = useStateI("");
   const [loading, setLoading] = useStateI(true);
   const [error, setError] = useStateI("");
@@ -462,6 +443,10 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const [outcomeTask, setOutcomeTask] = useStateI(null);
   const [reloadToken, setReloadToken] = useStateI(0);
   const [refillActionId, setRefillActionId] = useStateI("");
+  const [expandedGroups, setExpandedGroups] = useStateI({});
+  const [dismissTask, setDismissTask] = useStateI(null);
+  const [actionError, setActionError] = useStateI("");
+  const [actionToast, setActionToast] = useStateI("");
 
   useEffectI(() => {
     let cancelled = false;
@@ -499,10 +484,9 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const dismissRefillReview = async (task) => {
     const refillRequestId = task?.refillRequestId || task?.sourceId;
     if (!refillRequestId) return;
-    const confirmed = window.confirm(`Mark ${task.patientName}'s refill request as no refill needed? This will close it for everyone.`);
-    if (!confirmed) return;
 
     setRefillActionId(refillRequestId);
+    setActionError("");
     try {
       await fetchJson(`${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(refillRequestId)}/mark-not-needed`, {
         method: "POST",
@@ -517,10 +501,13 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
       setSelectedId((selected) => nextTasks.some((item) => item.id === selected) ? selected : nextTasks[0]?.id || null);
       onCountChange?.(nextTasks.length);
       setReloadToken((value) => value + 1);
+      setActionToast("Refill request closed as no refill needed");
+      window.setTimeout(() => setActionToast(""), 3200);
     } catch (err) {
-      window.alert(err?.message || "Could not close refill request.");
+      setActionError(err?.message || "Could not close the refill request. Nothing changed.");
     } finally {
       setRefillActionId("");
+      setDismissTask(null);
     }
   };
 
@@ -533,76 +520,63 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const visibleTasks = useMemoI(() => {
     const query = search.trim().toLowerCase();
     return activeTasks.filter((task) => {
-      if (filter !== "all" && task.category !== filter) return false;
       if (!query) return true;
       return [task.patientName, task.phone, task.email, task.title, task.track, task.summary].filter(Boolean).join(" ").toLowerCase().includes(query);
     });
-  }, [activeTasks, filter, search]);
-  const availableFilters = useMemoI(() => visibleClinicalFilters(activeTasks), [activeTasks]);
+  }, [activeTasks, search]);
 
-  useEffectI(() => {
-    if (filter === "all") return;
-    if (availableFilters.some((item) => item.key === filter)) return;
-    setFilter("all");
-  }, [availableFilters, filter]);
+  const groupedTasks = useMemoI(() => GROUPS.map((group) => ({
+    ...group,
+    tasks: visibleTasks.filter((task) => task.category === group.key),
+  })).filter((group) => group.tasks.length), [visibleTasks]);
 
   const selected = visibleTasks.find((task) => task.id === selectedId) || visibleTasks[0] || null;
-  const counts = useMemoI(() => ({
-    open: activeTasks.length,
-    needsPrescription: activeTasks.filter((task) => task.category === "needs_prescription").length,
-    needsOutcome: activeTasks.filter((task) => task.category === "needs_outcome").length,
-    messages: activeTasks.filter((task) => task.category === "message_needs_response").length,
-    reissue: activeTasks.filter((task) => task.category === "reissue").length,
-    refills: activeTasks.filter((task) => task.category === "refill_review").length,
-    labs: activeTasks.filter((task) => task.category === "lab_results_ready").length,
-  }), [activeTasks]);
-
   return (
     <div className="screen clinical-inbox-screen fade-in">
       <Topbar
-        title="Clinical Inbox"
-        subtitle="Doctor actions only: prescriptions, lab results, refill reviews, outcomes, and patient replies."
+        title="Clinical inbox"
+        subtitle={loading ? "Loading clinical work…" : `${activeTasks.length} task${activeTasks.length === 1 ? "" : "s"} need a doctor decision.`}
         search={search}
         onSearch={setSearch}
+        searchPlaceholder="Search tasks or patients"
       />
 
       <div className="clinical-inbox-layout">
         <div className="clinical-inbox-list">
-          <div className="clinical-inbox-stats">
-            <div><span>Open</span><strong>{counts.open}</strong></div>
-            <div><span>Needs prescription</span><strong>{counts.needsPrescription}</strong></div>
-            <div><span>Needs outcome</span><strong>{counts.needsOutcome}</strong></div>
-            <div><span>Needs reply</span><strong>{counts.messages}</strong></div>
-            <div><span>Re-issue</span><strong>{counts.reissue}</strong></div>
-            <div><span>Refills</span><strong>{counts.refills}</strong></div>
-            <div><span>Lab results</span><strong>{counts.labs}</strong></div>
-          </div>
-
-          <div className="clinical-inbox-filters">
-            {availableFilters.map((item) => (
-              <button key={item.key} className={filter === item.key ? "active" : ""} onClick={() => setFilter(item.key)}>
-                <span>{item.label}</span>
-                <strong>{clinicalTaskCountForFilter(activeTasks, item.key)}</strong>
-              </button>
-            ))}
-          </div>
-
           {error && (
             <div className="clinical-inbox-warning">
               Could not load {error}. Please refresh and try again.
             </div>
           )}
+          {actionError ? <div className="clinical-inbox-warning" role="alert">{actionError}</div> : null}
 
           <div className="clinical-task-list">
             {loading ? (
               <div className="clinical-inbox-empty">Loading clinical tasks...</div>
-            ) : visibleTasks.length ? (
-              visibleTasks.map((task) => (
-                <TaskRow key={task.id} task={task} selected={selected?.id === task.id} onSelect={setSelectedId} />
-              ))
+            ) : groupedTasks.length ? (
+              groupedTasks.map((group) => {
+                const expanded = Boolean(expandedGroups[group.key]);
+                const rows = expanded ? group.tasks : group.tasks.slice(0, 5);
+                return (
+                  <section className="clinical-task-group" key={group.key}>
+                    <div className="clinical-task-group-head">
+                      <span>{group.label}</span>
+                      <strong>{group.tasks.length}</strong>
+                    </div>
+                    {rows.map((task) => (
+                      <TaskRow key={task.id} task={task} selected={selected?.id === task.id} onSelect={setSelectedId} />
+                    ))}
+                    {group.tasks.length > 5 ? (
+                      <button type="button" className="clinical-task-group-more" onClick={() => setExpandedGroups((current) => ({ ...current, [group.key]: !expanded }))}>
+                        {expanded ? "Show fewer" : `Show all ${group.tasks.length}`}
+                      </button>
+                    ) : null}
+                  </section>
+                );
+              })
             ) : (
               <div className="clinical-inbox-empty">
-                {activeTasks.length ? "No doctor actions match this view." : "No doctor actions pending."}
+                {activeTasks.length ? "No clinical work matches this search." : "No outstanding clinical work"}
               </div>
             )}
           </div>
@@ -616,7 +590,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onRecordOutcome={setOutcomeTask}
           onPrescribeRx={onPrescribeRx}
           onPrescribeQuickWlp={onPrescribeQuickWlp}
-          onDismissRefill={dismissRefillReview}
+          onDismissRefill={setDismissTask}
           refillActionId={refillActionId}
         />
       </div>
@@ -656,6 +630,17 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onPrescribe={onPrescribeRx}
         />
       )}
+      <ConfirmationModal
+        open={Boolean(dismissTask)}
+        title="Mark no refill needed?"
+        description={`${dismissTask?.patientName || "This patient"}'s request will leave the queue for everyone. It can only return through a new refill request.`}
+        confirmLabel="Mark no refill needed"
+        tone="danger"
+        busy={Boolean(refillActionId)}
+        onConfirm={() => dismissRefillReview(dismissTask)}
+        onCancel={() => setDismissTask(null)}
+      />
+      <ActionToast message={actionToast} />
     </div>
   );
 }

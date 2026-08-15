@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { StreamChat } from 'stream-chat'
 import './data.js'
 import './components/shell.jsx'
+import './components/clinicalUi.jsx'
 import './components/patientChart.jsx'
 import './components/clinicalInbox.jsx'
 import './components/appointments.jsx'
@@ -23,6 +24,10 @@ type AppointmentCountPayload = {
   today?: unknown[]
 }
 
+type ClinicalInboxCountPayload = {
+  tasks?: unknown[]
+}
+
 type ChatTokenPayload = {
   api_key: string
   user_id: string
@@ -30,6 +35,60 @@ type ChatTokenPayload = {
   user?: {
     name?: string
   }
+}
+
+type FeedbackMetricsPayload = {
+  metrics?: {
+    minimum_sample_reached?: boolean
+    average_rating?: number
+    count?: number
+  }
+}
+
+type AppProps = {
+  doctorEmail?: string
+  onSignOut?: () => void
+}
+
+type DashboardPatientPayload = {
+  id?: string
+  customerId?: string
+  customer_id?: string
+  name?: string
+  phone?: string
+  whatsapp?: string
+  email?: string
+  trackKey?: string
+  track_key?: string
+}
+
+type DashboardActionPayload = {
+  id?: string
+  source?: string
+  items?: unknown[]
+  patient?: DashboardPatientPayload
+  patientId?: string
+  customerId?: string
+  patientName?: string
+  phone?: string
+  email?: string
+  trackKey?: string
+  track_key?: string
+  appointmentId?: string
+  sourceId?: string
+  refillRequestId?: string
+  category?: string
+  orderMode?: string
+  quickWlpLeadId?: string
+  doctorId?: string
+  b2bPartnerId?: string
+  b2b_partner_id?: string
+  b2bPartnerName?: string
+  b2b_partner_name?: string
+  b2bPromoCode?: string
+  b2b_promo_code?: string
+  quickWlpDoctorId?: string
+  lead_id?: string
 }
 
 function dubaiToday() {
@@ -65,13 +124,14 @@ function initialNavigation(): { route: string; context: Record<string, string> }
   return { route: 'appointments', context: {} }
 }
 
-function App() {
+function App({ doctorEmail = '', onSignOut }: AppProps) {
   const [initialNavigationState] = useState(initialNavigation)
   const [route, setRoute] = useState(initialNavigationState.route)
   const [routeContext, setRouteContext] = useState<Record<string, string>>(initialNavigationState.context)
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
+  const [rating, setRating] = useState<{ average: number; count: number } | null>(null)
   const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })
   const [pushBusy, setPushBusy] = useState(false)
 
@@ -83,9 +143,20 @@ function App() {
   const PrescribeView = window.DD_PrescribeView
   const RefillsView = window.DD_RefillsView
 
+  const routeLabel = (id: string) => ({
+    appointments: 'Schedule',
+    'clinical-inbox': 'Clinical inbox',
+    'patient-hub': 'Patient hub',
+    patients: 'Patient hub',
+    chat: 'Patient hub',
+    refills: 'Clinical inbox',
+  }[id] || 'Clinical workspace')
+
   const go = (id: string, ctx: Record<string, string> = {}) => {
     setRoute(id)
-    setRouteContext(ctx)
+    setRouteContext(id === 'prescribe'
+      ? { ...ctx, originRoute: route, originLabel: routeLabel(route) }
+      : ctx)
     window.scrollTo(0, 0)
   }
 
@@ -103,6 +174,34 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    const params = new URLSearchParams({ doctor_id: DOCTOR_ID, lookback_days: '90', limit: '100' })
+    fetchJson<ClinicalInboxCountPayload>(`${API_BASE}/doctor/clinical-inbox?${params.toString()}`)
+      .then((data) => {
+        if (!cancelled) setClinicalInboxCount(Array.isArray(data.tasks) ? data.tasks.length : 0)
+      })
+      .catch(() => {
+        if (!cancelled) setClinicalInboxCount(null)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<FeedbackMetricsPayload>(`${API_BASE}/doctor/consultation-feedback/metrics?doctor_id=${encodeURIComponent(DOCTOR_ID)}`)
+      .then((data) => {
+        const metrics = data.metrics
+        if (!cancelled && metrics?.minimum_sample_reached && Number.isFinite(metrics.average_rating) && Number.isFinite(metrics.count)) {
+          setRating({ average: Number(metrics.average_rating), count: Number(metrics.count) })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRating(null)
+      })
+    return () => { cancelled = true }
+  }, [])
+
   const togglePush = async () => {
     if (pushBusy || ['loading', 'unsupported', 'unavailable', 'blocked'].includes(pushState.status)) return
     setPushBusy(true)
@@ -118,7 +217,7 @@ function App() {
     }
   }
 
-  const openAmendPrescription = (patient: any, prescription: any) => {
+  const openAmendPrescription = (patient: DashboardPatientPayload, prescription: DashboardActionPayload) => {
     const source = prescription?.source || ''
     const items = Array.isArray(prescription?.items) ? prescription.items : []
     const base = {
@@ -210,6 +309,9 @@ function App() {
         notificationLabel={pushBusy ? 'Updating alerts' : pushState.label}
         notificationDisabled={pushBusy || ['loading', 'unsupported', 'unavailable', 'blocked'].includes(pushState.status)}
         onToggleNotification={togglePush}
+        rating={rating}
+        doctorEmail={doctorEmail}
+        onSignOut={onSignOut}
       />
       <main className="main">
         {route === 'clinical-inbox' && (
@@ -217,17 +319,20 @@ function App() {
             onCountChange={setClinicalInboxCount}
             onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id || '', customerId: customerId || '', hubMode: 'charts' })}
             onOpenChat={(id: string, channelId?: string) => go('patient-hub', { patientId: id || '', channelId: channelId || '', hubMode: 'needs_reply' })}
-            onPrescribeRx={(task: any) => go('prescribe', {
+            onPrescribeRx={(task: DashboardActionPayload) => go('prescribe', {
               patientId: task?.patientId || '',
               customerId: task?.customerId || '',
+              patientName: task?.patientName || '',
+              patientPhone: task?.phone || '',
               trackKey: task?.trackKey || 'weight-loss',
               consultationId: task?.appointmentId || task?.sourceId || '',
               consultationSource: 'RX',
               refillRequestId: task?.refillRequestId || '',
               prescriptionMode: task?.refillRequestId || task?.category === 'refill_review' ? 'refill' : task?.category === 'reissue' ? 'reissue' : 'issue',
+              amendId: task?.category === 'reissue' ? task?.sourceId || '' : '',
               orderMode: task?.orderMode || '',
             })}
-            onPrescribeQuickWlp={(task: any) => go('prescribe', {
+            onPrescribeQuickWlp={(task: DashboardActionPayload) => go('prescribe', {
               patientId: task?.patientId || '',
               customerId: task?.customerId || '',
               consultationId: task?.appointmentId || task?.sourceId || '',
@@ -251,16 +356,18 @@ function App() {
           <AppointmentsView
             onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', hubMode: 'charts' })}
             onOpenChat={(id: string, customerId?: string, channelId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', channelId: channelId || '', hubMode: 'all' })}
-            onPrescribeRx={(appointment: any) => go('prescribe', {
+            onPrescribeRx={(appointment: DashboardActionPayload) => go('prescribe', {
               patientId: appointment?.patientId || appointment?.patient?.id || '',
               customerId: appointment?.patient?.customerId || '',
+              patientName: appointment?.patient?.name || '',
+              patientPhone: appointment?.patient?.phone || '',
               trackKey: appointment?.trackKey || 'weight-loss',
               consultationId: appointment?.id || '',
               consultationSource: 'RX',
               prescriptionMode: 'issue',
               orderMode: appointment?.orderMode || '',
             })}
-            onPrescribeQuickWlp={(appointment: any) => go('prescribe', {
+            onPrescribeQuickWlp={(appointment: DashboardActionPayload) => go('prescribe', {
               patientId: appointment?.patient?.id || appointment?.patientId || '',
               customerId: appointment?.patient?.customerId || '',
               consultationId: appointment?.id || '',
@@ -330,6 +437,8 @@ function App() {
             initialAmendItems={routeContext.amendItems}
             initialPatientName={routeContext.patientName}
             initialPatientPhone={routeContext.patientPhone}
+            originLabel={routeContext.originLabel}
+            onBack={() => go(routeContext.originRoute || 'appointments')}
             onSent={() => undefined}
           />
         )}

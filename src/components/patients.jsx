@@ -21,6 +21,13 @@ function titleCase(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function trackLabel(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("peptide")) return "Peptides";
+  if (normalized.includes("weight") || normalized.includes("wlp")) return "Weight loss";
+  return value ? titleCase(value) : "";
+}
+
 const NOTE_CATEGORIES = [
   { value: "CLINICAL_NOTE", label: "Clinical note" },
   { value: "MEDICATION_DECISION", label: "Medication decision" },
@@ -583,28 +590,12 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           right={<button className="icon-btn">{I.filter}</button>}
         />
       )}
-      {embedded && (
-        <div className="patient-embedded-toolbar">
-          <div>
-            <strong>Patient charts</strong>
-            <span>{loading ? "Loading charts" : `${patients.length} charts available`}</span>
-          </div>
-          <label>
-            {I.search}
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search charts by name, phone, email, or city"
-            />
-          </label>
-        </div>
-      )}
-      <div className="patient-layout">
+      <div className={`patient-layout${embedded ? " patient-layout-hub" : ""}`}>
         <div className="patient-list dd-scroll">
-          <div className="filter">
-            <span className={"chip" + (filter === "all" ? " on" : "")} onClick={() => setFilter("all")}>All <b>{patients.length}</b></span>
-            <span className={"chip" + (filter === "today" ? " on" : "")} onClick={() => setFilter("today")}>Today <b>{patientsToday}</b></span>
-          </div>
+          {!embedded && <div className="filter">
+            <button type="button" className={"chip" + (filter === "all" ? " on" : "")} onClick={() => setFilter("all")}>All <b>{patients.length}</b></button>
+            <button type="button" className={"chip" + (filter === "today" ? " on" : "")} onClick={() => setFilter("today")}>Today <b>{patientsToday}</b></button>
+          </div>}
           {error && (
             <div className="api-state patient-api-state">
               <span>{error}</span>
@@ -616,7 +607,9 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
               <div /><div /><div /><div />
             </div>
           ) : filtered.map((pat) => {
-            const primaryMedication = pat.medications[0]?.name || "";
+            const primaryMedication = medicationName(pat.medications[0]);
+            const primaryTrack = trackLabel(pat.prescriptionHistory[0]?.trackKey || pat.prescribe?.trackKey);
+            const embeddedMeta = [primaryTrack, primaryMedication].filter(Boolean).join(" · ") || pat.phone || "";
             const hasAmendable = Boolean(findAmendablePrescription(pat.prescriptionHistory));
             const hasActiveRx = hasActiveRxPrescription(pat.prescriptionHistory);
             const statusLabel = hasAmendable
@@ -632,14 +625,20 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
                   : "Chart";
 
             return (
-              <button type="button" key={pat.id} className={"p-row" + (pat.id === p?.id ? " active" : "")} onClick={() => setSelectedId(pat.id)}>
-                <Avatar initials={pat.initials} name={pat.name} size="md" />
+              <button type="button" key={pat.id} className={`p-row${embedded ? " hub-chart-patient-row" : ""}${pat.id === p?.id ? " active" : ""}`} onClick={() => setSelectedId(pat.id)}>
+                {!embedded ? <Avatar initials={pat.initials} name={pat.name} size="md" /> : null}
                 <div className="p-row-main">
                   <div className="pn">{pat.name}</div>
-                  <div className="pm">{[pat.phone, pat.city, pat.age ? `${pat.age}y` : null, pat.sex].filter(Boolean).join(" · ") || "Rx patient"}</div>
-                  <div className="pt">{primaryMedication || pat.upcoming?.service_name || "No active treatment listed"}</div>
+                  {embedded ? (
+                    <div className="pt">{embeddedMeta}</div>
+                  ) : (
+                    <>
+                      <div className="pm">{[pat.phone, pat.city, pat.age ? `${pat.age}y` : null, pat.sex].filter(Boolean).join(" · ") || "Rx patient"}</div>
+                      <div className="pt">{primaryMedication || pat.upcoming?.service_name || "No active treatment listed"}</div>
+                    </>
+                  )}
                 </div>
-                <span className={"p-state" + (pat.prescribe ? " ready" : "")}>{statusLabel}</span>
+                {!embedded ? <span className={"p-state" + (pat.prescribe ? " ready" : "")}>{statusLabel}</span> : null}
               </button>
             );
           })}
@@ -652,7 +651,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           ) : p && PatientChart ? (
             <PatientChart
               patientId={p.id}
-              mode="full"
+              mode={embedded ? "hub" : "full"}
               focus="patient-hub"
               context={{ prescribable: p.prescribe }}
               onMessage={(id, customerId) => onMessage?.(id || p.id, customerId || p.customerId)}
@@ -763,7 +762,6 @@ function patientLifecycleSteps(patient) {
   const latestDelivery = deliveries[0];
   const medicationFulfillment = patient.medicationFulfillment;
   const latestRefill = refills[0];
-  const hasScheduledConsult = Boolean(patient.upcoming || latestVisit);
   const hasCompletedConsult = Boolean(latestVisit);
   const hasPrescription = Boolean(latestPrescription);
   const hasUnpaidPrescription = Boolean(latestUnpaid);
@@ -776,22 +774,22 @@ function patientLifecycleSteps(patient) {
 
   return [
     {
-      label: "Consultation scheduled",
-      meta: patient.upcoming ? formatAppointmentDate(patient.upcoming.date, patient.upcoming.time) : latestVisit ? formatDate(latestVisit.date) : "Not booked",
-      state: hasScheduledConsult ? "done" : "pending",
-    },
-    {
-      label: "Consultation completed",
+      label: "Consultation",
       meta: latestVisit ? formatDate(latestVisit.date) : patient.upcoming ? "Awaiting consult" : "Not completed",
       state: hasCompletedConsult ? "done" : patient.upcoming ? "current" : "pending",
     },
     {
-      label: hasPrescription ? "Prescription issued" : "Prescription not issued",
+      label: "Outcome",
+      meta: "Not provided",
+      state: "pending",
+    },
+    {
+      label: "Prescription",
       meta: hasPrescription ? formatDateTime(latestPrescription.issuedAt || latestPrescription.createdAt) : hasCompletedConsult ? "Ready for doctor decision" : "Waiting for consultation",
       state: hasPrescription ? "done" : hasCompletedConsult ? "current" : "pending",
     },
     {
-      label: "Issued but unpaid",
+      label: "Payment",
       meta: paymentPending
         ? orderItemsLabel(medicationFulfillment?.items) || fulfillmentLabel(medicationFulfillment) || "Payment pending"
         : hasUnpaidPrescription
@@ -802,17 +800,12 @@ function patientLifecycleSteps(patient) {
       state: paymentPending || hasUnpaidPrescription ? "current" : paid ? "done" : "pending",
     },
     {
-      label: "Paid",
-      meta: paid ? formatDateTime(paidAt) || "Paid" : paymentPending || hasUnpaidPrescription ? "Awaiting payment" : "Not paid",
-      state: paid ? "done" : paymentPending || hasUnpaidPrescription ? "current" : "pending",
-    },
-    {
-      label: "Delivered",
+      label: "Delivery",
       meta: delivered ? formatDateTime(deliveredAt) || "Delivered" : paid ? "Awaiting delivery" : "Not started",
       state: delivered ? "done" : paid ? "current" : "pending",
     },
     {
-      label: "Follow-up/refill due",
+      label: "Refill",
       meta: refillState.meta,
       state: refillState.state,
     },
@@ -820,19 +813,8 @@ function patientLifecycleSteps(patient) {
 }
 
 function RxLifecycleStrip({ steps }) {
-  return (
-    <div className="rx-lifecycle-strip patient-lifecycle-strip">
-      {steps.map((step) => (
-        <div key={step.label} className={`rx-lifecycle-step ${step.state}`}>
-          <span className="workbench-check-dot" />
-          <div>
-            <strong>{step.label}</strong>
-            <em>{step.meta || (step.state === "pending" ? "Pending" : "In progress")}</em>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  const ClinicalThread = window.DD_UI.ClinicalThread;
+  return <ClinicalThread steps={steps} layout="horizontal" />;
 }
 
 function RefillHistory({ refills }) {
@@ -1160,7 +1142,7 @@ function DoctorNotesSection({ patientId }) {
 }
 
 function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfileSaved }) {
-  const { I, Avatar } = window.DD_UI;
+  const { I, Avatar, ClinicalContextBanner } = window.DD_UI;
   const [editingProfile, setEditingProfile] = useStateP(false);
   const [expandedAssessmentId, setExpandedAssessmentId] = useStateP("");
   const latestSubmission = p.assessment.submissions[0];
@@ -1295,6 +1277,8 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
             {prescriptionLockedCopy}
           </div>
         ) : null}
+
+        <ClinicalContextBanner allergies={p.allergies} conditions={p.conditions} />
 
         <div className="patient-emr-status">
           <ChartFact label="Clinical state" value={primaryClinicalState} />

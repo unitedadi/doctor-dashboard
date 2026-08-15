@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-08-15 20:10 +04 - Re-issue prescription price hydration
+
+- Source: Keswin reported the DEV-backed re-issue review displayed AED 0 even though the current catalogue had non-zero prices.
+- Changed re-issue prefilling to wait for the live catalogue, hydrate medication and needle prices from backend-owned product records, and fail closed with `Price unavailable` when any item cannot be priced.
+- Verification: `npm run lint` and `npm run build` passed; read-only browser QA against RealBackend DEV rendered Mounjaro at AED 1,734, needles at AED 10, and the combined total at AED 1,744 with no console warnings. No prescription was submitted.
+- Follow-up: authenticated DEV submission and persistence remain a separate authorized integration boundary.
+
 ### 2026-08-14 14:00 +04 - Doctor chat browser alerts
 
 - Source: Keswin approved the lean first alert boundary for Doctor Dashboard chat: GetStream event, RealBackend verification, generic browser notification, and exact-chat deep link.

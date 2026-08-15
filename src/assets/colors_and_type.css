@@ -5,7 +5,8 @@
    ========================================================================== */
 
 /* ---------- Fonts ---------- */
-/* Primary: Google Sans Flex, loaded in index.html for preconnect support. */
+/* Primary: Google Sans, matching the approved Doctor Dashboard v2 source. */
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
 
 :root {
   /* ---------- Color · Brand palette ---------- */
@@ -19,10 +20,15 @@
 
   /* ---------- Text opacity scale (on light) ---------- */
   --dd-text-primary:    var(--dd-accent);
-  --dd-text-secondary:  rgba(23,59,61,0.4);
-  --dd-text-tertiary:   rgba(23,59,61,0.3);
-  --dd-text-disabled:   rgba(23,59,61,0.2);
+  --dd-text-secondary:  rgba(23,59,61,0.72);
+  --dd-text-tertiary:   rgba(23,59,61,0.7);
+  --dd-text-disabled:   rgba(23,59,61,0.5);
   --dd-text-faint:      rgba(23,59,61,0.15);
+
+  /* ---------- Clinical state ---------- */
+  --dd-success:         #2F6D45;
+  --dd-critical:        #D92D20;
+  --dd-needs-reply:     #8A5A00;
 
   /* Fills + dividers */
   --dd-fill-subtle:     rgba(23,59,61,0.06);
@@ -59,7 +65,7 @@
   --dd-screen-bottom:    36px;   /* above home indicator */
 
   /* ---------- Type ---------- */
-  --dd-font:    "Google Sans Flex", "Google Sans", "Product Sans", system-ui, -apple-system, sans-serif;
+  --dd-font:    "Google Sans", "Google Sans Flex", "Product Sans", system-ui, -apple-system, sans-serif;
 
   /* ---------- Animation ---------- */
   --dd-ease:           cubic-bezier(.2,.8,.2,1);   /* "smooth" curve */
@@ -76,14 +82,7 @@ html, body {
   background: var(--dd-bg);
   color: var(--dd-text-primary);
   font-family: var(--dd-font);
-  font-optical-sizing: auto;
   font-weight: 400;
-  font-style: normal;
-  font-variation-settings:
-    "slnt" 0,
-    "wdth" 100,
-    "GRAD" 0,
-    "ROND" 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;

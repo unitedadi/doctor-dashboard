@@ -20,9 +20,16 @@ function formatScreenDate(date) {
     weekday: "long",
     month: "long",
     day: "numeric",
-    year: "numeric",
     timeZone: "Asia/Dubai",
   }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function formatDubaiClock(value) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Dubai",
+  }).format(new Date(value));
 }
 
 function formatSectionDate(date) {
@@ -142,63 +149,53 @@ function consultationNeedsOutcome(appointment) {
   );
 }
 
-function consultationChecklist(appointment, nowMs) {
+function consultationChecklist(appointment) {
   const workbench = appointment?.workbench || {};
   const consultation = workbench.consultation || {};
   const prescription = workbench.prescription || {};
   const fulfillment = workbench.fulfillment || {};
   const normalized = String(appointment?.status || consultation.status || "").toLowerCase();
-  const scheduled = Boolean(appointment?.time);
   const noShow = normalized === "no_show" || String(consultation.status || "").toLowerCase() === "no_show";
+  const cancelled = normalized === "cancelled" || normalized === "canceled";
   const completed = Boolean(consultation.completed_at) || normalized === "completed";
   const issued = prescription.status === "ISSUED";
   const needsOutcome = consultationNeedsOutcome(appointment);
-  const live = appointmentIsLiveNow(appointment, nowMs);
-  const paid = Boolean(fulfillment.paid_at || fulfillment.order_id);
+  const outcome = consultationOutcome(appointment);
+  const paid = Boolean(fulfillment.paid_at);
   const delivered = Boolean(fulfillment.delivered_at);
 
-  const steps = [
+  return [
     {
-      label: "Consultation scheduled",
-      meta: appointment?.time ? `${appointment.time} · ${appointment.duration || 0} min` : "",
-      state: scheduled ? "done" : "pending"
+      label: "Consultation",
+      meta: noShow ? `No-show ${formatDateTime(consultation.no_show_at)}` : cancelled ? "Cancelled" : completed ? formatDateTime(consultation.completed_at) || "Completed" : appointment?.time ? `${appointment.time} · ${appointment.duration || 0} min` : "Scheduled",
+      state: noShow || cancelled ? "risk" : completed ? "done" : "current"
     },
     {
-      label: noShow ? "Marked no-show" : "Consultation completed",
-      meta: noShow ? formatDateTime(consultation.no_show_at) : formatDateTime(consultation.completed_at),
-      state: noShow ? "risk" : completed ? "done" : live ? "current" : "pending"
+      label: "Outcome",
+      meta: outcome ? toTitle(outcome) : needsOutcome ? "Record the clinical decision" : "After the consultation",
+      state: outcome ? "done" : needsOutcome ? "current" : "pending"
     },
     {
-      label: needsOutcome ? "Outcome not recorded" : issued ? "Prescription issued" : "Prescription not issued",
-      meta: issued ? formatDateTime(prescription.issued_at) : needsOutcome ? "Record clinical outcome" : completed ? "Ready for doctor decision" : "Waiting for consultation",
-      state: issued ? "done" : completed ? "current" : "pending"
+      label: "Prescription",
+      meta: issued ? formatDateTime(prescription.issued_at) || "Issued" : outcome === "PRESCRIPTION_NEEDED" ? "Ready to issue" : "If clinically needed",
+      state: issued ? "done" : outcome === "PRESCRIPTION_NEEDED" ? "current" : "pending"
     },
     {
-      label: "Issued but unpaid",
-      meta: issued && !paid ? medicationOrderState(appointment) : paid ? "Payment received" : "No unpaid prescription",
-      state: issued && !paid ? "current" : paid ? "done" : "pending"
-    },
-    {
-      label: "Paid",
-      meta: paid ? formatDateTime(fulfillment.paid_at) || "Paid" : "Not paid",
+      label: "Payment",
+      meta: paid ? formatDateTime(fulfillment.paid_at) || "Paid" : issued ? medicationOrderState(appointment) : "",
       state: paid ? "done" : issued ? "current" : "pending"
     },
     {
-      label: "Delivered",
-      meta: delivered ? formatDateTime(fulfillment.delivered_at) : paid ? "Awaiting delivery" : "Not delivered",
+      label: "Delivery",
+      meta: delivered ? formatDateTime(fulfillment.delivered_at) : paid ? "Awaiting delivery" : "",
       state: delivered ? "done" : paid ? "current" : "pending"
     },
-  ];
-
-  if (delivered) {
-    steps.push({
-      label: "Follow-up/refill",
-      meta: "Manage from Patient Hub",
+    {
+      label: "Refill",
+      meta: delivered ? "Manage from Patient Hub" : "",
       state: "pending"
-    });
-  }
-
-  return steps;
+    }
+  ];
 }
 
 function actionState(appointment, nowMs) {
@@ -281,9 +278,7 @@ function actionState(appointment, nowMs) {
   }
   return {
     label: appointment.meetingLink
-      ? appointmentOutcomeActionsAvailable(appointment, nowMs)
-        ? "Join consultation, then complete or mark no-show."
-        : "Join at the scheduled time. Outcome actions unlock when the slot starts."
+      ? "Join at the scheduled time, then complete the consultation or mark no-show."
       : "Review appointment and update outcome.",
     tone: "current",
     canPrescribe: false,
@@ -295,7 +290,7 @@ function actionState(appointment, nowMs) {
 
 function humanizeStatus(status) {
   const normalized = String(status || "").toLowerCase();
-  if (normalized === "no_show") return "No show";
+  if (normalized === "no_show") return "No-show";
   if (normalized === "upcoming" || normalized === "booked") return "Upcoming";
   if (normalized === "completed") return "Completed";
   if (normalized === "cancelled" || normalized === "canceled") return "Cancelled";
@@ -360,18 +355,22 @@ function nextStepLabel(appointment) {
   if (fulfillment.delivered_at) return "Medication delivered";
   if (fulfillment.order_id && !fulfillment.delivered_at) return "Medication paid, delivery pending";
   if (prescription.status === "ISSUED" && !fulfillment.order_id) return medicationOrderState(appointment);
-  if (consultationNeedsOutcome(appointment)) return "Record consultation outcome";
+  if (consultationNeedsOutcome(appointment)) return "Record outcome ›";
   if (closesConsultPrescriptionTask(consultationOutcome(appointment))) return "Consultation outcome recorded";
-  if (normalized === "completed") return appointment.source === "quickwlp" ? "Issue prescription if clinically eligible" : "Open chart or message member";
+  if (normalized === "completed") return "Issue prescription ›";
   if (normalized === "no_show") return "Follow up and rebook if needed";
   if (normalized === "cancelled" || normalized === "canceled") return "No doctor action required";
-  if (appointment.meetingLink) return "Join consultation, then complete or mark no-show";
-  return "Review appointment and update outcome";
+  if (appointment.meetingLink) return "Join consultation ›";
+  return "Review appointment and update outcome ›";
 }
 
 function appointmentRowContext(appointment) {
   const consultationTag = String(appointment.consultationKind || "").toUpperCase() === "LAB_REVIEW" ? "Lab review" : "";
-  return [appointmentContextLabel(appointment), consultationTag, appointment.service].filter(Boolean).join(" · ");
+  if (appointment.source === "quickwlp") {
+    return [appointment.service || consultationTag, appointmentContextLabel(appointment)].filter(Boolean).join(" · ");
+  }
+  const track = appointment.trackKey === "weight-loss" ? "Weight loss" : toTitle(appointment.trackKey || "Rx");
+  return [appointment.service || consultationTag, `${track} Rx`].filter(Boolean).join(" · ");
 }
 
 function appointmentRowTime(appointment, selectedDate) {
@@ -482,20 +481,9 @@ function HistoryRows({ rows, emptyText, renderTitle, renderMeta }) {
   );
 }
 
-function OperationalChecklist({ appointment, nowMs }) {
-  return (
-    <div className="rx-lifecycle-strip workbench-lifecycle-strip">
-      {consultationChecklist(appointment, nowMs).map((step) => (
-        <div key={step.label} className={`rx-lifecycle-step ${step.state}`}>
-          <span className="workbench-check-dot" />
-          <div>
-            <strong>{step.label}</strong>
-            <em>{step.meta || (step.state === "pending" ? "Pending" : "In progress")}</em>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+function OperationalChecklist({ appointment }) {
+  const ClinicalThread = window.DD_UI.ClinicalThread;
+  return <ClinicalThread steps={consultationChecklist(appointment)} layout="vertical" />;
 }
 
 function mapAppointment(item) {
@@ -541,8 +529,7 @@ function mapAppointment(item) {
 }
 
 function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp }) {
-  const { I, Avatar, Topbar } = window.DD_UI;
-  const PatientChatDrawer = window.DD_PatientChatDrawer;
+  const { I, Avatar, Topbar, StatusChip, ClinicalContextBanner, ConfirmationModal, ActionToast } = window.DD_UI;
   const PatientChart = window.DD_PatientChart;
   const ConsultOutcomeModal = window.DD_ConsultOutcomeModal;
   const currentDate = useMemoA(() => dubaiToday(), []);
@@ -561,7 +548,6 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [noShowConfirm, setNoShowConfirm] = useStateA(null);
   const [cancellingId, setCancellingId] = useStateA(null);
   const [cancelConfirm, setCancelConfirm] = useStateA(null);
-  const [feedbackMetrics, setFeedbackMetrics] = useStateA(null);
   const [patientProfiles, setPatientProfiles] = useStateA([]);
   const [profilesLoading, setProfilesLoading] = useStateA(false);
   const [profilesLoaded, setProfilesLoaded] = useStateA(false);
@@ -569,7 +555,6 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [statusFilter, setStatusFilter] = useStateA("all");
   const [scheduleScope, setScheduleScope] = useStateA("day");
   const [nowMs, setNowMs] = useStateA(() => Date.now());
-  const [chatTarget, setChatTarget] = useStateA(null);
   const [outcomeTarget, setOutcomeTarget] = useStateA(null);
 
   const loadAppointments = React.useCallback(async () => {
@@ -600,20 +585,6 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   useEffectA(() => {
     loadAppointments();
   }, [loadAppointments]);
-
-  useEffectA(() => {
-    let active = true;
-    fetchJson(`${API_BASE}/doctor/consultation-feedback/metrics?doctor_id=${encodeURIComponent(DOCTOR_ID)}&days=90`)
-      .then((data) => {
-        if (active) setFeedbackMetrics(data.metrics || null);
-      })
-      .catch(() => {
-        if (active) setFeedbackMetrics(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const loadPatientProfiles = React.useCallback(async () => {
     if (profilesLoaded || profilesLoading) return;
@@ -729,15 +700,21 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     if (statusFilter === "needs_action") return scheduleAppointments.filter((appointment) => appointmentNeedsAction(appointment, nowMs));
     return scheduleAppointments.filter((appointment) => appointmentStatusBucket(appointment.status) === statusFilter);
   }, [nowMs, scheduleAppointments, statusFilter]);
+  const nextScheduledDay = useMemoA(() => {
+    const next = [...week]
+      .filter((appointment) => appointment.date > selectedDate)
+      .sort((left, right) => String(left.date).localeCompare(String(right.date)) || left.time.localeCompare(right.time));
+    if (!next.length) return null;
+    return {
+      date: next[0].date,
+      count: next.filter((appointment) => appointment.date === next[0].date).length,
+    };
+  }, [selectedDate, week]);
   const activeFilterLabel = APPOINTMENT_STATUS_FILTERS.find((filter) => filter.key === statusFilter)?.label || "appointments";
-  const upcomingCount = statusCounts.upcoming;
   const activeAppointmentId = visibleAppointments.find((appointment) => appointmentIsLiveNow(appointment, nowMs))?.id || null;
   const dateStr = formatScreenDate(selectedDate);
-  const sectionDate = formatSectionDate(selectedDate);
   const isToday = selectedDate === currentDate;
   const isTomorrow = selectedDate === addDays(currentDate, 1);
-  const scheduleTitle = scheduleScope === "week" ? "Upcoming schedule" : isToday ? "Today" : isTomorrow ? "Tomorrow" : "Selected day";
-  const scheduleSubtitle = scheduleScope === "week" ? `${sectionDate} + 7 days` : dateStr;
 
   useEffectA(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60 * 1000);
@@ -883,53 +860,27 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     <>
       <Topbar
         title="Schedule"
-        subtitle={scheduleSubtitle}
+        subtitle={`${dateStr} · Dubai time ${formatDubaiClock(nowMs)}`}
+        right={(
+          <div className="apt-header-actions" aria-label="Appointment date navigation">
+            <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, -1))} aria-label="Previous day" title="Previous day">
+              {I.chevronLeft}
+            </button>
+            <button type="button" className={`apt-today-button ${isToday && scheduleScope === "day" ? "active" : ""}`} onClick={() => { setScheduleScope("day"); setSelectedDate(currentDate); }}>
+              Today
+            </button>
+            <button type="button" className={`apt-today-button ${isTomorrow && scheduleScope === "day" ? "active" : ""}`} onClick={() => { setScheduleScope("day"); setSelectedDate(addDays(currentDate, 1)); }}>
+              Tomorrow
+            </button>
+            <button type="button" className={`apt-today-button ${scheduleScope === "week" ? "active" : ""}`} onClick={() => setScheduleScope("week")}>7 days</button>
+            <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, 1))} aria-label="Next day" title="Next day">
+              {I.chevronRight}
+            </button>
+          </div>
+        )}
       />
       <div className="apt-layout">
         <div className="apt-main dd-scroll">
-          <div className="today-stat-row">
-            <div className="stat"><div className="v">{loading ? "..." : scheduleAppointments.length}</div><div className="l">{scheduleScope === "week" ? "Next 7 days" : "Appointments"}</div></div>
-            <div className="stat"><div className="v">{loading ? "..." : upcomingCount}</div><div className="l">Upcoming</div></div>
-            <div className="stat"><div className="v">{loading ? "..." : statusCounts.needs_action}</div><div className="l">Needs action</div></div>
-            <div className="stat"><div className="v">{feedbackMetrics?.minimum_sample_reached ? feedbackMetrics.average_rating?.toFixed(2) : "—"}</div><div className="l">{feedbackMetrics?.minimum_sample_reached ? "90-day rating" : "Rating · min 5"}</div></div>
-          </div>
-
-          <div className="section-hdr">
-            <div>
-              <div className="label apt-date-label">{scheduleTitle}</div>
-              <div className="apt-date-subtitle">{scheduleScope === "week" ? "Consultations from the selected day onward" : sectionDate}</div>
-            </div>
-            <div className="apt-date-actions" aria-label="Appointment date navigation">
-              <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, -1))} aria-label="Previous day" title="Previous day">
-                {I.chevronLeft}
-              </button>
-              <button type="button" className={`apt-today-button ${isToday && scheduleScope === "day" ? "active" : ""}`} onClick={() => { setScheduleScope("day"); setSelectedDate(currentDate); }}>
-                Today
-              </button>
-              <button type="button" className={`apt-today-button ${isTomorrow && scheduleScope === "day" ? "active" : ""}`} onClick={() => { setScheduleScope("day"); setSelectedDate(addDays(currentDate, 1)); }}>
-                Tomorrow
-              </button>
-              <button type="button" className={`apt-today-button ${scheduleScope === "week" ? "active" : ""}`} onClick={() => setScheduleScope("week")}>
-                Week
-              </button>
-              <input
-                className="apt-date-input"
-                type="date"
-                value={selectedDate}
-                onChange={(event) => {
-                  if (event.target.value) {
-                    setScheduleScope("day");
-                    setSelectedDate(event.target.value);
-                  }
-                }}
-                aria-label="Select schedule date"
-              />
-              <button type="button" className="btn-icon" onClick={() => setSelectedDate((date) => addDays(date, 1))} aria-label="Next day" title="Next day">
-                {I.chevronRight}
-              </button>
-            </div>
-          </div>
-
           <div className="apt-status-filters" aria-label="Appointment status filters">
             {APPOINTMENT_STATUS_FILTERS.map((filter) => (
               <button
@@ -946,7 +897,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
 
           {error && (
             <div className="api-state">
-              <span>{error}</span>
+              <span>{error} Nothing was changed.</span>
               <button type="button" className="btn-ghost" onClick={loadAppointments}>Retry</button>
             </div>
           )}
@@ -958,7 +909,15 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               <div />
             </div>
           ) : scheduleAppointments.length === 0 ? (
-            <div className="empty-state apt-empty">No consultations scheduled for this {scheduleScope === "week" ? "window" : "date"}</div>
+            <div className="empty-state apt-empty">
+              <strong>No consultations scheduled for this {scheduleScope === "week" ? "window" : "day"}</strong>
+              {nextScheduledDay ? (
+                <>
+                  <span>{nextScheduledDay.count} consultation{nextScheduledDay.count === 1 ? "" : "s"} on {formatSectionDate(nextScheduledDay.date)}</span>
+                  <button type="button" className="btn-ghost" onClick={() => { setScheduleScope("day"); setSelectedDate(nextScheduledDay.date); }}>Go to next scheduled day</button>
+                </>
+              ) : <span>No later consultations are available in this schedule window.</span>}
+            </div>
           ) : visibleAppointments.length === 0 ? (
             <div className="empty-state apt-empty">No {activeFilterLabel.toLowerCase()} consultations for this {scheduleScope === "week" ? "window" : "date"}</div>
           ) : (
@@ -966,33 +925,26 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               {visibleAppointments.map((a) => {
                 const isNow = a.id === activeAppointmentId;
                 const isSel = a.id === selectedId;
+                const rowNextStep = nextStepLabel(a);
                 return (
-                  <div key={a.id} className={"tl-row" + (isNow ? " now" : "")}>
+                  <div key={a.id} className={"tl-row" + (isNow ? " now" : "") + (isSel ? " selected" : "")}>
                     <div className="time">{appointmentRowTime(a, selectedDate)}</div>
                     <div className="dot-mark"></div>
-                    <div className={"apt-card" + (isSel ? " selected" : "") + (isNow && !isSel ? " now-card" : "")}
+                    <button type="button" className={"apt-card" + (isSel ? " selected" : "") + (isNow && !isSel ? " now-card" : "")}
                          onClick={() => setSelectedId(a.id)}>
                       <div className="apt-row-main">
                         <div className="apt-row-primary">
                           <div className="apt-name">{a.patient.name}</div>
-                          <span className={`apt-status apt-row-chip ${statusTone(a.status)}`}>{humanizeStatus(a.status)}</span>
-                        </div>
-                        <div className="apt-row-secondary">
                           <div className="apt-meta">
-                            {a.patient.phone && <span>{a.patient.phone}</span>}
-                            {a.patient.phone && <span className="dot-sep" />}
                             <span>{appointmentRowContext(a)}</span>
                           </div>
-                          <div className="apt-actions">
-                            {a.meetingLink && a.status === "upcoming" && (
-                              <button className="btn-ghost apt-join-btn" onClick={(event) => joinAppointment(a, event)} disabled={joiningId === a.id}>
-                                {I.video}<span>{joiningId === a.id ? "Opening" : "Join"}</span>
-                              </button>
-                            )}
-                          </div>
+                        </div>
+                        <div className="apt-row-decision">
+                          <span className={rowNextStep.endsWith("›") ? "actionable" : ""}>{rowNextStep}</span>
+                          <StatusChip label={humanizeStatus(a.status)} tone={statusTone(a.status)} className="apt-row-chip" />
                         </div>
                       </div>
-                    </div>
+                    </button>
                   </div>
                 );
               })}
@@ -1013,119 +965,34 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     {[selectedPatient.phone, selectedPatient.email].filter(Boolean).join(" · ") || "Contact not provided"}
                   </div>
                 </div>
-                <span className={`workbench-status ${statusTone(selected.status)}`}>{humanizeStatus(selected.status)}</span>
+                <StatusChip label={humanizeStatus(selected.status)} tone={statusTone(selected.status)} className="workbench-status" />
               </div>
 
               <div className={`workbench-overview${hasMedicationOrderDetails ? "" : " compact"}`}>
                 <WorkbenchMetric label="Slot" value={`${selected.time} · ${selected.duration} min`} />
-                <WorkbenchMetric label="Source" value={selectedIsQuickWlp ? "Quick Consult" : "Lifestyle Rx"} />
-                <WorkbenchMetric label="Track" value={selected.trackKey === "weight-loss" ? "Weight Loss" : toTitle(selected.trackKey || "Rx")} />
+                <WorkbenchMetric label="Service" value={selected.service || (selectedIsQuickWlp ? "Quick Consult" : "Lifestyle Rx")} />
+                <WorkbenchMetric label="Track" value={selected.trackKey === "weight-loss" ? "Weight loss" : toTitle(selected.trackKey || "Rx")} />
                 {hasMedicationOrderDetails && (
                   <WorkbenchMetric label="Order" value={medicationOrderState(selected)} tone={selectedFulfillment.delivered_at ? "done" : selectedPrescription.status === "ISSUED" ? "current" : ""} />
                 )}
               </div>
 
+              <section className="workbench-section workbench-thread-section">
+                <div className="workbench-section-title">Clinical thread</div>
+                <OperationalChecklist appointment={selected} />
+              </section>
+
               <div className={`workbench-next ${selectedActionState.tone}`}>
-                <span>Next action</span>
+                <span>What happens next</span>
                 <strong>{selectedActionState.label || nextStepLabel(selected)}</strong>
               </div>
 
-              {(selectedHasClinicalActions || selectedHasLockedOutcomeNote) && (
-                <section className="workbench-section workbench-section-actions">
-                  <div className="workbench-section-title">Actions</div>
-                  <div className="workbench-actions">
-                    {selected.meetingLink && appointmentStatusBucket(selected.status) === "upcoming" && (
-                      <>
-                        <button className="workbench-action-button primary" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
-                          {I.video}<span>{joiningId === selected.id ? "Opening session..." : "Join video consultation"}</span>
-                        </button>
-                        <button
-                          className="workbench-action-button secondary"
-                          onClick={() => setCallConfirm(selected)}
-                          disabled={callingId === selected.id}
-                        >
-                          {I.phone}<span>{callingId === selected.id ? "Calling..." : "Call patient"}</span>
-                        </button>
-                      </>
-                    )}
-                    {canCompleteSelected && (
-                      <button
-                        className="workbench-action-button secondary"
-                        onClick={() => setCompleteConfirm(selected)}
-                        disabled={completingId === selected.id}
-                      >
-                        {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete consultation"}</span>
-                      </button>
-                    )}
-                    {canNoShowSelected && (
-                      <button
-                        className="workbench-action-button danger"
-                        onClick={() => setNoShowConfirm(selected)}
-                        disabled={noShowingId === selected.id}
-                      >
-                        {I.warn}<span>{noShowingId === selected.id ? "Saving..." : "Mark No-show"}</span>
-                      </button>
-                    )}
-                    {canCancelSelected && (
-                      <button
-                        className="workbench-action-button secondary"
-                        onClick={() => setCancelConfirm(selected)}
-                        disabled={cancellingId === selected.id}
-                      >
-                        {I.x}<span>{cancellingId === selected.id ? "Cancelling..." : "Cancel consultation"}</span>
-                      </button>
-                    )}
-                    {canRecordOutcomeSelected && (
-                      <button className="workbench-action-button primary" onClick={() => setOutcomeTarget(selected)}>
-                        {I.check}<span>Record outcome</span>
-                      </button>
-                    )}
-                    {canPrescribeSelectedQuickWlp && (
-                      <button className="workbench-action-button primary" onClick={() => onPrescribeQuickWlp?.(selected)}>
-                        {I.pill}<span>Issue prescription</span>
-                      </button>
-                    )}
-                    {canPrescribeSelectedRx && (
-                      <button className="workbench-action-button primary" onClick={() => onPrescribeRx?.(selected)}>
-                        {I.pill}<span>Issue prescription</span>
-                      </button>
-                    )}
-                    {selectedHasLockedOutcomeNote && (
-                      <div className="workbench-note">Outcome actions unlock when the scheduled slot starts.</div>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {(selectedHasPatientChart || selectedIsQuickWlp) && (
-                <section className="workbench-section workbench-section-access">
-                  <div className="workbench-section-title">Patient access</div>
-                  <div className="workbench-access-actions">
-                    {selectedHasPatientChart ? (
-                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id, selectedPatient.customerId)}>Open chart</button>
-                    ) : null}
-                    {selectedIsQuickWlp ? (
-                      <div className="workbench-note">Quick Consult does not include in-app chat. Use phone or WhatsApp for follow-up.</div>
-                    ) : selected.chat?.available ? (
-                      <button
-                        className="workbench-action-button secondary"
-                        onClick={() => setChatTarget({
-                          patientId: selectedPatient.id,
-                          customerId: selectedPatient.customerId,
-                          patientName: selectedPatient.name,
-                        })}
-                      >
-                        {I.message}<span>Message {selectedPatient.name.split(" ")[0]}</span>
-                      </button>
-                    ) : (
-                      <div className="workbench-note">Chat unlocks after consultation completion.</div>
-                    )}
-                    {selectedIsQuickWlp && !selectedHasPatientChart ? (
-                      <div className="workbench-note">Patient chart is not linked yet for this older Quick Consult.</div>
-                    ) : null}
-                  </div>
-                </section>
-              )}
+              <ClinicalContextBanner
+                allergies={selectedAssessment.allergies}
+                conditions={selectedAssessment.conditions}
+                label="Safety"
+                always
+              />
 
               {PatientChart && selectedHasPatientChart ? (
                 <section className="workbench-section workbench-patient-chart">
@@ -1136,17 +1003,11 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     focus="schedule"
                     context={{ appointment: selected, label: "Schedule" }}
                     onOpenPatient={onOpenPatient}
-                    onMessage={selectedIsQuickWlp ? undefined : (id, customerId) => setChatTarget({ patientId: id || selectedPatient.id, customerId: customerId || selectedPatient.customerId, patientName: selectedPatient.name })}
                     onPrescribe={({ patientId, trackKey, mode }) => onPrescribeRx?.({ ...selected, patientId, trackKey, prescriptionMode: mode })}
                   />
                 </section>
               ) : (
                 <>
-                  <section className="workbench-section">
-                    <div className="workbench-section-title">Prescription lifecycle</div>
-                    <OperationalChecklist appointment={selected} nowMs={nowMs} />
-                  </section>
-
                   <section className="workbench-section">
                     <div className="workbench-section-title">Visit details</div>
                     <InfoRow label="Service" value={selected.service} />
@@ -1243,63 +1104,133 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                 </>
               )}
 
+              {(selectedHasClinicalActions || selectedHasPatientChart || !selectedIsQuickWlp || selectedHasLockedOutcomeNote) && (
+                <section className="workbench-section workbench-section-actions">
+                  <div className="workbench-actions workbench-actions-primary">
+                    {selectedHasJoinOrCall ? (
+                      <button className="workbench-action-button primary" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
+                        {I.video}<span>{joiningId === selected.id ? "Opening session..." : "Join video consultation"}</span>
+                      </button>
+                    ) : canCompleteSelected ? (
+                      <button
+                        className="workbench-action-button primary"
+                        onClick={() => setCompleteConfirm(selected)}
+                        disabled={completingId === selected.id}
+                      >
+                        {I.check}<span>{completingId === selected.id ? "Completing..." : "Complete consultation"}</span>
+                      </button>
+                    ) : canRecordOutcomeSelected ? (
+                      <button className="workbench-action-button primary" onClick={() => setOutcomeTarget(selected)}>
+                        {I.check}<span>Record outcome</span>
+                      </button>
+                    ) : canPrescribeSelectedQuickWlp ? (
+                      <button className="workbench-action-button primary" onClick={() => onPrescribeQuickWlp?.(selected)}>
+                        {I.pill}<span>Issue prescription</span>
+                      </button>
+                    ) : canPrescribeSelectedRx ? (
+                      <button className="workbench-action-button primary" onClick={() => onPrescribeRx?.(selected)}>
+                        {I.pill}<span>Issue prescription</span>
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="workbench-actions workbench-actions-secondary">
+                    {selectedHasJoinOrCall ? (
+                      <button
+                        className="workbench-action-button secondary"
+                        onClick={() => setCallConfirm(selected)}
+                        disabled={callingId === selected.id}
+                      >
+                        <span>{callingId === selected.id ? "Calling..." : "Call patient"}</span>
+                      </button>
+                    ) : null}
+                    {selectedHasPatientChart ? (
+                      <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id, selectedPatient.customerId)}>Open chart</button>
+                    ) : null}
+                    {!selectedIsQuickWlp ? (
+                      <button className="workbench-action-button secondary" onClick={() => onOpenChat?.(selectedPatient.id, selectedPatient.customerId)}>
+                        Open conversation
+                      </button>
+                    ) : null}
+                    {canNoShowSelected ? (
+                      <button
+                        className="workbench-action-button danger"
+                        onClick={() => setNoShowConfirm(selected)}
+                        disabled={noShowingId === selected.id}
+                      >
+                        <span>{noShowingId === selected.id ? "Saving..." : "Mark no-show"}</span>
+                      </button>
+                    ) : null}
+                    {canCancelSelected ? (
+                      <button
+                        className="workbench-action-button danger"
+                        onClick={() => setCancelConfirm(selected)}
+                        disabled={cancellingId === selected.id}
+                      >
+                        <span>{cancellingId === selected.id ? "Cancelling..." : "Cancel"}</span>
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {selectedHasLockedOutcomeNote ? (
+                    <div className="workbench-note">Outcome actions unlock when the scheduled slot starts.</div>
+                  ) : null}
+                  {selectedIsQuickWlp && !selectedHasPatientChart ? (
+                    <div className="workbench-note">Patient chart is not linked yet for this older Quick Consult.</div>
+                  ) : null}
+                </section>
+              )}
+
             </div>
           ) : <div className="empty-state">Select an appointment</div>}
         </div>
       </div>
       {callConfirm && (
-        <div className="confirm-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="call-patient-title">
-            <h2 id="call-patient-title">Call patient?</h2>
-            <p>Make sure you have joined the meeting first before calling the patient.</p>
-            <div className="confirm-actions">
-              <button className="btn-ghost" onClick={() => setCallConfirm(null)}>Cancel</button>
-              <button className="btn-primary" onClick={callPatient}>{I.phone}<span>Call Patient</span></button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Call patient?"
+          description="Join the meeting first, then call the patient so they can connect directly."
+          confirmLabel="Call patient"
+          onCancel={() => setCallConfirm(null)}
+          onConfirm={callPatient}
+          busy={Boolean(callingId)}
+        />
       )}
       {completeConfirm && (
-        <div className="confirm-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="complete-consultation-title">
-            <h2 id="complete-consultation-title">Complete consultation?</h2>
-            <p>Only mark consultation as completed when you have finished the video call with the customer.</p>
-            <div className="confirm-actions">
-              <button className="btn-ghost" onClick={() => setCompleteConfirm(null)}>Cancel</button>
-              <button className="btn-primary" onClick={completeConsultation}>{I.check}<span>Complete Consultation</span></button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Complete consultation?"
+          description="Only mark the consultation complete when the video call has finished. This unlocks the outcome step."
+          confirmLabel="Complete consultation"
+          cancelLabel="Not yet"
+          onCancel={() => setCompleteConfirm(null)}
+          onConfirm={completeConsultation}
+          busy={Boolean(completingId)}
+        />
       )}
       {noShowConfirm && (
-        <div className="confirm-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="no-show-consultation-title">
-            <h2 id="no-show-consultation-title">Mark no-show?</h2>
-            <p>Use this only when the member did not attend the consultation. This reopens follow-up for the ops team.</p>
-            <div className="confirm-actions">
-              <button className="btn-ghost" onClick={() => setNoShowConfirm(null)}>Cancel</button>
-              <button className="btn-primary" onClick={markNoShow}>{I.warn}<span>Mark No-show</span></button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Mark no-show?"
+          description="Use this only when the member did not attend. This cannot be undone from this screen."
+          confirmLabel="Mark no-show"
+          cancelLabel="Keep appointment"
+          tone="danger"
+          onCancel={() => setNoShowConfirm(null)}
+          onConfirm={markNoShow}
+          busy={Boolean(noShowingId)}
+        />
       )}
       {cancelConfirm && (
-        <div className="confirm-backdrop" role="presentation">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-consultation-title">
-            <h2 id="cancel-consultation-title">Cancel consultation?</h2>
-            <p>Use cancellation only when the appointment will not go ahead. It remains distinct from a patient no-show and will offer a direct reschedule.</p>
-            <div className="confirm-actions">
-              <button className="btn-ghost" onClick={() => setCancelConfirm(null)}>Keep appointment</button>
-              <button className="btn-primary" onClick={cancelConsultation}>{I.x}<span>Cancel consultation</span></button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Cancel consultation?"
+          description="Cancellation means the appointment will not go ahead. It stays distinct from a no-show and offers the member a reschedule."
+          confirmLabel="Cancel consultation"
+          cancelLabel="Keep appointment"
+          tone="danger"
+          onCancel={() => setCancelConfirm(null)}
+          onConfirm={cancelConsultation}
+          busy={Boolean(cancellingId)}
+        />
       )}
-      {callToast && (
-        <div className="toast">
-          {I.phone}<span>{callToast}</span>
-        </div>
-      )}
+      <ActionToast message={callToast} icon={I.phone} />
       {ConsultOutcomeModal && (
         <ConsultOutcomeModal
           open={Boolean(outcomeTarget)}
@@ -1318,19 +1249,6 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               return;
             }
             onPrescribeRx?.({ ...appointment, orderMode: "lab" });
-          }}
-        />
-      )}
-      {PatientChatDrawer && (
-        <PatientChatDrawer
-          open={Boolean(chatTarget)}
-          patientId={chatTarget?.patientId || ""}
-          customerId={chatTarget?.customerId || ""}
-          patientName={chatTarget?.patientName || ""}
-          onClose={() => setChatTarget(null)}
-          onOpenPatient={(id, customerId) => {
-            setChatTarget(null);
-            onOpenPatient?.(id || chatTarget?.patientId, customerId);
           }}
         />
       )}
