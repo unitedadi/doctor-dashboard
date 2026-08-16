@@ -1,5 +1,7 @@
 import { fetchJson } from "./authFetch.js";
 
+const DOCTOR_CHAT_WORKER_PATH = "/doctor-chat-sw.js";
+
 function pushSupported() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
@@ -35,8 +37,91 @@ async function loadServerStatus(apiBase, doctorId) {
 }
 
 async function registerWorker() {
-  await navigator.serviceWorker.register("/doctor-chat-sw.js", { scope: "/" });
+  await navigator.serviceWorker.register(DOCTOR_CHAT_WORKER_PATH, { scope: "/" });
   return navigator.serviceWorker.ready;
+}
+
+function workerPath(registration) {
+  const worker = registration?.active || registration?.waiting || registration?.installing;
+  if (!worker?.scriptURL) return "";
+  try {
+    return new URL(worker.scriptURL).pathname;
+  } catch {
+    return "";
+  }
+}
+
+function pushActivationError(stage, error, repairAttempted) {
+  const failure = new Error("doctor_chat_push_activation_failed");
+  failure.code = typeof error?.code === "string" ? error.code : "doctor_chat_push_activation_failed";
+  failure.stage = stage;
+  failure.browserErrorName = String(error?.name || "Error");
+  failure.repairAttempted = repairAttempted;
+  return failure;
+}
+
+export function doctorChatPushFailure(error) {
+  const stage = String(error?.stage || "unknown");
+  const labels = {
+    save_subscription: "Could not save alerts",
+    repair_registration: "Chrome repair failed",
+    subscribe_after_repair: "Chrome push failed",
+  };
+  return {
+    code: String(error?.code || "doctor_chat_push_activation_failed"),
+    stage,
+    browserErrorName: String(error?.browserErrorName || error?.name || "Error"),
+    repairAttempted: Boolean(error?.repairAttempted),
+    label: labels[stage] || "Chrome alerts failed",
+  };
+}
+
+async function removeOwnedWorker(registration, expectedWorkerPath) {
+  if (!registration) return;
+  if (workerPath(registration) !== expectedWorkerPath) {
+    const error = new Error("doctor_chat_push_worker_not_owned");
+    error.code = "doctor_chat_push_worker_not_owned";
+    throw error;
+  }
+  try {
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+  } catch {
+    // A broken PushManager is the reason for the repair; unregistering can still recover it.
+  }
+  await registration.unregister();
+}
+
+export async function subscribeDoctorChatPush({
+  publicKey,
+  register = registerWorker,
+  findRegistration = () => navigator.serviceWorker.getRegistration("/"),
+  keyFactory = applicationServerKey,
+  expectedWorkerPath = DOCTOR_CHAT_WORKER_PATH,
+}) {
+  const subscribeOptions = {
+    userVisibleOnly: true,
+    applicationServerKey: keyFactory(publicKey),
+  };
+  let registration;
+  try {
+    registration = await register();
+    const existing = await registration.pushManager.getSubscription();
+    return existing || await registration.pushManager.subscribe(subscribeOptions);
+  } catch {
+    try {
+      await removeOwnedWorker(registration || await findRegistration(), expectedWorkerPath);
+    } catch (repairError) {
+      throw pushActivationError("repair_registration", repairError, true);
+    }
+
+    try {
+      const repairedRegistration = await register();
+      return await repairedRegistration.pushManager.subscribe(subscribeOptions);
+    } catch (retryError) {
+      throw pushActivationError("subscribe_after_repair", retryError, true);
+    }
+  }
 }
 
 async function saveSubscription(apiBase, doctorId, subscription) {
@@ -71,13 +156,12 @@ export async function enableDoctorChatPush({ apiBase, doctorId }) {
     : await Notification.requestPermission();
   if (permission !== "granted") return { status: "blocked", label: "Alerts blocked" };
 
-  const registration = await registerWorker();
-  const existing = await registration.pushManager.getSubscription();
-  const subscription = existing || await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: applicationServerKey(server.vapid_public_key),
-  });
-  await saveSubscription(apiBase, doctorId, subscription);
+  const subscription = await subscribeDoctorChatPush({ publicKey: server.vapid_public_key });
+  try {
+    await saveSubscription(apiBase, doctorId, subscription);
+  } catch (error) {
+    throw pushActivationError("save_subscription", error, false);
+  }
   return { status: "on", label: "Alerts on", publicKey: server.vapid_public_key };
 }
 

@@ -16,6 +16,7 @@ import { fetchJson } from './lib/authFetch.js'
 import { summarizeClinicalInboxTasks, type ClinicalInboxSummary } from './lib/clinicalInboxSummary.js'
 import {
   disableDoctorChatPush,
+  doctorChatPushFailure,
   enableDoctorChatPush,
   readDoctorChatPushState,
   type DoctorChatPushState,
@@ -219,8 +220,15 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
         ? await disableDoctorChatPush({ apiBase: API_BASE, doctorId: DOCTOR_ID })
         : await enableDoctorChatPush({ apiBase: API_BASE, doctorId: DOCTOR_ID })
       setPushState(state)
-    } catch {
-      setPushState({ status: 'error', label: 'Try alerts again' })
+    } catch (error) {
+      const failure = doctorChatPushFailure(error)
+      console.error('[doctor-chat-push] activation_failed', {
+        code: failure.code,
+        stage: failure.stage,
+        browser_error_name: failure.browserErrorName,
+        repair_attempted: failure.repairAttempted,
+      })
+      setPushState({ status: 'error', label: failure.label })
     } finally {
       setPushBusy(false)
     }
