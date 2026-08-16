@@ -231,7 +231,7 @@ function Sidebar({
               <strong>{D.name}</strong>
               {doctorEmail || D.email ? <span>{doctorEmail || D.email}</span> : null}
               <small>{D.title}</small>
-              {rating ? <em><span aria-hidden="true">★</span>{rating.average.toFixed(2)} average from {rating.count} patient ratings</em> : null}
+              {rating ? <em><span aria-hidden="true">★</span>{rating.average.toFixed(2)}</em> : null}
             </div>
             <div className="sidebar-account-divider" />
             <button
