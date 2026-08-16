@@ -1,6 +1,14 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
+import {
+  availableConsultOutcomes,
+  buildConsultOutcomePayload,
+  consultOutcomeAfterSave,
+  consultOutcomeErrorMessage,
+  defaultDubaiFollowUpValue,
+  minimumDubaiFollowUpValue,
+} from "../lib/consultOutcome.js";
 
 /* global React */
 const { useEffect: useEffectPC, useMemo: useMemoPC, useState: useStatePC } = React;
@@ -305,42 +313,9 @@ function noteCategoryLabel(value) {
   return NOTE_CATEGORIES.find((item) => item.value === value)?.label || "Clinical note";
 }
 
-const CONSULT_OUTCOME_OPTIONS = [
-  {
-    value: "CONTINUE_EXISTING_TREATMENT",
-    label: "Continue existing treatment",
-    detail: "No new prescription from this consult. The task closes.",
-  },
-  {
-    value: "PRESCRIPTION_NEEDED",
-    label: "Prescription needed",
-    detail: "You will be taken to prescribing for this patient.",
-  },
-  {
-    value: "NO_MEDICATION_NEEDED",
-    label: "No medication needed",
-    detail: "The consult closes without medication.",
-  },
-  {
-    value: "PATIENT_UNDECIDED",
-    label: "Patient undecided",
-    detail: "The patient needs time before a medication decision.",
-  },
-  {
-    value: "NOT_ELIGIBLE",
-    label: "Not eligible",
-    detail: "Do not prescribe at this time. The cycle closes.",
-  },
-  {
-    value: "OPS_FOLLOW_UP_NEEDED",
-    label: "Ops follow-up needed",
-    detail: "Support follows up before the next clinical step.",
-  },
-];
-
 function consultOutcomeLabel(value) {
   const normalized = String(value || "").toUpperCase();
-  return CONSULT_OUTCOME_OPTIONS.find((option) => option.value === normalized)?.label || titleCase(value || "Outcome");
+  return availableConsultOutcomes("").find((option) => option.value === normalized)?.label || titleCase(value || "Outcome");
 }
 
 function NoteCategoryPicker({ value, onChange, compact = false }) {
@@ -1290,19 +1265,28 @@ function ClinicalProfileModal({ chart, onClose, onSaved }) {
   );
 }
 
-function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSaved }) {
+function ConsultOutcomeModal({ open, appointmentId, patientName, appointmentSource, onClose, onSaved }) {
   const [outcome, setOutcome] = useStatePC("");
   const [note, setNote] = useStatePC("");
+  const [followUpLocal, setFollowUpLocal] = useStatePC("");
   const [saving, setSaving] = useStatePC(false);
   const [error, setError] = useStatePC("");
+  const outcomeOptions = availableConsultOutcomes(appointmentSource);
 
   useEffectPC(() => {
     if (!open) return;
     setOutcome("");
     setNote("");
+    setFollowUpLocal("");
     setSaving(false);
     setError("");
   }, [appointmentId, open]);
+
+  useEffectPC(() => {
+    if (outcome === "PATIENT_UNDECIDED" && !followUpLocal) {
+      setFollowUpLocal(defaultDubaiFollowUpValue());
+    }
+  }, [followUpLocal, outcome]);
 
   if (!open) return null;
 
@@ -1318,14 +1302,12 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSave
     setSaving(true);
     setError("");
     try {
-      const result = await recordConsultOutcome(appointmentId, {
-        outcome,
-        note: note.trim() || null,
-      });
-      onSaved?.(result);
+      const payload = buildConsultOutcomePayload({ outcome, note, followUpLocal });
+      const result = await recordConsultOutcome(appointmentId, payload);
       onClose?.();
+      await onSaved?.(result, outcome, consultOutcomeAfterSave(outcome));
     } catch (err) {
-      setError(err.message || "Could not record outcome.");
+      setError(consultOutcomeErrorMessage(err.message, err.payload));
     } finally {
       setSaving(false);
     }
@@ -1342,7 +1324,7 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSave
         </div>
 
         <div className="consult-outcome-options">
-          {CONSULT_OUTCOME_OPTIONS.map((option) => (
+          {outcomeOptions.map((option) => (
             <button
               type="button"
               key={option.value}
@@ -1355,6 +1337,21 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSave
             </button>
           ))}
         </div>
+
+        {outcome === "PATIENT_UNDECIDED" ? (
+          <label className="consult-outcome-reminder">
+            <span>Support follow-up date and time</span>
+            <input
+              type="datetime-local"
+              value={followUpLocal}
+              min={minimumDubaiFollowUpValue()}
+              onChange={(event) => setFollowUpLocal(event.target.value)}
+              disabled={saving}
+              required
+            />
+            <small>Dubai time. This creates the Support follow-up before the doctor task closes.</small>
+          </label>
+        ) : null}
 
         <label className="consult-outcome-note">
           <span>Internal note (optional)</span>
@@ -1749,14 +1746,13 @@ function PatientChart({
       })
       .catch(() => undefined);
   };
-  const startLabPrescription = () => {
+  const startPrescription = () => {
     setOutcomeTarget(null);
     onPrescribe?.({
       patientId: patient.id,
       customerId: patient.customer_id,
       trackKey,
       mode: "issue",
-      orderMode: "lab",
       consultationId: recordOutcomeAppointmentId,
       consultationSource: quickConsultChart ? "QUICKWLP" : "RX",
       chart,
@@ -1885,9 +1881,15 @@ function PatientChart({
           open={Boolean(outcomeTarget)}
           appointmentId={outcomeTarget?.appointmentId || ""}
           patientName={outcomeTarget?.patientName || patient.name}
+          appointmentSource={quickConsultChart ? "quickwlp" : "rx"}
           onClose={() => setOutcomeTarget(null)}
-          onSaved={refreshChart}
-          onPrescribeLabs={onPrescribe ? startLabPrescription : undefined}
+          onSaved={async (_result, _outcome, nextAction) => {
+            if (nextAction === "PRESCRIBE" && onPrescribe) {
+              startPrescription();
+              return;
+            }
+            await refreshChart();
+          }}
         />
       </div>
     );
@@ -2089,9 +2091,15 @@ function PatientChart({
         open={Boolean(outcomeTarget)}
         appointmentId={outcomeTarget?.appointmentId || ""}
         patientName={outcomeTarget?.patientName || patient.name}
+        appointmentSource={quickConsultChart ? "quickwlp" : "rx"}
         onClose={() => setOutcomeTarget(null)}
-        onSaved={refreshChart}
-        onPrescribeLabs={onPrescribe ? startLabPrescription : undefined}
+        onSaved={async (_result, _outcome, nextAction) => {
+          if (nextAction === "PRESCRIBE" && onPrescribe) {
+            startPrescription();
+            return;
+          }
+          await refreshChart();
+        }}
       />
     </>
   );

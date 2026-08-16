@@ -1257,19 +1257,19 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
           open={Boolean(outcomeTarget)}
           appointmentId={outcomeTarget?.id || ""}
           patientName={outcomeTarget?.patient?.name || ""}
+          appointmentSource={outcomeTarget?.source || ""}
           onClose={() => setOutcomeTarget(null)}
-          onSaved={async () => {
-            setOutcomeTarget(null);
-            await loadAppointments();
-          }}
-          onPrescribeLabs={() => {
+          onSaved={async (_result, _outcome, nextAction) => {
             const appointment = outcomeTarget;
-            setOutcomeTarget(null);
-            if (appointment?.source === "quickwlp") {
-              onPrescribeQuickWlp?.({ ...appointment, orderMode: "lab" });
+            if (nextAction === "PRESCRIBE") {
+              if (appointment?.source === "quickwlp") {
+                onPrescribeQuickWlp?.(appointment);
+                return;
+              }
+              onPrescribeRx?.(appointment);
               return;
             }
-            onPrescribeRx?.({ ...appointment, orderMode: "lab" });
+            await loadAppointments();
           }}
         />
       )}

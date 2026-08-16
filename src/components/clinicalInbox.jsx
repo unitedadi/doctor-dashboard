@@ -592,19 +592,19 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           open={Boolean(outcomeTask)}
           appointmentId={outcomeTask?.appointmentId || outcomeTask?.sourceId || ""}
           patientName={outcomeTask?.patientName || ""}
+          appointmentSource={outcomeTask?.source || ""}
           onClose={() => setOutcomeTask(null)}
-          onSaved={() => {
-            setOutcomeTask(null);
-            setReloadToken((value) => value + 1);
-          }}
-          onPrescribeLabs={() => {
+          onSaved={(_result, _outcome, nextAction) => {
             const task = outcomeTask;
-            setOutcomeTask(null);
-            if (task?.source === "quickwlp" || task?.source === "quick_wlp") {
-              onPrescribeQuickWlp?.({ ...task, orderMode: "lab" });
+            if (nextAction === "PRESCRIBE") {
+              if (task?.source === "quickwlp" || task?.source === "quick_wlp") {
+                onPrescribeQuickWlp?.(task);
+                return;
+              }
+              onPrescribeRx?.(task);
               return;
             }
-            onPrescribeRx?.({ ...task, orderMode: "lab" });
+            setReloadToken((value) => value + 1);
           }}
         />
       )}
