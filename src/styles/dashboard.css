@@ -6032,9 +6032,26 @@ body {
   margin-top: 16px;
 }
 
+.consult-outcome-reminder {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.consult-outcome-reminder span,
+.consult-outcome-note > span {
+  color: var(--dd-text-primary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+
+.consult-outcome-reminder small {
+  color: var(--dd-text-secondary);
+  font: 400 11px/1.4 var(--dd-font);
+}
+
+.consult-outcome-reminder input,
 .consult-outcome-note textarea {
   width: 100%;
-  min-height: 60px;
   border: 1px solid var(--dd-divider);
   border-radius: 10px;
   background: var(--dd-bg);
@@ -6042,9 +6059,14 @@ body {
   font: 400 13px/1.5 var(--dd-font);
   outline: none;
   padding: 10px 12px;
+}
+
+.consult-outcome-note textarea {
+  min-height: 60px;
   resize: vertical;
 }
 
+.consult-outcome-reminder input:focus,
 .consult-outcome-note textarea:focus {
   border-color: rgba(23,59,61,0.35);
   box-shadow: 0 0 0 3px rgba(23,59,61,0.08);
