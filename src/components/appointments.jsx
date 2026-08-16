@@ -198,7 +198,7 @@ function consultationChecklist(appointment) {
   ];
 }
 
-function actionState(appointment, nowMs) {
+function actionState(appointment, nowMs, sessionOpened = false) {
   if (!appointment) {
     return {
       label: "",
@@ -276,9 +276,14 @@ function actionState(appointment, nowMs) {
       canRecordOutcome: false
     };
   }
+  const slotEnded = appointmentSlotEnded(appointment, nowMs);
   return {
     label: appointment.meetingLink
-      ? "Join at the scheduled time, then complete the consultation or mark no-show."
+      ? sessionOpened
+        ? "The video session opened. Complete the consultation when the call ends."
+        : slotEnded
+        ? "The consultation slot has ended. Complete the consultation or mark no-show."
+        : "Join at the scheduled time, then complete the consultation or mark no-show."
       : "Review appointment and update outcome.",
     tone: "current",
     canPrescribe: false,
@@ -335,6 +340,11 @@ function appointmentOutcomeActionsAvailable(appointment, nowMs) {
   return nowMs >= startMs;
 }
 
+function appointmentSlotEnded(appointment, nowMs) {
+  const endMs = new Date(appointment?.scheduledEndAt || "").getTime();
+  return Number.isFinite(endMs) && nowMs >= endMs;
+}
+
 function appointmentNeedsAction(appointment, nowMs) {
   if (!appointment) return false;
   const bucket = appointmentStatusBucket(appointment.status);
@@ -346,7 +356,7 @@ function appointmentNeedsAction(appointment, nowMs) {
   return !prescriptionIssued(appointment);
 }
 
-function nextStepLabel(appointment) {
+function nextStepLabel(appointment, nowMs, sessionOpened = false) {
   if (!appointment) return "";
   const normalized = String(appointment.status || "").toLowerCase();
   const workbench = appointment.workbench || {};
@@ -360,7 +370,11 @@ function nextStepLabel(appointment) {
   if (normalized === "completed") return "Issue prescription ›";
   if (normalized === "no_show") return "Follow up and rebook if needed";
   if (normalized === "cancelled" || normalized === "canceled") return "No doctor action required";
-  if (appointment.meetingLink) return "Join consultation ›";
+  if (appointment.meetingLink) {
+    return sessionOpened || appointmentSlotEnded(appointment, nowMs)
+      ? "Complete consultation ›"
+      : "Join consultation ›";
+  }
   return "Review appointment and update outcome ›";
 }
 
@@ -556,6 +570,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [scheduleScope, setScheduleScope] = useStateA("day");
   const [nowMs, setNowMs] = useStateA(() => Date.now());
   const [outcomeTarget, setOutcomeTarget] = useStateA(null);
+  const [joinedAppointments, setJoinedAppointments] = useStateA({});
 
   const loadAppointments = React.useCallback(async () => {
     setLoading(true);
@@ -620,7 +635,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedFulfillment.delivered_at ||
     selectedFulfillment.amount_fils
   );
-  const selectedActionState = actionState(selected, nowMs);
+  const selectedActionState = actionState(selected, nowMs, Boolean(joinedAppointments[selected?.id]));
   const selectedHasPatientChart = Boolean(selectedPatient?.id && (!selectedIsQuickWlp || selectedPatient.id !== selected.quickWlpLeadId));
   const selectedProfile = selected
     ? patientProfiles.find((profile) => profile.id === selected.patientId || profile.id === selectedPatient?.id)
@@ -643,7 +658,12 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedActionState.canPrescribe &&
     !blocksQuickWlpPrescription(selected.status) &&
     !selectedHasMedicationOrder;
-  const selectedHasJoinOrCall = Boolean(selected?.meetingLink && appointmentStatusBucket(selected.status) === "upcoming");
+  const selectedHasJoinOrCall = Boolean(
+    selected?.meetingLink &&
+    appointmentStatusBucket(selected.status) === "upcoming" &&
+    !joinedAppointments[selected.id] &&
+    !appointmentSlotEnded(selected, nowMs)
+  );
   const selectedHasClinicalActions = Boolean(
     selectedHasJoinOrCall ||
     canCompleteSelected ||
@@ -742,6 +762,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
       });
       const data = await response.json();
       if (!response.ok || !data.session_url) throw new Error(data.error || data.status || "session_unavailable");
+      setJoinedAppointments((current) => ({ ...current, [appointment.id]: true }));
       window.open(data.session_url, "_blank", "noopener,noreferrer");
     } catch {
       setError("Could not open the appointment session.");
@@ -925,7 +946,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               {visibleAppointments.map((a) => {
                 const isNow = a.id === activeAppointmentId;
                 const isSel = a.id === selectedId;
-                const rowNextStep = nextStepLabel(a);
+                const rowNextStep = nextStepLabel(a, nowMs, Boolean(joinedAppointments[a.id]));
                 return (
                   <div key={a.id} className={"tl-row" + (isNow ? " now" : "") + (isSel ? " selected" : "")}>
                     <div className="time">{appointmentRowTime(a, selectedDate)}</div>
@@ -984,7 +1005,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
 
               <div className={`workbench-next ${selectedActionState.tone}`}>
                 <span>What happens next</span>
-                <strong>{selectedActionState.label || nextStepLabel(selected)}</strong>
+                <strong>{selectedActionState.label || nextStepLabel(selected, nowMs, Boolean(joinedAppointments[selected.id]))}</strong>
               </div>
 
               <ClinicalContextBanner
