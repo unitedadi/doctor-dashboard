@@ -35,22 +35,47 @@ test("adds the required Dubai-offset reminder only for patient undecided", () =>
 
   assert.deepEqual(buildConsultOutcomePayload({
     outcome: "NO_MEDICATION_NEEDED",
-    note: "",
+    note: "Lifestyle changes are sufficient at this time.",
     followUpLocal: "2026-08-17T15:00",
     now: fixedNow,
   }), {
     outcome: "NO_MEDICATION_NEEDED",
-    note: null,
+    note: "Lifestyle changes are sufficient at this time.",
   });
+});
+
+test("requires a clinical note for every doctor-reported outcome", () => {
+  for (const { value: outcome } of availableConsultOutcomes("rx")) {
+    assert.throws(
+      () => buildConsultOutcomePayload({
+        outcome,
+        note: "   ",
+        followUpLocal: "2026-08-17T15:00",
+        now: fixedNow,
+      }),
+      /Enter a clinical note/,
+      outcome,
+    );
+  }
 });
 
 test("rejects a missing or past patient-undecided reminder before submission", () => {
   assert.throws(
-    () => buildConsultOutcomePayload({ outcome: "PATIENT_UNDECIDED", followUpLocal: "", now: fixedNow }),
+    () => buildConsultOutcomePayload({
+      outcome: "PATIENT_UNDECIDED",
+      note: "Patient needs time to decide.",
+      followUpLocal: "",
+      now: fixedNow,
+    }),
     /Choose a follow-up date and time/,
   );
   assert.throws(
-    () => buildConsultOutcomePayload({ outcome: "PATIENT_UNDECIDED", followUpLocal: "2026-08-16T14:00", now: fixedNow }),
+    () => buildConsultOutcomePayload({
+      outcome: "PATIENT_UNDECIDED",
+      note: "Patient needs time to decide.",
+      followUpLocal: "2026-08-16T14:00",
+      now: fixedNow,
+    }),
     /Choose a future follow-up time in Dubai/,
   );
 });
@@ -71,6 +96,10 @@ test("provides Dubai-local defaults and human clinical errors", () => {
   assert.equal(
     consultOutcomeErrorMessage("validation_error", { details: { fieldErrors: { follow_up_at: ["follow_up_at_required"] } } }),
     "Choose a follow-up date and time.",
+  );
+  assert.equal(
+    consultOutcomeErrorMessage("validation_error", { details: { fieldErrors: { note: ["note_required"] } } }),
+    "Enter a clinical note.",
   );
 });
 
