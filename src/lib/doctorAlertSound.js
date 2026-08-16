@@ -41,6 +41,7 @@ export function createDoctorAlertMessageHandler({
   play = () => playDoctorAlertSound(),
   storage = globalThis.sessionStorage,
   seen = new Set(),
+  onPending = () => undefined,
 } = {}) {
   return (event) => {
     const alert = event?.data;
@@ -53,29 +54,63 @@ export function createDoctorAlertMessageHandler({
     if (seen.has(key)) return false;
     try {
       if (storage?.getItem(key)) return false;
+    } catch {
+      // The in-memory set still prevents duplicates when storage is unavailable.
+    }
+
+    if (!play(alert.type)) {
+      onPending(alert);
+      return false;
+    }
+
+    try {
       storage?.setItem(key, "1");
     } catch {
-      // The in-memory set still prevents duplicate sounds when storage is unavailable.
+      // The in-memory set still prevents duplicates when storage is unavailable.
     }
     seen.add(key);
-    return Boolean(play(alert.type));
+    return true;
   };
 }
 
-export function startDoctorAlertSound() {
-  if (!("serviceWorker" in navigator)) return () => undefined;
+export function startDoctorAlertSound({
+  serviceWorker = navigator.serviceWorker,
+  eventTarget = window,
+  unlockSound = unlockDoctorAlertSound,
+  play = () => playDoctorAlertSound(),
+  storage = globalThis.sessionStorage,
+} = {}) {
+  if (!serviceWorker) return () => undefined;
 
-  const onAlert = createDoctorAlertMessageHandler();
-  const unlock = () => {
-    void unlockDoctorAlertSound().catch(() => undefined);
+  const pending = new Map();
+  const handleAlert = createDoctorAlertMessageHandler({
+    play,
+    storage,
+    onPending: (alert) => pending.set(alert.event_id, alert),
+  });
+  const onAlert = (event) => {
+    const played = handleAlert(event);
+    if (played) pending.delete(event?.data?.event_id);
+    return played;
   };
-  navigator.serviceWorker.addEventListener("message", onAlert);
-  window.addEventListener("pointerdown", unlock, { capture: true });
-  window.addEventListener("keydown", unlock, { capture: true });
+  const unlock = async () => {
+    try {
+      if (!(await unlockSound())) return false;
+      for (const alert of pending.values()) {
+        if (handleAlert({ data: alert })) pending.delete(alert.event_id);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  serviceWorker.addEventListener("message", onAlert);
+  eventTarget.addEventListener("pointerdown", unlock, { capture: true });
+  eventTarget.addEventListener("keydown", unlock, { capture: true });
 
   return () => {
-    navigator.serviceWorker.removeEventListener("message", onAlert);
-    window.removeEventListener("pointerdown", unlock, { capture: true });
-    window.removeEventListener("keydown", unlock, { capture: true });
+    serviceWorker.removeEventListener("message", onAlert);
+    eventTarget.removeEventListener("pointerdown", unlock, { capture: true });
+    eventTarget.removeEventListener("keydown", unlock, { capture: true });
   };
 }
