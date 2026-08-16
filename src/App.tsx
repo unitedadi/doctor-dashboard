@@ -13,6 +13,7 @@ import './components/refills.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
+import { summarizeClinicalInboxTasks, type ClinicalInboxSummary } from './lib/clinicalInboxSummary.js'
 import {
   disableDoctorChatPush,
   enableDoctorChatPush,
@@ -130,6 +131,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   const [routeContext, setRouteContext] = useState<Record<string, string>>(initialNavigationState.context)
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
+  const [clinicalInboxBreakdown, setClinicalInboxBreakdown] = useState<ClinicalInboxSummary | null>(null)
   const [unreadChats, setUnreadChats] = useState<number | null>(null)
   const [rating, setRating] = useState<{ average: number; count: number } | null>(null)
   const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })
@@ -179,10 +181,17 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
     const params = new URLSearchParams({ doctor_id: DOCTOR_ID, lookback_days: '90', limit: '100' })
     fetchJson<ClinicalInboxCountPayload>(`${API_BASE}/doctor/clinical-inbox?${params.toString()}`)
       .then((data) => {
-        if (!cancelled) setClinicalInboxCount(Array.isArray(data.tasks) ? data.tasks.length : 0)
+        if (!cancelled) {
+          const summary = summarizeClinicalInboxTasks(data.tasks)
+          setClinicalInboxCount(summary.total)
+          setClinicalInboxBreakdown(summary)
+        }
       })
       .catch(() => {
-        if (!cancelled) setClinicalInboxCount(null)
+        if (!cancelled) {
+          setClinicalInboxCount(null)
+          setClinicalInboxBreakdown(null)
+        }
       })
     return () => { cancelled = true }
   }, [])
@@ -212,6 +221,18 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
       setPushState(state)
     } catch {
       setPushState({ status: 'error', label: 'Try alerts again' })
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const checkPush = async () => {
+    if (pushBusy) return
+    setPushBusy(true)
+    try {
+      setPushState(await readDoctorChatPushState({ apiBase: API_BASE, doctorId: DOCTOR_ID }))
+    } catch {
+      setPushState({ status: 'unavailable', label: 'Alerts unavailable' })
     } finally {
       setPushBusy(false)
     }
@@ -304,11 +325,15 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
         onNav={(id: string) => go(id)}
         appointmentCount={appointmentCount}
         clinicalInboxCount={clinicalInboxCount}
+        clinicalInboxBreakdown={clinicalInboxBreakdown}
         unreadChats={unreadChats}
+        activeInboxCategory={route === 'clinical-inbox' ? routeContext.category || '' : ''}
+        onOpenInboxCategory={(category: string) => go('clinical-inbox', { category })}
         notificationState={pushState.status}
         notificationLabel={pushBusy ? 'Updating alerts' : pushState.label}
         notificationDisabled={pushBusy || ['loading', 'unsupported', 'unavailable', 'blocked'].includes(pushState.status)}
         onToggleNotification={togglePush}
+        onCheckNotification={checkPush}
         rating={rating}
         doctorEmail={doctorEmail}
         onSignOut={onSignOut}
@@ -317,6 +342,8 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
         {route === 'clinical-inbox' && (
           <ClinicalInboxView
             onCountChange={setClinicalInboxCount}
+            onBreakdownChange={setClinicalInboxBreakdown}
+            initialCategory={routeContext.category || ''}
             onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id || '', customerId: customerId || '', hubMode: 'charts' })}
             onOpenChat={(id: string, channelId?: string) => go('patient-hub', { patientId: id || '', channelId: channelId || '', hubMode: 'needs_reply' })}
             onPrescribeRx={(task: DashboardActionPayload) => go('prescribe', {

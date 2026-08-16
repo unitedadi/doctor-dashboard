@@ -9,6 +9,7 @@
     "build": "npm run build:prod",
     "build:dev": "tsc -b && vite build --mode development",
     "build:prod": "tsc -b && vite build --mode production",
+    "test": "node --test",
     "lint": "eslint .",
     "preview": "vite preview"
   },

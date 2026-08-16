@@ -1,4 +1,5 @@
 import * as React from "react";
+import { doctorChatPushRecovery } from "../lib/doctorChatPush.js";
 import {
   BookOpenCheck,
   Bell,
@@ -129,11 +130,15 @@ function Sidebar({
   onNav,
   appointmentCount,
   clinicalInboxCount,
+  clinicalInboxBreakdown,
   unreadChats,
+  activeInboxCategory,
+  onOpenInboxCategory,
   notificationState,
   notificationLabel,
   notificationDisabled,
   onToggleNotification,
+  onCheckNotification,
   rating,
   doctorEmail,
   onSignOut,
@@ -144,6 +149,7 @@ function Sidebar({
     { id: "patient-hub", label: "Patient hub", icon: I.message, count: unreadChats },
   ];
   const D = window.DD_DATA.DOCTOR;
+  const alertRecovery = doctorChatPushRecovery(notificationState);
   const storageKey = `dd-sidebar-collapsed:${D.accountId || D.doctorId || "doctor"}`;
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem(storageKey) === "1");
   const [accountOpen, setAccountOpen] = useState(false);
@@ -173,19 +179,41 @@ function Sidebar({
 
       <div className="nav-section-label">Workspace</div>
       {items.map((it) => (
-        <button key={it.id}
-             type="button"
-             className={"nav-item" + (active === it.id ? " active" : "")}
-             aria-current={active === it.id ? "page" : undefined}
-             aria-label={it.label}
-             title={collapsed ? it.label : undefined}
-             onClick={() => onNav(it.id)}>
-          {it.icon}
-          <span className="nav-label">{it.label}</span>
-          {it.count != null && it.count > 0 ? (
-            <span className={"count" + (it.urgent ? " urgent" : "")}>{it.count}</span>
+        <React.Fragment key={it.id}>
+          <button
+               type="button"
+               className={"nav-item" + (active === it.id ? " active" : "")}
+               aria-current={active === it.id && !activeInboxCategory ? "page" : undefined}
+               aria-label={it.label}
+               title={collapsed ? it.label : undefined}
+               onClick={() => onNav(it.id)}>
+            {it.icon}
+            <span className="nav-label">{it.label}</span>
+            {it.count != null && it.count > 0 ? (
+              <span className={"count" + (it.urgent ? " urgent" : "")}>{it.count}</span>
+            ) : null}
+          </button>
+          {it.id === "clinical-inbox" && clinicalInboxBreakdown ? (
+            <div className="sidebar-inbox-shortcuts" aria-label="Clinical inbox shortcuts">
+              <button
+                type="button"
+                className={activeInboxCategory === "message_needs_response" ? "active" : ""}
+                aria-current={activeInboxCategory === "message_needs_response" ? "page" : undefined}
+                onClick={() => onOpenInboxCategory?.("message_needs_response")}
+              >
+                <span>Needs reply</span><strong>{clinicalInboxBreakdown.needsReply}</strong>
+              </button>
+              <button
+                type="button"
+                className={activeInboxCategory === "refill_review" ? "active" : ""}
+                aria-current={activeInboxCategory === "refill_review" ? "page" : undefined}
+                onClick={() => onOpenInboxCategory?.("refill_review")}
+              >
+                <span>Refill review</span><strong>{clinicalInboxBreakdown.refillReview}</strong>
+              </button>
+            </div>
           ) : null}
-        </button>
+        </React.Fragment>
       ))}
 
       <div className="sidebar-doctor" ref={accountRef}>
@@ -219,6 +247,13 @@ function Sidebar({
                 <span className="doctor-alert-track"><span /></span>
               </span>
             </button>
+            {alertRecovery ? (
+              <div className="doctor-alert-help" role="status">
+                <strong>{alertRecovery.title}</strong>
+                <p>{alertRecovery.detail}</p>
+                <button type="button" onClick={onCheckNotification} disabled={!onCheckNotification}>{alertRecovery.action}</button>
+              </div>
+            ) : null}
             <div className="sidebar-account-divider" />
             <button type="button" className="sidebar-signout" disabled={!onSignOut} onClick={onSignOut}>{I.logOut}<span>Sign out</span></button>
           </div>
