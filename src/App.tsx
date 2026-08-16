@@ -14,6 +14,7 @@ import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
 import { summarizeClinicalInboxTasks, type ClinicalInboxSummary } from './lib/clinicalInboxSummary.js'
+import { playDoctorAlertSound, startDoctorAlertSound, unlockDoctorAlertSound } from './lib/doctorAlertSound.js'
 import {
   disableDoctorChatPush,
   doctorChatPushFailure,
@@ -123,6 +124,13 @@ function initialNavigation(): { route: string; context: Record<string, string> }
       },
     }
   }
+  if (view === 'clinical-inbox') {
+    return {
+      route: 'clinical-inbox',
+      context: { category: params.get('category') || '' },
+    }
+  }
+  if (view === 'appointments') return { route: 'appointments', context: {} }
   return { route: 'appointments', context: {} }
 }
 
@@ -162,6 +170,10 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
       : ctx)
     window.scrollTo(0, 0)
   }
+
+  useEffect(() => {
+    return startDoctorAlertSound()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -216,10 +228,12 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
     if (pushBusy || ['loading', 'unsupported', 'unavailable', 'blocked'].includes(pushState.status)) return
     setPushBusy(true)
     try {
+      if (pushState.status !== 'on') void unlockDoctorAlertSound().catch(() => undefined)
       const state = pushState.status === 'on'
         ? await disableDoctorChatPush({ apiBase: API_BASE, doctorId: DOCTOR_ID })
         : await enableDoctorChatPush({ apiBase: API_BASE, doctorId: DOCTOR_ID })
       setPushState(state)
+      if (state.status === 'on') playDoctorAlertSound()
     } catch (error) {
       const failure = doctorChatPushFailure(error)
       console.error('[doctor-chat-push] activation_failed', {

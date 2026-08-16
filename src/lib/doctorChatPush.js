@@ -17,7 +17,7 @@ export function doctorChatPushRecovery(state) {
   if (state === "unavailable") {
     return {
       title: "Alerts are temporarily unavailable",
-      detail: "Patient messages still appear in Needs reply.",
+      detail: "Appointments, messages, and refill requests remain in their work queues.",
       action: "Try again",
     };
   }

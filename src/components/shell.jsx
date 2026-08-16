@@ -241,7 +241,7 @@ function Sidebar({
               onClick={onToggleNotification}
               title={notificationState === "blocked" ? "Allow notifications in your browser settings" : notificationLabel}
             >
-              <span className="doctor-alert-label">{notificationState === "blocked" ? I.bellOff : I.bell}<span>Message alerts</span></span>
+              <span className="doctor-alert-label">{notificationState === "blocked" ? I.bellOff : I.bell}<span>Dashboard alerts</span></span>
               <span className="doctor-alert-control">
                 <span>{notificationLabel}</span>
                 <span className="doctor-alert-track"><span /></span>
