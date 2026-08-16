@@ -17,6 +17,11 @@ declare global {
     }
     DD_UI: {
       Sidebar: ComponentType<Record<string, unknown>>
+      StatusChip: ComponentType<Record<string, unknown>>
+      ClinicalThread: ComponentType<Record<string, unknown>>
+      ClinicalContextBanner: ComponentType<Record<string, unknown>>
+      ConfirmationModal: ComponentType<Record<string, unknown>>
+      ActionToast: ComponentType<Record<string, unknown>>
     }
     DD_PatientChart: ComponentType<Record<string, unknown>>
     DD_ClinicalInboxView: ComponentType<Record<string, unknown>>

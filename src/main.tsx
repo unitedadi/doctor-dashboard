@@ -1,6 +1,7 @@
-import { StrictMode, useEffect, useState, type ReactNode } from 'react'
+/* eslint-disable react-refresh/only-export-components */
+import { Component, StrictMode, useEffect, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ClerkProvider, SignIn, useAuth, useUser } from '@clerk/react'
+import { ClerkProvider, SignIn, useAuth, useClerk, useUser } from '@clerk/react'
 import './index.css'
 import App from './App.tsx'
 import {
@@ -47,11 +48,12 @@ function MobileDeviceBlocked() {
     <div className="doctor-auth-page mobile-device-blocked-page">
       <div className="doctor-auth-card mobile-device-blocked-card">
         <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
-        <p className="doctor-auth-kicker">For Doctors</p>
-        <h1>Mobile use is not allowed</h1>
+        <p className="doctor-auth-kicker">For doctors</p>
+        <h1>Open on a desktop to continue</h1>
         <p className="doctor-auth-copy">
-          This portal is available only on desktop devices. Please login via Desktop.
+          The clinical portal is desktop only. Patient charts, prescribing, and safety checks need a full-size screen.
         </p>
+        <p className="doctor-auth-device-note">Sign in from your computer at <strong>rx.dardoc.co</strong></p>
       </div>
     </div>
   )
@@ -94,20 +96,50 @@ function DesktopOnlyGate({ children }: { children: ReactNode }) {
 function MissingClerkConfig() {
   return (
     <div className="doctor-auth-page">
-      <div className="doctor-auth-card">
+      <div className="doctor-auth-card auth-card-400">
         <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
-        <p className="doctor-auth-kicker">For Doctors</p>
-        <h1>Clerk is not configured</h1>
+        <p className="doctor-auth-kicker">For doctors</p>
+        <h1>Login could not load</h1>
         <p className="doctor-auth-copy">
-          Set <code>NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code> or <code>VITE_CLERK_PUBLISHABLE_KEY</code> to enable login.
+          The sign-in service did not respond. Your connection may be offline, or this domain is not allowed for the configured key.
         </p>
+        <button type="button" className="doctor-auth-button" onClick={() => window.location.reload()}>Try again</button>
       </div>
     </div>
   )
 }
 
+function PortalUnavailable() {
+  return (
+    <div className="doctor-auth-page">
+      <div className="doctor-auth-card auth-card-420">
+        <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
+        <p className="doctor-auth-kicker">For doctors</p>
+        <h1>The portal is unavailable</h1>
+        <p className="doctor-auth-copy">
+          Something on our side is not responding. No patient data was changed. If a consultation is starting now, call the patient directly from your phone.
+        </p>
+        <button type="button" className="doctor-auth-button" onClick={() => window.location.reload()}>Retry</button>
+      </div>
+    </div>
+  )
+}
+
+class PortalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    return this.state.hasError ? <PortalUnavailable /> : this.props.children
+  }
+}
+
 function DoctorAuthShell() {
   const { getToken, isLoaded, isSignedIn } = useAuth()
+  const { signOut } = useClerk()
   const { user } = useUser()
   const [loadTimedOut, setLoadTimedOut] = useState(false)
   const [workspaceError, setWorkspaceError] = useState('')
@@ -115,10 +147,7 @@ function DoctorAuthShell() {
   const [account, setAccount] = useState(getActiveDoctorAccount())
 
   useEffect(() => {
-    if (isLoaded) {
-      setLoadTimedOut(false)
-      return undefined
-    }
+    if (isLoaded) return undefined
     const timer = window.setTimeout(() => setLoadTimedOut(true), 6000)
     return () => window.clearTimeout(timer)
   }, [isLoaded])
@@ -133,11 +162,10 @@ function DoctorAuthShell() {
     return () => setApiTokenProvider(null)
   }, [getToken, isSignedIn])
 
+  /* Clerk identity is external state; this effect resolves it into the active doctor workspace. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) {
-      setWorkspaceReady(false)
-      return
-    }
+    if (!isLoaded || !isSignedIn) return
 
     const locationAccountId = resolveDoctorAccountFromLocation()
     const primaryEmail =
@@ -148,7 +176,7 @@ function DoctorAuthShell() {
     const resolvedAccountId = locationAccountId || emailAccountId
 
     if (!resolvedAccountId) {
-      setWorkspaceError(primaryEmail ? `No doctor workspace is linked to ${primaryEmail}.` : 'No doctor workspace is linked to this login.')
+      setWorkspaceError(`You are signed in as ${primaryEmail || 'this account'}, but no doctor workspace is linked to this account.`)
       setWorkspaceReady(true)
       return
     }
@@ -157,19 +185,22 @@ function DoctorAuthShell() {
     setAccount(setActiveDoctorAccount(resolvedAccountId))
     setWorkspaceReady(true)
   }, [isLoaded, isSignedIn, user])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!isLoaded) {
     return (
       <div className="doctor-auth-page">
-        <div className="doctor-auth-card">
+        <div className="doctor-auth-card auth-card-380">
           <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
-          <p className="doctor-auth-kicker">For Doctors</p>
-          <h1>{loadTimedOut ? 'Cannot load login' : 'Loading'}</h1>
+          <p className="doctor-auth-kicker">For doctors</p>
+          <h1>{loadTimedOut ? 'Login could not load' : 'Opening your workspace'}</h1>
           <p className="doctor-auth-copy">
             {loadTimedOut
-              ? 'Clerk did not finish loading. Check that this domain is allowed for the configured publishable key.'
-              : 'Checking your doctor dashboard session.'}
+              ? 'The sign-in service did not respond. Your connection may be offline, or this domain is not allowed for the configured key.'
+              : 'Checking your doctor dashboard session. This takes a moment.'}
           </p>
+          {!loadTimedOut ? <div className="doctor-auth-skeleton" aria-hidden="true"><span /><span /><span /></div> : null}
+          {loadTimedOut ? <button type="button" className="doctor-auth-button" onClick={() => window.location.reload()}>Try again</button> : null}
         </div>
       </div>
     )
@@ -178,14 +209,17 @@ function DoctorAuthShell() {
   if (!isSignedIn) {
     return (
       <div className="doctor-auth-page">
-        <div className="doctor-auth-card">
+        <div className="doctor-auth-card auth-card-400">
           <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
-          <p className="doctor-auth-kicker">For Doctors</p>
+          <p className="doctor-auth-kicker">For doctors</p>
           <h1>Sign in to continue</h1>
           <p className="doctor-auth-copy">
-            Workspace: <strong>{account.profile.name}</strong>
+            Workspace · <strong>{account.profile.name}</strong>
           </p>
-          <SignIn routing="hash" />
+          <div className="doctor-auth-clerk">
+            <SignIn routing="hash" />
+            <p className="doctor-auth-security">Secured by Clerk · desktop only</p>
+          </div>
         </div>
       </div>
     )
@@ -194,11 +228,16 @@ function DoctorAuthShell() {
   if (workspaceError) {
     return (
       <div className="doctor-auth-page">
-        <div className="doctor-auth-card">
+        <div className="doctor-auth-card auth-card-420">
           <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
-          <p className="doctor-auth-kicker">For Doctors</p>
+          <p className="doctor-auth-kicker">For doctors</p>
           <h1>Workspace not linked</h1>
           <p className="doctor-auth-copy">{workspaceError}</p>
+          <p className="doctor-auth-copy">Ask the DarDoc clinical team to link your account, then sign in again.</p>
+          <div className="doctor-auth-actions">
+            <button type="button" className="doctor-auth-button" onClick={() => signOut({ redirectUrl: window.location.href })}>Sign in with another account</button>
+            <button type="button" className="doctor-auth-button secondary" onClick={() => signOut()}>Sign out</button>
+          </div>
         </div>
       </div>
     )
@@ -207,31 +246,35 @@ function DoctorAuthShell() {
   if (!workspaceReady) {
     return (
       <div className="doctor-auth-page">
-        <div className="doctor-auth-card">
+        <div className="doctor-auth-card auth-card-380">
           <img src="/assets/logo-dardoc-teal.svg" alt="DarDoc" />
-          <p className="doctor-auth-kicker">For Doctors</p>
-          <h1>Loading</h1>
-          <p className="doctor-auth-copy">Opening your doctor workspace.</p>
+          <p className="doctor-auth-kicker">For doctors</p>
+          <h1>Opening your workspace</h1>
+          <p className="doctor-auth-copy">Checking your doctor dashboard session. This takes a moment.</p>
+          <div className="doctor-auth-skeleton" aria-hidden="true"><span /><span /><span /></div>
         </div>
       </div>
     )
   }
 
-  return <App />
+  const doctorEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
+  return <App doctorEmail={doctorEmail} onSignOut={() => signOut()} />
 }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <DesktopOnlyGate>
-      {SKIP_CLERK ? (
-        <App />
-      ) : CLERK_PUBLISHABLE_KEY ? (
-        <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl={window.location.href}>
-          <DoctorAuthShell />
-        </ClerkProvider>
-      ) : (
-        <MissingClerkConfig />
-      )}
+      <PortalErrorBoundary>
+        {SKIP_CLERK ? (
+          <App />
+        ) : CLERK_PUBLISHABLE_KEY ? (
+          <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl={window.location.href}>
+            <DoctorAuthShell />
+          </ClerkProvider>
+        ) : (
+          <MissingClerkConfig />
+        )}
+      </PortalErrorBoundary>
     </DesktopOnlyGate>
   </StrictMode>,
 )

@@ -1,4 +1,7 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV ? "/api" : "");
+export const LOCAL_PREVIEW = import.meta.env.DEV && (
+  import.meta.env.VITE_SKIP_CLERK === "1" || import.meta.env.VITE_SKIP_CLERK === "true"
+);
 export const LAB_CATALOG_API_BASE = import.meta.env.VITE_LAB_CATALOG_API_BASE || "";
 export const LAB_CATALOG_SELLER_ID = import.meta.env.VITE_LAB_CATALOG_SELLER_ID || "seller_655656ac86b8";
 export const CLERK_PUBLISHABLE_KEY =
@@ -15,6 +18,7 @@ export const DOCTOR_ACCOUNTS = {
     doctorId: import.meta.env.VITE_DOCTOR_ID || "doctor_sami_dev",
     profile: {
       name: "Dr. Sami",
+      email: "dr.sami@dardoc.com",
       title: "GLP-1 & Peptide Specialist",
       initials: "S",
       license: "MOH-DXB-29871",
@@ -25,6 +29,7 @@ export const DOCTOR_ACCOUNTS = {
     doctorId: "doctor_marwa",
     profile: {
       name: "Dr. Marwa",
+      email: "dr.marwa@dardoc.com",
       title: "Staff Physician",
       initials: "M",
       license: "",

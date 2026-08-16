@@ -78,6 +78,27 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-08-16 14:40 +04 - Restore post-call consultation completion
+
+- Source: Dr. Marwa reported that `Record outcome` never appeared after Karina Manaf's Production consultation.
+- Changed Schedule so a successful session launch advances the selected appointment to `Complete consultation`, and an overdue booked slot exposes completion even if the page was refreshed after the call.
+- Verification: local mocked workflow confirmed overdue `BOOKED` → `Complete consultation` → completed → `Record outcome`, an active session changed `Join` to `Complete`, browser console stayed clean, and `npm run lint` plus `npm run build:prod` passed.
+- Follow-up: Karina's clinical record remains unchanged; Dr. Marwa must complete it through the repaired dashboard before recording the outcome.
+
+### 2026-08-15 22:20 +04 - All-time physician review rating
+
+- Source: Keswin confirmed Doctor Dashboard must show each physician's all-time review rating rather than a 90-day window.
+- Changed the dashboard to consume RealBackend's `response_count` field so the authenticated all-time average and review count can render in the account row and menu.
+- Verification: paired RealBackend all-time/eligibility contract tests passed 12/12, backend typecheck passed, and frontend lint/build passed. Signed-in DEV Preview isolation remains pending.
+- Follow-up: RealBackend owns genuine-patient eligibility and excludes staff/canary feedback; Production remains gated on authenticated DEV proof.
+
+### 2026-08-15 20:10 +04 - Re-issue prescription price hydration
+
+- Source: Keswin reported the DEV-backed re-issue review displayed AED 0 even though the current catalogue had non-zero prices.
+- Changed re-issue prefilling to wait for the live catalogue, hydrate medication and needle prices from backend-owned product records, and fail closed with `Price unavailable` when any item cannot be priced.
+- Verification: `npm run lint` and `npm run build` passed; read-only browser QA against RealBackend DEV rendered Mounjaro at AED 1,734, needles at AED 10, and the combined total at AED 1,744 with no console warnings. No prescription was submitted.
+- Follow-up: authenticated DEV submission and persistence remain a separate authorized integration boundary.
+
 ### 2026-08-14 14:00 +04 - Doctor chat browser alerts
 
 - Source: Keswin approved the lean first alert boundary for Doctor Dashboard chat: GetStream event, RealBackend verification, generic browser notification, and exact-chat deep link.

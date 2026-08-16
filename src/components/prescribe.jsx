@@ -42,6 +42,17 @@ function formatPrice(fils) {
   }).format(fils / 100);
 }
 
+function priceFils(value) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function cartItemPriceLabel(item) {
+  const unitPrice = priceFils(item?.price_fils);
+  return unitPrice === undefined ? "Price unavailable" : formatPrice(unitPrice * item.quantity);
+}
+
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
@@ -257,6 +268,19 @@ function mapSupplementProduct(product) {
   return mapShipmentProduct(product);
 }
 
+async function fetchNeedlesCatalogProduct(sellerId) {
+  const params = new URLSearchParams({
+    seller_id: sellerId,
+    view: "full",
+  });
+  const data = await fetchJson(`${API_BASE}/verticals/shipments/products/${encodeURIComponent(NEEDLES_PRODUCT_ID)}?${params.toString()}`);
+  const mapped = mapShipmentProduct({ ...data.product, seller_offer: data.seller_offer });
+  return {
+    ...mapped,
+    details: productDetails(mapped, NEEDLES_CATALOG.key),
+  };
+}
+
 function isMounjaroProduct(product) {
   return /mounjaro/i.test(product?.name || "");
 }
@@ -314,7 +338,7 @@ function prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading) {
       subtitle: "Select medication, quantity, and instructions. Checkout is sent after the prescription is issued.",
       reviewTitle: "Review prescription",
       typeLabel: `${trackLabel} quick consult prescription`,
-      cta: `Issue ${trackLabel} prescription`,
+      cta: "Issue prescription",
       pendingCta: "Issuing...",
       success: "Prescription issued",
     },
@@ -353,8 +377,29 @@ function publishButtonLabel(workflowCopy, publishing) {
   return publishing ? workflowCopy.pendingCta : workflowCopy.cta;
 }
 
+function PrescriptionCompletion({ completion, onBack, originLabel }) {
+  return (
+    <section className="rx-completion" role="status">
+      <span aria-hidden="true">✓</span>
+      <h2>{completion.title}</h2>
+      <p>{completion.patient}</p>
+      <dl>
+        <div><dt>{completion.itemLabel || "Issued"}</dt><dd>{completion.items}</dd></div>
+        <div><dt>Total</dt><dd>{completion.total}</dd></div>
+        <div><dt>Dubai time</dt><dd>{completion.at}</dd></div>
+      </dl>
+      <p className="rx-completion-next">
+        <span>What happens next</span>
+        {completion.next || "The clinical issue is complete. Payment and fulfilment remain in their existing backend workflow."}
+      </p>
+      {onBack ? <button type="button" className="dd-btn-block" onClick={onBack}>Back to {originLabel || "workspace"}</button> : null}
+    </section>
+  );
+}
+
 function parseAmendItems(value) {
   if (!value) return [];
+  if (Array.isArray(value)) return value;
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
@@ -367,7 +412,14 @@ function listItems(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode, typeLabel, sellerName, promoCode }) {
+function normalizeProductIdentity(product) {
+  return {
+    ...product,
+    product_id: product?.product_id || product?.product_uuid || product?.id || "",
+  };
+}
+
+function ReviewChecklist({ patient, isQuickWlpMode, typeLabel, sellerName, promoCode, originLabel }) {
   if (!patient) {
     return (
       <div className="rx-review-empty">
@@ -378,16 +430,16 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
   return (
     <div className="rx-review">
       <div className="rx-review-row">
-        <span>Member</span>
+        <span>Patient</span>
         <strong>{patient.name}</strong>
-      </div>
-      <div className="rx-review-row">
-        <span>Track</span>
-        <strong>{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</strong>
       </div>
       <div className="rx-review-row">
         <span>Type</span>
         <strong>{typeLabel}</strong>
+      </div>
+      <div className="rx-review-row">
+        <span>Origin</span>
+        <strong>{originLabel || "Clinical workspace"}</strong>
       </div>
       {isQuickWlpMode && (
         <div className="rx-review-row">
@@ -401,14 +453,6 @@ function ReviewChecklist({ patient, cart, cartTotal, activeTrack, isQuickWlpMode
           <strong>{promoCode} · applied automatically</strong>
         </div>
       )}
-      <div className="rx-review-row">
-        <span>Items</span>
-        <strong>{cart.length ? `${cart.length} item${cart.length === 1 ? "" : "s"}` : "None selected"}</strong>
-      </div>
-      <div className="rx-review-row">
-        <span>Total</span>
-        <strong>{cart.length ? formatPrice(cartTotal) : "Not ready"}</strong>
-      </div>
     </div>
   );
 }
@@ -435,12 +479,56 @@ function safetyList(value) {
     .join(", ");
 }
 
-function PrescriptionSafetyPanel({ loading, chart, error }) {
+function firstRefillValue(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== null && value !== undefined && value !== "") return value;
+  }
+  return "";
+}
+
+function refillReviewContext(item) {
+  if (!item) return null;
+  const answers = item.questionnaire || item.answers || item.answers_json || item.form || item;
+  const sideEffects = firstRefillValue(answers, ["side_effects", "sideEffects"]);
+  return {
+    medication: item.current_medication || item.medication_name || item.product_name || item.current_care_plan?.title || "",
+    dose: item.current_dose || item.dose || item.current_care_plan?.dose || "",
+    doseRequest: firstRefillValue(answers, ["dosage_adjustment", "dose_adjustment", "dosePreference", "dose_preference"]),
+    currentWeight: firstRefillValue(answers, ["current_weight_kg", "current_weight", "weight_kg"]),
+    progress: firstRefillValue(answers, ["weight_loss_last_month", "total_progress", "weight_loss_range", "progress"]),
+    sideEffects,
+    sideEffectsPresent: Boolean(sideEffects && String(sideEffects).toUpperCase() !== "NONE"),
+    delivery: firstRefillValue(answers, ["delivery_experience", "delivery_rating", "experience"]),
+    message: firstRefillValue(answers, ["doctor_message", "message_to_doctor", "message"]),
+  };
+}
+
+function RefillReviewContext({ context, loading }) {
+  if (loading) return <div className="rx-refill-context loading">Loading refill review…</div>;
+  if (!context) return null;
+  const value = (input) => input ? titleCase(input) : "Not provided";
+  return (
+    <section className="rx-refill-context">
+      <div className="section-hdr"><div className="label">Refill review context</div></div>
+      <div className="rx-refill-context-grid">
+        <div><span>Previous medication</span><strong>{[context.medication, context.dose].filter(Boolean).join(" · ") || "Not provided"}</strong></div>
+        <div><span>Requested change</span><strong>{value(context.doseRequest)}</strong></div>
+        <div><span>Weight and progress</span><strong>{[context.currentWeight ? `${context.currentWeight} kg` : "", value(context.progress)].filter(Boolean).join(" · ")}</strong></div>
+        <div className={context.sideEffectsPresent ? "attention" : ""}><span>Side effects</span><strong>{value(context.sideEffects)}</strong></div>
+        <div><span>Delivery experience</span><strong>{value(context.delivery)}</strong></div>
+        <div><span>Patient message</span><strong>{context.message || "No message provided"}</strong></div>
+      </div>
+    </section>
+  );
+}
+
+function PrescriptionSafetyPanel({ loading, chart, error, eligible }) {
   if (loading) {
     return (
       <div className="rx-safety-panel">
         <div className="rx-safety-head">
-          <span>Safety check</span>
+          <span>Clinical context for review</span>
           <strong>Loading chart...</strong>
         </div>
       </div>
@@ -450,7 +538,7 @@ function PrescriptionSafetyPanel({ loading, chart, error }) {
     return (
       <div className="rx-safety-panel muted">
         <div className="rx-safety-head">
-          <span>Safety check</span>
+          <span>Clinical context for review</span>
           <strong>Chart unavailable</strong>
         </div>
         <p>{errorCopy(error)}</p>
@@ -469,34 +557,35 @@ function PrescriptionSafetyPanel({ loading, chart, error }) {
   const latestDelivery = deliveries[0];
   const latestAssessment = listItems(clinical.assessment?.submissions)[0];
   const rows = [
-    { label: "Allergies", value: allergies || "None reported", tone: allergies ? "warn" : "clear" },
-    { label: "Conditions", value: conditions || "None reported", tone: conditions ? "warn" : "clear" },
-    { label: "Current medication", value: activeMedication || "Not listed", tone: activeMedication ? "review" : "clear" },
+    { label: "Allergies", value: allergies || "None recorded", tone: allergies ? "warn" : "neutral" },
+    { label: "Conditions", value: conditions || "None recorded", tone: "neutral" },
+    { label: "Current medication", value: activeMedication || "Not listed", tone: "neutral" },
     {
       label: "Last prescription",
       value: latestPrescription
         ? [prescriptionItemLabel(latestPrescription.items), formatDateTime(latestPrescription.issued_at)].filter(Boolean).join(" · ")
         : "No prescription history",
-      tone: latestPrescription ? "review" : "clear",
+      tone: "neutral",
     },
     {
       label: "Medication order",
       value: latestDelivery
         ? [latestDelivery.status ? titleCase(latestDelivery.status) : "", formatDateTime(latestDelivery.delivered_at || latestDelivery.paid_at)].filter(Boolean).join(" · ")
         : "No paid medication order",
-      tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : "clear",
+      tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : "neutral",
     },
     {
       label: "Latest assessment",
       value: latestAssessment?.submitted_at ? formatDateTime(latestAssessment.submitted_at) : "Not available",
-      tone: latestAssessment ? "review" : "clear",
+      tone: "neutral",
     },
+    ...(eligible === true ? [{ label: "Eligibility", value: "Backend eligible", tone: "clear" }] : []),
   ];
 
   return (
     <div className="rx-safety-panel">
       <div className="rx-safety-head">
-        <span>Safety check</span>
+        <span>Clinical context for review</span>
         <strong>Review before issuing</strong>
       </div>
       <div className="rx-safety-grid">
@@ -524,7 +613,7 @@ function AmendmentOriginalPrescription({ items, compact = false }) {
     <div className={compact ? "rx-amend-original compact" : "rx-amend-original"}>
       <div className="rx-amend-original-head">
         <span>Original prescription</span>
-        <strong>Unpaid</strong>
+        <strong>Issued · unpaid</strong>
       </div>
       <div className="rx-amend-original-list">
         {lines.map((item, index) => (
@@ -548,6 +637,7 @@ function AmendmentReviewPanel({
   amendReason,
   setAmendReason,
   removeCart,
+  hasUnpricedCartItems,
   canPublish,
   publishPrescription,
   publishing,
@@ -560,12 +650,13 @@ function AmendmentReviewPanel({
         <strong>{patient?.name || "Patient"}</strong>
       </div>
 
-      <AmendmentOriginalPrescription items={amendItems} compact />
+      <div className="rx-amend-compare">
+        <AmendmentOriginalPrescription items={amendItems} compact />
 
-      <div className="rx-amend-replacement">
+        <div className="rx-amend-replacement">
         <div className="rx-amend-section-title">
           <span>New prescription</span>
-          <strong>{cart.length ? formatPrice(cartTotal) : "Not ready"}</strong>
+          <strong>{cart.length ? (hasUnpricedCartItems ? "Price unavailable" : formatPrice(cartTotal)) : "Not ready"}</strong>
         </div>
         <div className="rx-cart rx-cart-amend">
           {!patient ? (
@@ -578,13 +669,20 @@ function AmendmentReviewPanel({
               <div className="nm">{item.name}</div>
               <div className="rx-cart-meta">
                 <span>Qty {item.quantity}</span>
-                <span>{formatPrice((item.price_fils || 0) * item.quantity)}</span>
+                <span>{cartItemPriceLabel(item)}</span>
               </div>
               <div className="ds">{item.doctor_instructions}</div>
             </div>
           ))}
         </div>
+        </div>
       </div>
+
+      {hasUnpricedCartItems ? (
+        <div className="rx-issue-note">A current catalogue price is unavailable. Refresh the catalogue before re-issuing.</div>
+      ) : null}
+
+      <p className="rx-amend-consequence">Issuing this replacement supersedes the original unpaid prescription.</p>
 
       <div className="field-block rx-amend-reason">
         <label htmlFor="rx-amend-reason">Reason</label>
@@ -655,9 +753,11 @@ function PrescribeView({
   initialAmendItems,
   initialPatientName,
   initialPatientPhone,
+  originLabel,
+  onBack,
   onSent,
 }) {
-  const { I, Avatar, Topbar } = window.DD_UI;
+  const { I, Avatar, ClinicalContextBanner, ActionToast } = window.DD_UI;
   const isQuickWlpMode = Boolean(initialQuickWlpLeadId);
   const [patients, setPatients] = useStateR([]);
   const [selectedPatientKey, setSelectedPatientKey] = useStateR("");
@@ -667,9 +767,6 @@ function PrescribeView({
   const [productCatalogKey, setProductCatalogKey] = useStateR("weight-loss");
   const [query, setQuery] = useStateR("");
   const [products, setProducts] = useStateR([]);
-  const [selectedProduct, setSelectedProduct] = useStateR(null);
-  const [quantity, setQuantity] = useStateR(1);
-  const [instructions, setInstructions] = useStateR("");
   const [cart, setCart] = useStateR([]);
   const [patientsLoading, setPatientsLoading] = useStateR(true);
   const [productsLoading, setProductsLoading] = useStateR(false);
@@ -678,6 +775,7 @@ function PrescribeView({
   const [publishing, setPublishing] = useStateR(false);
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
+  const [completion, setCompletion] = useStateR(null);
   const [amendReason, setAmendReason] = useStateR("");
   const [amendPrefilled, setAmendPrefilled] = useStateR(false);
   const [patientChart, setPatientChart] = useStateR(null);
@@ -686,24 +784,28 @@ function PrescribeView({
   const [orderMode, setOrderMode] = useStateR(initialOrderMode === "lab" ? "lab" : "medication");
   const [labPackages, setLabPackages] = useStateR([]);
   const [labBiomarkers, setLabBiomarkers] = useStateR([]);
-  const [labCatalogView, setLabCatalogView] = useStateR("packages");
-  const [labPackageQuery, setLabPackageQuery] = useStateR("");
-  const [labBiomarkerQuery, setLabBiomarkerQuery] = useStateR("");
+  const [labQuery, setLabQuery] = useStateR("");
   const [labCatalogLoading, setLabCatalogLoading] = useStateR(false);
   const [selectedLabPackageId, setSelectedLabPackageId] = useStateR("");
   const [selectedLabBiomarkerIds, setSelectedLabBiomarkerIds] = useStateR([]);
-  const [labDoctorNote, setLabDoctorNote] = useStateR("");
   const [labSubmitting, setLabSubmitting] = useStateR(false);
-  const [createdLabRequest, setCreatedLabRequest] = useStateR(null);
+  const [refillContext, setRefillContext] = useStateR(null);
+  const [refillContextLoading, setRefillContextLoading] = useStateR(false);
   const labIdempotencyKey = useRefR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
   const quickWlpTrackKey = initialQuickWlpTrackKey === "peptides" ? "peptides" : "weight-loss";
   const quickWlpSellerId = initialQuickWlpSellerId || SUPPLEMENT_SELLER_ID;
   const quickWlpSellerName = initialQuickWlpSellerName || (initialQuickWlpSellerId ? initialQuickWlpSellerId : "DarDoc");
   const quickWlpPromoCode = initialQuickWlpPromoCode || "";
-  const amendSource = initialAmendSource || "";
-  const amendItems = useMemoR(() => parseAmendItems(initialAmendItems), [initialAmendItems]);
-  const isAmendMode = Boolean(initialAmendId && amendSource && amendItems.length);
+  const passedAmendItems = useMemoR(() => parseAmendItems(initialAmendItems), [initialAmendItems]);
+  const chartAmendPrescription = listItems(patientChart?.prescriptions || patientChart?.rx_prescription_history)
+    .find((item) => String(item?.id || item?.prescription_id || "") === String(initialAmendId || ""));
+  const amendSource = initialAmendSource || chartAmendPrescription?.source || "";
+  const amendItems = useMemoR(
+    () => passedAmendItems.length ? passedAmendItems : parseAmendItems(chartAmendPrescription?.items),
+    [chartAmendPrescription, passedAmendItems]
+  );
+  const isAmendMode = Boolean(initialAmendId && (initialPrescriptionMode === "reissue" || amendSource));
 
   const quickWlpPatient = useMemoR(() => {
     if (!isQuickWlpMode) return null;
@@ -753,7 +855,37 @@ function PrescribeView({
     };
   }, [initialCustomerId, initialPatientId, initialPatientName, initialPatientPhone, initialTrackKey, isAmendMode, isQuickWlpMode]);
 
-  const rxPatient = patients.find((item) => item.key === selectedPatientKey) || amendmentPatient;
+  const contextualPatient = useMemoR(() => {
+    if (isQuickWlpMode || !initialPatientId) return null;
+    const track = initialTrackKey || "weight-loss";
+    return {
+      key: `context:${initialPatientId}:${track}`,
+      id: initialPatientId,
+      customerId: initialCustomerId || "",
+      name: initialPatientName || "Patient",
+      initials: patientInitials(initialPatientName || "Patient"),
+      age: null,
+      sex: "",
+      phone: initialPatientPhone || "",
+      trackKey: track,
+      doctorId: DOCTOR_ID,
+      subscriptionStatus: "",
+      latestCompletedConsultationId: initialConsultationId || "",
+      latestCompletedAt: null,
+      canPrescribe: true,
+    };
+  }, [initialConsultationId, initialCustomerId, initialPatientId, initialPatientName, initialPatientPhone, initialTrackKey, isQuickWlpMode]);
+
+  const directoryPatient = patients.find((item) => item.key === selectedPatientKey);
+  const rxPatient = useMemoR(() => directoryPatient
+    ? {
+      ...directoryPatient,
+      name: directoryPatient.name === "Unknown patient" && contextualPatient?.name ? contextualPatient.name : directoryPatient.name,
+      initials: directoryPatient.name === "Unknown patient" && contextualPatient?.initials ? contextualPatient.initials : directoryPatient.initials,
+      phone: directoryPatient.phone || contextualPatient?.phone || "",
+      customerId: directoryPatient.customerId || contextualPatient?.customerId || "",
+    }
+    : amendmentPatient || contextualPatient, [amendmentPatient, contextualPatient, directoryPatient]);
   const patient = isQuickWlpMode ? quickWlpPatient : rxPatient;
   const contextualRxMode = !isQuickWlpMode && Boolean(initialPatientId || initialCustomerId || initialRefillRequestId);
   const activeTrack = TRACKS.find((track) => track.key === trackKey) || TRACKS[0];
@@ -765,11 +897,13 @@ function PrescribeView({
         ? "refill"
         : initialPrescriptionMode || "issue";
   const workflowCopy = prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading);
+  const trackLocked = isQuickWlpMode || workflowMode === "refill" || workflowMode === "reissue";
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
-  const productCatalogs = [...TRACKS, SUPPLEMENTS_CATALOG];
-  const canPublish = Boolean(cart.length && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
+  const productCatalogs = patient ? TRACKS : [...TRACKS, SUPPLEMENTS_CATALOG];
+  const hasUnpricedCartItems = cart.some((item) => priceFils(item.price_fils) === undefined);
+  const canPublish = Boolean(cart.length && !hasUnpricedCartItems && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
   const labPatientId = isQuickWlpMode ? patient?.labPatientId : patient?.id;
   const labConsultationId = initialConsultationId || patient?.latestCompletedConsultationId || "";
   const labConsultationSource = initialConsultationSource || (isQuickWlpMode ? "QUICKWLP" : "RX");
@@ -831,17 +965,12 @@ function PrescribeView({
     setProductCatalogKey(patient.trackKey);
     setCart([]);
     setAutoNeedlesDismissed(false);
-    setSelectedProduct(null);
-    setInstructions("");
     setQuery("");
     setOrderMode(initialOrderMode === "lab" ? "lab" : "medication");
     setSelectedLabPackageId("");
     setSelectedLabBiomarkerIds([]);
-    setLabCatalogView("packages");
-    setLabPackageQuery("");
-    setLabBiomarkerQuery("");
-    setLabDoctorNote("");
-    setCreatedLabRequest(null);
+    setLabQuery("");
+    setCompletion(null);
     labIdempotencyKey.current = "";
   }, [initialOrderMode, patient?.key]);
 
@@ -907,7 +1036,7 @@ function PrescribeView({
     setPatientChartError("");
     fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patient.id)}/chart?doctor_id=${DOCTOR_ID}`)
       .then((data) => {
-        if (!cancelled) setPatientChart(data.chart || data.patient || data);
+        if (!cancelled) setPatientChart(data.chart || data);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -920,6 +1049,30 @@ function PrescribeView({
       });
     return () => { cancelled = true; };
   }, [isQuickWlpMode, patient?.id, patient?.key]);
+
+  useEffectR(() => {
+    if (!initialRefillRequestId) {
+      setRefillContext(null);
+      setRefillContextLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setRefillContextLoading(true);
+    const params = new URLSearchParams({ doctor_id: DOCTOR_ID, status: "all", limit: "100", offset: "0" });
+    fetchJson(`${API_BASE}/doctor/rx/refill-requests?${params.toString()}`)
+      .then((data) => {
+        if (cancelled) return;
+        const match = listItems(data.requests).find((item) => String(item.refill_request_id || item.request_id || item.id) === String(initialRefillRequestId));
+        setRefillContext(refillReviewContext(match));
+      })
+      .catch(() => {
+        if (!cancelled) setRefillContext(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRefillContextLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [initialRefillRequestId]);
 
   useEffectR(() => {
     setAmendPrefilled(false);
@@ -942,7 +1095,7 @@ function PrescribeView({
           });
           if (query.trim()) params.set("q", query.trim());
           const data = await fetchJson(`${API_BASE}/doctor/quickwlp/products?${params.toString()}`);
-          if (!cancelled) setProducts(data.products || []);
+          if (!cancelled) setProducts((data.products || []).map(normalizeProductIdentity));
         } else if (productCatalogKey === SUPPLEMENTS_CATALOG.key) {
           const params = new URLSearchParams({
             seller_id: SUPPLEMENT_SELLER_ID,
@@ -954,7 +1107,7 @@ function PrescribeView({
           });
           if (query.trim()) params.set("q", query.trim());
           const data = await fetchJson(`${API_BASE}/verticals/shipments/products?${params.toString()}`);
-          if (!cancelled) setProducts((data.products || []).map(mapSupplementProduct));
+          if (!cancelled) setProducts((data.products || []).map(mapSupplementProduct).map(normalizeProductIdentity));
         } else {
           const params = new URLSearchParams({
             doctor_id: DOCTOR_ID,
@@ -963,7 +1116,7 @@ function PrescribeView({
           });
           if (query.trim()) params.set("q", query.trim());
           const data = await fetchJson(`${API_BASE}/doctor/rx/tracks/${productCatalogKey}/prescribable-products?${params.toString()}`);
-          if (!cancelled) setProducts(data.products || []);
+          if (!cancelled) setProducts((data.products || []).map(normalizeProductIdentity));
         }
       } catch (err) {
         if (!cancelled) {
@@ -988,38 +1141,59 @@ function PrescribeView({
   }, [products, productCatalogKey]);
 
   useEffectR(() => {
-    if (!patient || !isAmendMode || amendPrefilled) return;
-    const byId = new Map(visibleProducts.map((product) => [product.product_id, product]));
-    const nextCart = amendItems
-      .map((item) => {
-        const productId = item.product_id || item.productId;
-        if (!productId) return null;
-        const product = byId.get(productId);
-        const catalogKey = item.catalogKey || productCatalogKey || patient.trackKey;
-        const details = product?.details || {
-          price: product?.price_fils ? formatPrice(product.price_fils) : "",
-          category: "",
-          strength: "",
-          frequency: "",
-          packSize: "",
-          instructions: item.doctor_instructions || item.doctorInstructions || "Use as directed by your DarDoc physician.",
-        };
-        return {
-          id: `${catalogKey}:${productId}`,
-          product_id: productId,
-          vertical_id: product?.vertical_id || item.vertical_id || "",
-          name: product?.name || item.name || item.product_name || "Medication",
-          price_fils: product?.price_fils || item.price_fils || 0,
-          quantity: Math.max(1, Number(item.quantity || 1)),
-          doctor_instructions: item.doctor_instructions || item.doctorInstructions || details.instructions,
-          details,
-          catalogKey,
-        };
-      })
-      .filter(Boolean);
-    setCart(nextCart);
-    setAmendPrefilled(true);
-  }, [amendItems, amendPrefilled, isAmendMode, patient, productCatalogKey, visibleProducts]);
+    if (!patient || !isAmendMode || amendPrefilled || !visibleProducts.length) return undefined;
+    let cancelled = false;
+
+    const prefillAmendment = async () => {
+      let currentNeedlesProduct = needlesProduct;
+      const needsNeedlesPrice = amendItems.some((item) => String(item?.product_id || item?.productId || "") === NEEDLES_PRODUCT_ID);
+      if (needsNeedlesPrice && !currentNeedlesProduct) {
+        try {
+          currentNeedlesProduct = await fetchNeedlesCatalogProduct(isQuickWlpMode ? quickWlpSellerId : SUPPLEMENT_SELLER_ID);
+          if (!cancelled) setNeedlesProduct(currentNeedlesProduct);
+        } catch {
+          currentNeedlesProduct = null;
+        }
+      }
+      if (cancelled) return;
+
+      const byId = new Map(visibleProducts.map((product) => [product.product_id, product]));
+      if (currentNeedlesProduct) byId.set(currentNeedlesProduct.product_id, currentNeedlesProduct);
+      const nextCart = amendItems
+        .map((item) => {
+          const productId = item.product_id || item.productId;
+          if (!productId) return null;
+          const product = byId.get(productId);
+          const catalogKey = item.catalogKey || (productId === NEEDLES_PRODUCT_ID ? NEEDLES_CATALOG.key : productCatalogKey || patient.trackKey);
+          const currentPrice = priceFils(product?.price_fils) ?? priceFils(item.price_fils);
+          const details = product?.details || {
+            price: currentPrice === undefined ? "" : formatPrice(currentPrice),
+            category: "",
+            strength: "",
+            frequency: "",
+            packSize: "",
+            instructions: item.doctor_instructions || item.doctorInstructions || "Use as directed by your DarDoc physician.",
+          };
+          return {
+            id: `${catalogKey}:${productId}`,
+            product_id: productId,
+            vertical_id: product?.vertical_id || item.vertical_id || "",
+            name: product?.name || item.name || item.product_name || "Medication",
+            price_fils: currentPrice,
+            quantity: Math.max(1, Number(item.quantity || 1)),
+            doctor_instructions: item.doctor_instructions || item.doctorInstructions || details.instructions,
+            details,
+            catalogKey,
+          };
+        })
+        .filter(Boolean);
+      setCart(nextCart);
+      setAmendPrefilled(true);
+    };
+
+    prefillAmendment();
+    return () => { cancelled = true; };
+  }, [amendItems, amendPrefilled, isAmendMode, isQuickWlpMode, needlesProduct, patient, productCatalogKey, quickWlpSellerId, visibleProducts]);
 
   const cartTotal = cart.reduce((sum, item) => sum + ((item.price_fils || 0) * item.quantity), 0);
 
@@ -1028,62 +1202,28 @@ function PrescribeView({
     setSelectedPatientKey("");
     setCart([]);
     setAutoNeedlesDismissed(false);
-    setSelectedProduct(null);
-    setInstructions("");
   };
 
   const chooseProductCatalog = (nextCatalogKey) => {
     setProductCatalogKey(nextCatalogKey);
-    setSelectedProduct(null);
-    setInstructions("");
     setQuery("");
   };
 
-  const pickProduct = (product) => {
-    if (isOutOfStock(product, productCatalogKey)) {
-      setError(`${product.name} is out of stock.`);
-      return;
-    }
-    setSelectedProduct(product);
-    setQuantity(Math.min(1, Math.max(1, productQuantityLimit(product, productCatalogKey))));
-    setInstructions(product.details.instructions);
-  };
-
-  useEffectR(() => {
-    if (!selectedProduct) return;
-    const limit = productQuantityLimit(selectedProduct, productCatalogKey);
-    if (limit > 0 && quantity > limit) setQuantity(limit);
-  }, [productCatalogKey, quantity, selectedProduct]);
-
   const loadNeedlesProduct = React.useCallback(async () => {
     if (needlesProduct) return needlesProduct;
-    const params = new URLSearchParams({
-      seller_id: isQuickWlpMode ? quickWlpSellerId : SUPPLEMENT_SELLER_ID,
-      view: "full",
-    });
-    const data = await fetchJson(`${API_BASE}/verticals/shipments/products/${encodeURIComponent(NEEDLES_PRODUCT_ID)}?${params.toString()}`);
-    const mapped = mapShipmentProduct({ ...data.product, seller_offer: data.seller_offer });
-    const productWithDetails = {
-      ...mapped,
-      details: productDetails(mapped, NEEDLES_CATALOG.key),
-    };
+    const productWithDetails = await fetchNeedlesCatalogProduct(isQuickWlpMode ? quickWlpSellerId : SUPPLEMENT_SELLER_ID);
     setNeedlesProduct(productWithDetails);
     return productWithDetails;
   }, [isQuickWlpMode, needlesProduct, quickWlpSellerId]);
 
-  const addToCart = async () => {
-    if (!selectedProduct) return;
-    const quantityLimit = productQuantityLimit(selectedProduct, productCatalogKey);
+  const addProductToCart = async (product) => {
+    const quantityLimit = productQuantityLimit(product, productCatalogKey);
     if (quantityLimit <= 0) {
-      setError(`${selectedProduct.name} is out of stock.`);
-      return;
-    }
-    if (quantity > quantityLimit) {
-      setError(`Only ${quantityLimit} ${quantityLimit === 1 ? "unit is" : "units are"} available for ${selectedProduct.name}.`);
+      setError(`${product.name} is out of stock.`);
       return;
     }
     let nextNeedlesProduct = needlesProduct;
-    if (isMounjaroProduct(selectedProduct) && !autoNeedlesDismissed && !nextNeedlesProduct) {
+    if (isMounjaroProduct(product) && !autoNeedlesDismissed && !nextNeedlesProduct) {
       try {
         nextNeedlesProduct = await loadNeedlesProduct();
       } catch {
@@ -1092,23 +1232,36 @@ function PrescribeView({
       }
     }
     const item = {
-      id: `${productCatalogKey}:${selectedProduct.product_id}`,
-      product_id: selectedProduct.product_id,
-      vertical_id: selectedProduct.vertical_id,
-      name: selectedProduct.name,
-      price_fils: selectedProduct.price_fils,
-      quantity,
-      doctor_instructions: instructions.trim() || selectedProduct.details.instructions,
-      details: selectedProduct.details,
+      id: `${productCatalogKey}:${product.product_id}`,
+      product_id: product.product_id,
+      vertical_id: product.vertical_id,
+      name: product.name,
+      price_fils: product.price_fils,
+      quantity: 1,
+      doctor_instructions: product.details.instructions,
+      details: product.details,
       catalogKey: productCatalogKey,
     };
     setCart((current) => {
-      const withoutCurrent = current.filter((entry) => entry.id !== item.id);
-      return syncAutoNeedles([...withoutCurrent, item], nextNeedlesProduct, autoNeedlesDismissed);
+      if (current.some((entry) => entry.id === item.id)) return current;
+      return syncAutoNeedles([...current, item], nextNeedlesProduct, autoNeedlesDismissed);
     });
-    setSelectedProduct(null);
-    setInstructions("");
-    setQuery("");
+  };
+
+  const changeProductQuantity = (id, delta, quantityLimit) => {
+    setCart((current) => {
+      const item = current.find((entry) => entry.id === id);
+      if (!item) return current;
+      const nextQuantity = item.quantity + delta;
+      const nextItems = nextQuantity < 1
+        ? current.filter((entry) => entry.id !== id)
+        : current.map((entry) => entry.id === id
+          ? { ...entry, quantity: Math.min(quantityLimit, nextQuantity) }
+          : entry);
+      const hasMounjaro = requiredNeedlesQuantity(nextItems) > 0;
+      if (!hasMounjaro && autoNeedlesDismissed) setAutoNeedlesDismissed(false);
+      return syncAutoNeedles(nextItems, needlesProduct, hasMounjaro ? autoNeedlesDismissed : false);
+    });
   };
 
   const removeCart = (id) => {
@@ -1127,22 +1280,24 @@ function PrescribeView({
   };
 
   const selectedLabPackage = labPackages.find((item) => item.product_id === selectedLabPackageId) || null;
-  const visibleLabPackages = useMemoR(() => {
-    const normalized = labCatalogNameKey(labPackageQuery);
-    if (!normalized) return labPackages;
-    return labPackages.filter((item) => {
-      const searchable = [item.name, ...(item.included_biomarkers || []).map((biomarker) => biomarker.name)].join(" ");
-      return labCatalogNameKey(searchable).includes(normalized);
-    });
-  }, [labPackageQuery, labPackages]);
-  const visibleLabBiomarkers = useMemoR(() => {
-    const normalized = labCatalogNameKey(labBiomarkerQuery);
-    if (!normalized) return labBiomarkers;
-    return labBiomarkers.filter((item) => labCatalogNameKey([item.name, item.sample_type].filter(Boolean).join(" ")).includes(normalized));
-  }, [labBiomarkerQuery, labBiomarkers]);
   const includedLabBiomarkerIds = new Set((selectedLabPackage?.included_biomarkers || []).map((item) => item.product_id));
   const selectedLabBiomarkers = labBiomarkers.filter((item) => selectedLabBiomarkerIds.includes(item.product_id));
   const additionalLabBiomarkers = selectedLabBiomarkers.filter((item) => !includedLabBiomarkerIds.has(item.product_id));
+  const visibleLabCatalog = useMemoR(() => {
+    const normalized = labCatalogNameKey(labQuery);
+    return [
+      ...labPackages.map((item) => ({ ...item, labProductType: "package" })),
+      ...labBiomarkers.map((item) => ({ ...item, labProductType: "biomarker" })),
+    ].filter((item) => {
+      if (!normalized) return true;
+      const searchable = [
+        item.name,
+        item.sample_type,
+        ...(item.included_biomarkers || []).map((biomarker) => biomarker.name),
+      ].filter(Boolean).join(" ");
+      return labCatalogNameKey(searchable).includes(normalized);
+    });
+  }, [labBiomarkers, labPackages, labQuery]);
   const labTotalFils = Number(selectedLabPackage?.price_fils || 0)
     + additionalLabBiomarkers.reduce((sum, item) => sum + Number(item.price_fils || 0), 0);
   const canSubmitLab = Boolean(
@@ -1153,11 +1308,16 @@ function PrescribeView({
 
   const resetLabIdempotency = () => {
     labIdempotencyKey.current = "";
-    setCreatedLabRequest(null);
   };
 
   const chooseLabPackage = (productId) => {
-    setSelectedLabPackageId((current) => current === productId ? "" : productId);
+    const nextProductId = selectedLabPackageId === productId ? "" : productId;
+    setSelectedLabPackageId(nextProductId);
+    if (nextProductId) {
+      const nextPackage = labPackages.find((item) => item.product_id === nextProductId);
+      const nextIncludedIds = new Set((nextPackage?.included_biomarkers || []).map((item) => item.product_id));
+      setSelectedLabBiomarkerIds((current) => current.filter((item) => !nextIncludedIds.has(item)));
+    }
     resetLabIdempotency();
   };
 
@@ -1189,11 +1349,20 @@ function PrescribeView({
           track_key: patient.trackKey,
           package_product_id: selectedLabPackageId || null,
           biomarker_product_ids: selectedLabBiomarkerIds,
-          doctor_note: labDoctorNote.trim() || null,
+          doctor_note: null,
         }),
       });
-      setCreatedLabRequest(data);
-      setSentToast(data.replayed ? "Lab request already prescribed" : "Lab tests prescribed");
+      const selectedNames = [selectedLabPackage?.name, ...additionalLabBiomarkers.map((item) => item.name)].filter(Boolean).join(", ");
+      setCompletion({
+        title: "Lab booking link sent",
+        patient: patient.name,
+        items: selectedNames,
+        total: formatPrice(labTotalFils),
+        at: formatDateTime(data.lab_request?.created_at || new Date().toISOString()),
+        itemLabel: "Tests",
+        next: "The patient receives a booking link. Results will arrive in the Clinical Inbox.",
+      });
+      setSentToast(data.replayed ? "Lab booking link already sent" : "Lab booking link sent");
       setTimeout(() => setSentToast(""), 2600);
       if (onSent) onSent();
     } catch (err) {
@@ -1204,7 +1373,7 @@ function PrescribeView({
   };
 
   const publishPrescription = async () => {
-    if (!patient || !cart.length) return;
+    if (!canPublish) return;
     setPublishing(true);
     setError("");
     setSentToast("");
@@ -1243,9 +1412,16 @@ function PrescribeView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const issuedItems = cart.map((item) => `${item.name} ×${item.quantity}`).join(", ");
+      setCompletion({
+        title: workflowCopy.success,
+        patient: patient.name,
+        items: issuedItems || "Prescription issued",
+        total: formatPrice(cartTotal),
+        at: formatDateTime(data.prescription?.issued_at || data.prescription?.created_at || new Date().toISOString()),
+      });
       setCart([]);
       setAutoNeedlesDismissed(false);
-      setSelectedProduct(null);
       const quickWlpExpiry = formatDateTime(data.prescription?.checkout_expires_at);
       setSentToast(
         isAmendMode
@@ -1268,12 +1444,22 @@ function PrescribeView({
 
   return (
     <>
-      <Topbar
-        title={orderMode === "lab" ? "Prescribe lab tests" : workflowCopy.title}
-        subtitle={orderMode === "lab"
-          ? "Choose a package, individual biomarkers, or both. The customer receives one guided booking link."
-          : workflowCopy.subtitle}
-      />
+      <header className="rx-v2-page-head">
+        <div className="rx-v2-title-copy">
+          <div className="rx-v2-breadcrumb">
+            {patient
+              ? `${originLabel || "Clinical workspace"} / ${workflowCopy.typeLabel} / ${patient.name}`
+              : `${originLabel || "Clinical workspace"} / ${workflowCopy.typeLabel}`}
+          </div>
+          <h1>{workflowCopy.title}</h1>
+        </div>
+        {onBack ? <button type="button" className="btn-ghost rx-back-origin" onClick={onBack}>← Back to {originLabel || "workspace"}</button> : null}
+      </header>
+      {completion ? (
+        <div className="rx-completion-page">
+          <PrescriptionCompletion completion={completion} onBack={onBack} originLabel={originLabel} />
+        </div>
+      ) : (
       <div className="rx-layout">
         <div className="rx-main">
           <div className="rx-main-scroll dd-scroll">
@@ -1352,11 +1538,25 @@ function PrescribeView({
                     <div className="me">
                       {isQuickWlpMode
                         ? [patient.phone, patient.email, activeTrack.label, "Quick Consult"].filter(Boolean).join(" · ")
-                        : [patient.age, patient.sex, activeTrack.label, `Completed ${formatDateTime(patient.latestCompletedAt)}`].filter(Boolean).join(" · ")}
+                        : [patient.phone, patient.age ? `${patient.age}y` : "", patient.sex, activeTrack.label].filter(Boolean).join(" · ")}
                     </div>
                   </div>
-                  {!isQuickWlpMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
+                  {!isQuickWlpMode ? <time>Completed consult{patient.latestCompletedAt ? ` · ${formatDateTime(patient.latestCompletedAt)}` : ""}</time> : null}
+                  {!isQuickWlpMode && !contextualRxMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
+
+                {!isQuickWlpMode ? (
+                  <div className="rx-prescribe-context">
+                    <ClinicalContextBanner
+                      allergies={patientChart?.clinical?.allergies}
+                      conditions={patientChart?.clinical?.conditions}
+                      label="Safety"
+                      always
+                    />
+                  </div>
+                ) : null}
+
+                {workflowMode === "refill" ? <RefillReviewContext context={refillContext} loading={refillContextLoading} /> : null}
 
                 {isAmendMode && <AmendmentOriginalPrescription items={amendItems} />}
 
@@ -1368,168 +1568,93 @@ function PrescribeView({
                 )}
 
                 {orderMode === "lab" && !isAmendMode ? (
-                  <div className="rx-lab-builder">
-                    <div className="rx-lab-catalog-toggle" aria-label="Lab catalog type">
-                      <span
-                        className="rx-lab-catalog-toggle-indicator"
-                        style={{ transform: `translateX(${labCatalogView === "biomarkers" ? "100%" : "0"})` }}
-                        aria-hidden="true"
-                      />
-                      <button
-                        type="button"
-                        aria-pressed={labCatalogView === "packages"}
-                        className={labCatalogView === "packages" ? "active" : ""}
-                        onClick={() => setLabCatalogView("packages")}
-                      >
-                        <span>Packages</span>
-                        <small>{labPackages.length}</small>
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={labCatalogView === "biomarkers"}
-                        className={labCatalogView === "biomarkers" ? "active" : ""}
-                        onClick={() => setLabCatalogView("biomarkers")}
-                      >
-                        <span>Biomarkers</span>
-                        <small>{labBiomarkers.length}</small>
-                      </button>
+                  <>
+                    <div className="rx-catalog-toolbar">
+                      <div className="rx-search">
+                        <span className="rx-search-icon">{I.search}</span>
+                        <input
+                          className="rx-search-input"
+                          value={labQuery}
+                          onChange={(event) => setLabQuery(event.target.value)}
+                          placeholder="Search packages and biomarkers"
+                        />
+                      </div>
                     </div>
-                    {labCatalogView === "packages" ? (
-                      <>
-                        <div className="section-hdr"><div className="label">Choose a package</div></div>
-                        <p className="rx-lab-help">Choose one package. You can switch to biomarkers and add individual tests too.</p>
-                        <div className="rx-search rx-lab-search">
-                          <span className="rx-search-icon">{I.search}</span>
-                          <input
-                            className="rx-search-input"
-                            value={labPackageQuery}
-                            onChange={(event) => setLabPackageQuery(event.target.value)}
-                            placeholder={`Search ${labPackages.length} packages or included biomarkers`}
-                          />
-                        </div>
-                        {labCatalogLoading ? (
-                          <div className="patient-loading"><div /><div /><div /></div>
-                        ) : visibleLabPackages.length ? (
-                          <div className="rx-lab-options">
-                            {visibleLabPackages.map((item) => (
-                              <React.Fragment key={item.product_id}>
-                                <button
-                                  type="button"
-                                  className={`rx-lab-option${selectedLabPackageId === item.product_id ? " selected" : ""}`}
-                                  aria-pressed={selectedLabPackageId === item.product_id}
-                                  onClick={() => chooseLabPackage(item.product_id)}
-                                >
-                                  <span className="rx-lab-check" aria-hidden="true" />
-                                  <span>
-                                    <strong>{item.name}</strong>
-                                    <em>{[
-                                      `${item.included_biomarkers?.length || 0} biomarkers`,
-                                      item.sample_type || "Sample not listed",
-                                      labTatLabel(item),
-                                      item.fasting_required ? "Fasting required" : "",
-                                    ].filter(Boolean).join(" · ")}</em>
-                                  </span>
-                                  <b>{formatPrice(item.price_fils)}</b>
-                                </button>
-                                {selectedLabPackageId === item.product_id ? (
-                                  <div className="rx-lab-package-detail">
-                                    <div className="rx-lab-package-detail-head">
-                                      <div>
-                                        <strong>{item.name}</strong>
-                                        <span>{[item.sample_type, labTatLabel(item)].filter(Boolean).join(" · ")}</span>
-                                      </div>
-                                      <b>{item.included_biomarkers?.length || 0} biomarkers</b>
-                                    </div>
-                                    <div className="rx-lab-package-biomarkers">
-                                      {(item.included_biomarkers || []).map((biomarker) => (
-                                        <span key={`${biomarker.product_id || biomarker.name}:${biomarker.sort_order || ""}`}>{biomarker.name}</span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </React.Fragment>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="empty-state rx-product-empty">No matching lab packages.</div>
-                        )}
-                      </>
+                    {labCatalogLoading ? (
+                      <div className="patient-loading"><div /><div /><div /></div>
+                    ) : visibleLabCatalog.length ? (
+                      <div className="rx-product-list rx-lab-catalog-list">
+                        {visibleLabCatalog.map((item) => {
+                          const isPackage = item.labProductType === "package";
+                          const selected = isPackage
+                            ? selectedLabPackageId === item.product_id
+                            : selectedLabBiomarkerIds.includes(item.product_id);
+                          const included = !isPackage && includedLabBiomarkerIds.has(item.product_id);
+                          const detail = [item.sample_type, labTatLabel(item), item.fasting_required ? "Fasting required" : ""].filter(Boolean).join(" · ");
+                          const includedNames = isPackage
+                            ? (item.included_biomarkers || []).map((biomarker) => biomarker.name).join(", ")
+                            : "";
+                          const remove = () => isPackage ? chooseLabPackage(item.product_id) : toggleLabBiomarker(item.product_id);
+                          const add = () => isPackage ? chooseLabPackage(item.product_id) : toggleLabBiomarker(item.product_id);
+                          return (
+                            <div
+                              className={`rx-product-row${selected ? " selected" : ""}${included ? " included" : ""}`}
+                              key={`${item.labProductType}:${item.product_id}`}
+                            >
+                              <div>
+                                <div className="nm">{item.name}</div>
+                                <div className="ds">{detail}</div>
+                                {includedNames ? <div className="rx-product-included">Includes {includedNames}</div> : null}
+                                {included ? <div className="rx-product-included">Already included in a selected package</div> : null}
+                              </div>
+                              <div className="rx-product-price">{formatPrice(item.price_fils)}</div>
+                              {selected ? (
+                                <span className="rx-product-qty">
+                                  <button type="button" onClick={remove} aria-label={`Remove ${item.name}`}>{I.minus}</button>
+                                  <span>1</span>
+                                  <button type="button" disabled aria-label={`${item.name} quantity is fixed at one`}>{I.plus}</button>
+                                </span>
+                              ) : included ? null : (
+                                <button className="rx-product-add" onClick={add}>Add</button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     ) : (
-                      <>
-                        <div className="section-hdr"><div className="label">Add individual biomarkers</div></div>
-                        <p className="rx-lab-help">Choose individual tests. Anything already inside the selected package is counted only once.</p>
-                        <div className="rx-search rx-lab-search">
-                          <span className="rx-search-icon">{I.search}</span>
-                          <input
-                            className="rx-search-input"
-                            value={labBiomarkerQuery}
-                            onChange={(event) => setLabBiomarkerQuery(event.target.value)}
-                            placeholder={`Search ${labBiomarkers.length} biomarkers`}
-                          />
-                        </div>
-                        {labCatalogLoading ? (
-                          <div className="patient-loading"><div /><div /><div /></div>
-                        ) : visibleLabBiomarkers.length ? (
-                          <div className="rx-lab-options rx-lab-biomarkers">
-                            {visibleLabBiomarkers.map((item) => {
-                              const selected = selectedLabBiomarkerIds.includes(item.product_id);
-                              const included = includedLabBiomarkerIds.has(item.product_id);
-                              return (
-                                <button
-                                  type="button"
-                                  key={item.product_id}
-                                  className={`rx-lab-option${selected ? " selected" : ""}`}
-                                  aria-pressed={selected}
-                                  onClick={() => toggleLabBiomarker(item.product_id)}
-                                >
-                                  <span className="rx-lab-check" aria-hidden="true" />
-                                  <span>
-                                    <strong>{item.name}</strong>
-                                    <em>{included ? "Already included in package · no extra charge" : [item.sample_type, labTatLabel(item)].filter(Boolean).join(" · ")}</em>
-                                  </span>
-                                  <b>{included ? "Included" : formatPrice(item.price_fils)}</b>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="empty-state rx-product-empty">No matching biomarkers.</div>
-                        )}
-                      </>
+                      <div className="empty-state rx-product-empty">No packages or biomarkers match this search.</div>
                     )}
-
-                    <div className="field-block rx-lab-note">
-                      <label htmlFor="rx-lab-doctor-note">Note for the patient and reviewing doctor (optional)</label>
-                      <textarea
-                        id="rx-lab-doctor-note"
-                        value={labDoctorNote}
-                        onChange={(event) => { setLabDoctorNote(event.target.value); resetLabIdempotency(); }}
-                        placeholder="Why these tests are needed or what should be reviewed."
-                      />
-                    </div>
-                  </div>
+                  </>
                 ) : (
                   <>
-                <div className="section-hdr"><div className="label">Medication catalog</div></div>
-                <div className="rx-track-tabs rx-product-source-tabs">
-                  {productCatalogs.map((catalog) => (
+                <div className="rx-catalog-toolbar">
+                  <div className="rx-search">
+                    <span className="rx-search-icon">{I.search}</span>
+                    <input
+                      className="rx-search-input"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={`Search ${activeProductCatalog.label.toLowerCase()} products`}
+                    />
+                  </div>
+                  <div className="rx-track-tabs rx-product-source-tabs">
+                  {trackLocked ? (
+                    <div className="rx-track-lock" role="status">
+                      <span>{activeTrack.label}</span>
+                      <strong>Track locked to this clinical context</strong>
+                    </div>
+                  ) : productCatalogs.map((catalog) => (
                     <button
                       key={catalog.key}
                       className={productCatalogKey === catalog.key ? "active" : ""}
                       onClick={() => chooseProductCatalog(catalog.key)}
+                      disabled={Boolean(patient && catalog.key !== patient.trackKey)}
+                      title={patient && catalog.key !== patient.trackKey ? "Backend eligibility is required before switching tracks" : undefined}
                     >
                       {catalog.label}
                     </button>
                   ))}
-                </div>
-                <div className="rx-search">
-                  <span className="rx-search-icon">{I.search}</span>
-                  <input
-                    className="rx-search-input"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder={`Search ${activeProductCatalog.label.toLowerCase()} products`}
-                  />
+                  </div>
                 </div>
 
                 <div className="rx-product-list">
@@ -1538,12 +1663,13 @@ function PrescribeView({
                   ) : visibleProducts.length ? visibleProducts.map((product) => {
                     const stockLabel = productStockLabel(product, productCatalogKey);
                     const outOfStock = isOutOfStock(product, productCatalogKey);
+                    const cartId = `${productCatalogKey}:${product.product_id}`;
+                    const cartItem = cart.find((item) => item.id === cartId);
+                    const quantityLimit = productQuantityLimit(product, productCatalogKey);
                     return (
-                      <button
+                      <div
                         key={product.product_id}
-                        className={`rx-product-row${outOfStock ? " out-of-stock" : ""}`}
-                        onClick={() => pickProduct(product)}
-                        disabled={outOfStock}
+                        className={`rx-product-row${outOfStock ? " out-of-stock" : ""}${cartItem ? " selected" : ""}`}
                       >
                         <div>
                           <div className="nm">{product.name}</div>
@@ -1552,7 +1678,29 @@ function PrescribeView({
                           </div>
                         </div>
                         <div className="rx-product-price">{outOfStock ? "Out of stock" : product.details.price}</div>
-                      </button>
+                        {!outOfStock && !cartItem ? (
+                          <button className="rx-product-add" onClick={() => addProductToCart(product)}>Add</button>
+                        ) : cartItem ? (
+                          <span className="rx-product-qty">
+                            <button
+                              type="button"
+                              onClick={() => changeProductQuantity(cartId, -1, quantityLimit)}
+                              aria-label={`Decrease ${product.name} quantity`}
+                            >
+                              {I.minus}
+                            </button>
+                            <span>{cartItem.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => changeProductQuantity(cartId, 1, quantityLimit)}
+                              disabled={cartItem.quantity >= quantityLimit}
+                              aria-label={`Increase ${product.name} quantity`}
+                            >
+                              {I.plus}
+                            </button>
+                          </span>
+                        ) : null}
+                      </div>
                     );
                   }) : (
                     <div className="empty-state rx-product-empty">No products found in this catalog.</div>
@@ -1564,66 +1712,6 @@ function PrescribeView({
             )}
           </div>
 
-          {patient && orderMode === "medication" && selectedProduct && (
-            <div className="rx-selection-tray fade-in" key={selectedProduct.product_id}>
-              {(() => {
-                const quantityLimit = productQuantityLimit(selectedProduct, productCatalogKey);
-                const stockLabel = productStockLabel(selectedProduct, productCatalogKey);
-                const blocked = quantityLimit <= 0;
-                return (
-                  <>
-              <div className="rx-selection-head">
-                <div>
-                  <div className="rx-selection-title">{selectedProduct.name}</div>
-                  <div className="rx-selection-meta">
-                    {[selectedProduct.details.price, selectedProduct.details.category, stockLabel].filter(Boolean).join(" · ")}
-                  </div>
-                </div>
-                <button className="btn-ghost" onClick={() => setSelectedProduct(null)}>Change</button>
-              </div>
-
-              <div className="rx-form-grid two">
-                <div className="field-block">
-                  <label>Quantity</label>
-                  <div className="rx-stepper">
-                    <button
-                      type="button"
-                      onClick={() => setQuantity((current) => Math.max(1, current - 1))}
-                      disabled={quantity <= 1}
-                      aria-label="Decrease quantity"
-                    >
-                      {I.minus}
-                    </button>
-                    <span>{quantity}</span>
-                    <button
-                      type="button"
-                      onClick={() => setQuantity((current) => Math.min(quantityLimit, current + 1))}
-                      disabled={blocked || quantity >= quantityLimit}
-                      aria-label="Increase quantity"
-                    >
-                      {I.plus}
-                    </button>
-                  </div>
-                </div>
-                <div className="field-block">
-                  <label>Doctor instructions</label>
-                  <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Use as directed by your DarDoc physician." />
-                </div>
-              </div>
-
-              <div className="rx-plan-note">
-                {blocked ? "This supplement is out of stock." : selectedProduct.details.instructions}
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
-                <button className="btn-ghost" onClick={() => setSelectedProduct(null)}>Cancel</button>
-                <button className="btn-primary" onClick={addToCart} disabled={blocked}>{I.plus}<span>Add to review</span></button>
-              </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
         </div>
 
         <div className="rx-side dd-scroll">
@@ -1636,6 +1724,7 @@ function PrescribeView({
               amendReason={amendReason}
               setAmendReason={setAmendReason}
               removeCart={removeCart}
+              hasUnpricedCartItems={hasUnpricedCartItems}
               canPublish={canPublish}
               publishPrescription={publishPrescription}
               publishing={publishing}
@@ -1643,15 +1732,15 @@ function PrescribeView({
             />
           ) : orderMode === "lab" ? (
             <>
-              <div className="section-hdr"><div className="label">Review lab request</div></div>
-              <div className="rx-review">
-                <div className="rx-review-row"><span>Member</span><strong>{patient?.name || "Choose a patient"}</strong></div>
-                <div className="rx-review-row"><span>Platform</span><strong>{labConsultationSource === "QUICKWLP" ? "Quick WLP" : "Lifestyle Rx"}</strong></div>
-                <div className="rx-review-row"><span>Track</span><strong>{activeTrack.label}</strong></div>
-                <div className="rx-review-row"><span>Package</span><strong>{selectedLabPackage?.name || "None"}</strong></div>
-                <div className="rx-review-row"><span>Extra biomarkers</span><strong>{additionalLabBiomarkers.length}</strong></div>
-                <div className="rx-review-row"><span>Estimated total</span><strong>{selectedLabPackage || selectedLabBiomarkers.length ? formatPrice(labTotalFils) : "Not ready"}</strong></div>
-              </div>
+              <div className="section-hdr"><div className="label">{workflowCopy.reviewTitle}</div></div>
+              <ReviewChecklist
+                patient={patient}
+                isQuickWlpMode={isQuickWlpMode}
+                typeLabel={workflowCopy.typeLabel}
+                sellerName={quickWlpSellerName}
+                promoCode={quickWlpPromoCode}
+                originLabel={originLabel}
+              />
 
               {!labContextReady && patient ? (
                 <div className="api-state rx-api-state">
@@ -1659,45 +1748,61 @@ function PrescribeView({
                 </div>
               ) : null}
 
+              <div className="section-hdr rx-selected-items-title"><div className="label">Selected items</div></div>
               <div className="rx-cart rx-lab-review-list">
                 {!selectedLabPackage && !selectedLabBiomarkers.length ? (
-                  <div className="empty">Choose a package or biomarker to build the lab request.</div>
+                  <div className="empty">Nothing selected yet. Add items from the catalog.</div>
                 ) : (
                   <>
                     {selectedLabPackage ? (
                       <div className="rx-cart-item">
+                        <button className="x rx-cart-remove" onClick={() => chooseLabPackage(selectedLabPackage.product_id)} aria-label={`Remove ${selectedLabPackage.name}`}>{I.x}</button>
                         <div className="nm">{selectedLabPackage.name}</div>
-                        <div className="rx-cart-meta"><span>Package</span><span>{formatPrice(selectedLabPackage.price_fils)}</span></div>
+                        <div className="rx-lab-review-meta">
+                          <span>{[selectedLabPackage.sample_type, labTatLabel(selectedLabPackage)].filter(Boolean).join(" · ")}</span>
+                          <span>{formatPrice(selectedLabPackage.price_fils)}</span>
+                        </div>
+                        <div className="ds">Includes {(selectedLabPackage.included_biomarkers || []).map((item) => item.name).join(", ")}</div>
                       </div>
                     ) : null}
                     {selectedLabBiomarkers.map((item) => (
                       <div className="rx-cart-item" key={item.product_id}>
+                        <button className="x rx-cart-remove" onClick={() => toggleLabBiomarker(item.product_id)} aria-label={`Remove ${item.name}`}>{I.x}</button>
                         <div className="nm">{item.name}</div>
-                        <div className="rx-cart-meta"><span>Biomarker</span><span>{includedLabBiomarkerIds.has(item.product_id) ? "Included" : formatPrice(item.price_fils)}</span></div>
+                        <div className="rx-lab-review-meta">
+                          <span>{[item.sample_type, labTatLabel(item)].filter(Boolean).join(" · ")}</span>
+                          <span>{formatPrice(item.price_fils)}</span>
+                        </div>
                       </div>
                     ))}
+                    <div className="rx-summary"><span>Total</span><span>{formatPrice(labTotalFils)}</span></div>
                   </>
                 )}
               </div>
 
-              {createdLabRequest ? (
-                <div className="rx-lab-created">
-                  <strong>Lab request created</strong>
-                  <span>Status: {titleCase(createdLabRequest.lab_request?.status)}</span>
-                </div>
-              ) : (
+              {!isQuickWlpMode ? (
+                <PrescriptionSafetyPanel
+                  loading={patientChartLoading}
+                  chart={patientChart}
+                  error={patientChartError}
+                  eligible={patient?.canPrescribe}
+                />
+              ) : null}
+
+              <div className="rx-issue-action">
+                {!canSubmitLab && !labSubmitting ? (
+                  <div className="rx-issue-note">
+                    {labContextReady ? "Select at least one item to continue." : "A linked member and completed consultation are required."}
+                  </div>
+                ) : null}
                 <button
                   className="dd-btn-block"
                   disabled={!canSubmitLab}
-                  style={{ opacity: canSubmitLab ? 1 : 0.4, cursor: canSubmitLab ? "pointer" : "not-allowed", marginTop: 16 }}
+                  style={{ opacity: canSubmitLab ? 1 : 0.4, cursor: canSubmitLab ? "pointer" : "not-allowed" }}
                   onClick={submitLabRequest}
                 >
-                  {labSubmitting ? "Prescribing..." : "Prescribe lab tests"}
+                  {labSubmitting ? "Sending…" : "Send lab booking link"}
                 </button>
-              )}
-
-              <div className="rx-lab-flow-note">
-                After this, the customer receives the guided booking link. When results arrive, they appear in the Clinical Inbox automatically.
               </div>
             </>
           ) : (
@@ -1705,26 +1810,18 @@ function PrescribeView({
               <div className="section-hdr"><div className="label">{workflowCopy.reviewTitle}</div></div>
               <ReviewChecklist
                 patient={patient}
-                cart={cart}
-                cartTotal={cartTotal}
-                activeTrack={activeTrack}
                 isQuickWlpMode={isQuickWlpMode}
                 typeLabel={workflowCopy.typeLabel}
                 sellerName={quickWlpSellerName}
                 promoCode={quickWlpPromoCode}
+                originLabel={originLabel}
               />
-              {!isQuickWlpMode && (
-                <PrescriptionSafetyPanel
-                  loading={patientChartLoading}
-                  chart={patientChart}
-                  error={patientChartError}
-                />
-              )}
+              <div className="section-hdr rx-selected-items-title"><div className="label">Selected items</div></div>
               <div className="rx-cart">
                 {!patient ? (
                   <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>
                 ) : cart.length === 0 ? (
-                  <div className="empty">No medication added yet.<br/>Select products from the catalog to build the prescription.</div>
+                  <div className="empty">Nothing selected yet. Add items from the catalog.</div>
                 ) : cart.map((item) => (
                   <div key={item.id} className="rx-cart-item">
                     <span className="x" onClick={() => removeCart(item.id)}>{I.x}</span>
@@ -1732,7 +1829,7 @@ function PrescribeView({
                     <div className="rx-cart-meta">
                       <span>{cartItemCatalogLabel(item, activeTrack.label)}</span>
                       <span>Qty {item.quantity}</span>
-                      <span>{formatPrice((item.price_fils || 0) * item.quantity)}</span>
+                      <span>{cartItemPriceLabel(item)}</span>
                     </div>
                     <div className="ds">{item.doctor_instructions}</div>
                   </div>
@@ -1740,12 +1837,30 @@ function PrescribeView({
                 {cart.length > 0 && (
                   <div className="rx-summary">
                     <span>{cart.length} item{cart.length === 1 ? "" : "s"}</span>
-                    <span>{formatPrice(cartTotal)}</span>
+                    <span>{hasUnpricedCartItems ? "Price unavailable" : formatPrice(cartTotal)}</span>
                   </div>
                 )}
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+              {!isQuickWlpMode && (
+                <PrescriptionSafetyPanel
+                  loading={patientChartLoading}
+                  chart={patientChart}
+                  error={patientChartError}
+                  eligible={patient?.canPrescribe}
+                />
+              )}
+
+              <div className="rx-issue-action">
+                {!canPublish && !publishing ? (
+                  <div className="rx-issue-note">
+                    {cart.length === 0
+                      ? "Select at least one item to continue."
+                      : hasUnpricedCartItems
+                        ? "A current catalogue price is unavailable. Refresh before issuing."
+                        : "Complete the required prescription details to continue."}
+                  </div>
+                ) : null}
                 <button
                   className="dd-btn-block"
                   disabled={!canPublish}
@@ -1755,34 +1870,13 @@ function PrescribeView({
                   {publishButtonLabel(workflowCopy, publishing)}
                 </button>
               </div>
-
-              {patient && (
-                <>
-                  <h4 style={{ font: "400 11px/1 var(--dd-font)", textTransform: "uppercase", letterSpacing: "1.5px", color: "var(--dd-text-tertiary)", margin: "28px 0 12px" }}>{isQuickWlpMode ? "Customer" : "Clinical guardrails"}</h4>
-                  <div className="kv-row"><div className="k">Track</div><div className="v">{isQuickWlpMode ? "Quick WLP" : activeTrack.label}</div></div>
-                  {isQuickWlpMode ? (
-                    <>
-                      <div className="kv-row"><div className="k">Phone</div><div className="v">{patient.phone || "Not provided"}</div></div>
-                      <div className="kv-row"><div className="k">Email</div><div className="v">{patient.email || "Not provided"}</div></div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="kv-row"><div className="k">Subscription</div><div className="v">{titleCase(patient.subscriptionStatus)}</div></div>
-                      <div className="kv-row"><div className="k">Completed</div><div className="v">{formatDateTime(patient.latestCompletedAt)}</div></div>
-                    </>
-                  )}
-                </>
-              )}
             </>
           )}
         </div>
       </div>
-
-      {sentToast && (
-        <div className="toast">
-          {I.check}<span>{sentToast}</span>
-        </div>
       )}
+
+      <ActionToast message={sentToast} icon={I.check} />
     </>
   );
 }

@@ -28,6 +28,17 @@ function formatDate(value) {
   }).format(date);
 }
 
+function formatShortDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "Asia/Dubai",
+  }).format(date);
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -298,32 +309,32 @@ const CONSULT_OUTCOME_OPTIONS = [
   {
     value: "CONTINUE_EXISTING_TREATMENT",
     label: "Continue existing treatment",
-    detail: "No new prescription from this consult.",
+    detail: "No new prescription from this consult. The task closes.",
   },
   {
     value: "PRESCRIPTION_NEEDED",
     label: "Prescription needed",
-    detail: "Proceed to issue a new prescription.",
+    detail: "You will be taken to prescribing for this patient.",
   },
   {
     value: "NO_MEDICATION_NEEDED",
     label: "No medication needed",
-    detail: "Consult closed without medication.",
+    detail: "The consult closes without medication.",
   },
   {
     value: "PATIENT_UNDECIDED",
     label: "Patient undecided",
-    detail: "Patient needs time before a medication decision.",
+    detail: "The patient needs time before a medication decision.",
   },
   {
     value: "NOT_ELIGIBLE",
     label: "Not eligible",
-    detail: "Do not prescribe at this time.",
+    detail: "Do not prescribe at this time. The cycle closes.",
   },
   {
     value: "OPS_FOLLOW_UP_NEEDED",
     label: "Ops follow-up needed",
-    detail: "Support should follow up before the next clinical step.",
+    detail: "Support follows up before the next clinical step.",
   },
 ];
 
@@ -673,10 +684,11 @@ function buildLifecycle(chart, context = {}) {
   const paid = paymentKey ? paymentKey === "PAID" : Boolean(delivery?.paid_at || delivery?.delivered_at);
   const issued = Boolean(prescription?.issued_at || prescription?.id);
   const refillPending = String(refill?.status || "").toUpperCase() === "PENDING_REVIEW";
+  const outcome = consultation?.outcome || consultation?.consultation_outcome || "";
 
   return [
     {
-      label: "Consult",
+      label: "Consultation",
       meta: consultState === "completed"
         ? formatDateTime(consultMeta) || "Completed"
         : consultState === "no_show"
@@ -687,17 +699,20 @@ function buildLifecycle(chart, context = {}) {
       state: consultState === "no_show" ? "risk" : consultState === "completed" ? "done" : consultState === "scheduled" ? "current" : "pending",
     },
     {
-      label: needsOutcome ? "Outcome not recorded" : issued ? "Rx issued" : "Rx not issued",
+      label: "Outcome",
+      meta: needsOutcome ? "Record decision" : outcome ? titleCase(outcome) : "Not provided",
+      state: needsOutcome ? "current" : outcome ? "done" : "pending",
+    },
+    {
+      label: "Prescription",
       meta: issued
         ? formatDateTime(prescription?.issued_at) || prescriptionStatusLabel(prescription)
-        : needsOutcome
-          ? "Record decision"
         : consultState === "completed"
           ? "Doctor decision needed"
           : consultState === "no_show"
             ? "No-show"
             : "Waiting for consult",
-      state: issued ? "done" : needsOutcome || consultState === "completed" ? "current" : "pending",
+      state: issued ? "done" : !needsOutcome && consultState === "completed" ? "current" : "pending",
     },
     {
       label: "Payment",
@@ -722,7 +737,7 @@ function buildLifecycle(chart, context = {}) {
       state: delivered ? "done" : paid ? "current" : "pending",
     },
     {
-      label: "Follow-up",
+      label: "Refill",
       meta: refillPending
         ? formatDateTime(refill?.submitted_at) || "Review due"
         : delivered
@@ -913,33 +928,13 @@ function AssessmentReader({ assessment }) {
 }
 
 function RxLifecycleStrip({ steps }) {
-  return (
-    <div className="rx-lifecycle-strip patient-lifecycle-strip">
-      {steps.map((step) => (
-        <div key={step.label} className={`rx-lifecycle-step ${step.state}`}>
-          <span className="workbench-check-dot" />
-          <div>
-            <strong>{step.label}</strong>
-            <em>{step.meta || (step.state === "pending" ? "Pending" : "Complete")}</em>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  const ClinicalThread = window.DD_UI.ClinicalThread;
+  return <ClinicalThread steps={steps} layout="horizontal" />;
 }
 
 function CompactLifecycle({ steps }) {
-  return (
-    <div className="appointment-clinical-lifecycle">
-      {steps.map((step) => (
-        <div key={step.label} className={`appointment-lifecycle-row ${step.state}`}>
-          <span className="workbench-check-dot" />
-          <strong>{step.label}</strong>
-          <em>{step.meta || (step.state === "pending" ? "Pending" : "Complete")}</em>
-        </div>
-      ))}
-    </div>
-  );
+  const ClinicalThread = window.DD_UI.ClinicalThread;
+  return <ClinicalThread steps={steps} layout="mini" />;
 }
 
 function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
@@ -948,6 +943,7 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
   const [category, setCategory] = useStatePC("CLINICAL_NOTE");
   const [composing, setComposing] = useStatePC(false);
   const [saving, setSaving] = useStatePC(false);
+  const [saved, setSaved] = useStatePC(false);
   const [error, setError] = useStatePC("");
 
   useEffectPC(() => {
@@ -955,6 +951,7 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
     setDraft("");
     setCategory("CLINICAL_NOTE");
     setComposing(false);
+    setSaved(false);
     setError("");
   }, [chart?.patient?.id, chart?.notes]);
 
@@ -975,6 +972,7 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
       const nextNotes = [data.note, ...notes];
       setNotes(nextNotes);
       setDraft("");
+      setSaved(true);
       setComposing(false);
       onNoteSaved?.(data.note);
     } catch {
@@ -1009,10 +1007,10 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
       {composing ? (
         <div className="appointment-note-composer">
           <NoteCategoryPicker value={category} onChange={setCategory} compact />
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Add internal clinical context..." maxLength={4000} rows={3} />
+          <textarea value={draft} onChange={(event) => { setDraft(event.target.value); setSaved(false); }} placeholder="Add internal clinical context..." maxLength={4000} rows={3} />
           <div>
-            <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
-            <button type="button" className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving" : "Save note"}</button>
+            <span>{saving ? "Saving…" : saved ? "Saved" : draft.trim().length ? `Unsaved · ${draft.trim().length}/4000` : "Internal only"}</span>
+            <button type="button" className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save note"}</button>
           </div>
         </div>
       ) : null}
@@ -1023,65 +1021,48 @@ function DoctorNotesCompact({ chart, contextType, onNoteSaved }) {
 
 function AppointmentClinicalCard({
   chart,
-  lifecycle,
   latestPrescription,
-  deliveries,
-  refills,
-  patientPayload,
-  onAmendPrescription,
-  onNoteSaved,
+  appointmentId,
 }) {
-  const latestDelivery = deliveries[0];
-  const prescriptionItems = itemLabel(latestPrescription?.items);
-  const deliveryItems = itemLabel(latestDelivery?.items);
+  const patient = chart?.patient || {};
+  const clinical = chart?.clinical || {};
+  const demographics = clinical.demographics || patient.demographics || patient.assessment?.basic || {};
+  const medication = clinical.current_medications?.[0]?.name
+    || asArray(patient.medications)[0]
+    || itemLabel(latestPrescription?.items)
+    || "Not recorded";
+  const member = [patient.age ? `${patient.age}y` : "", patient.sex ? titleCase(patient.sex) : ""].filter(Boolean).join(" · ") || "Not recorded";
+  const heightWeight = [
+    demographics.height_cm ? `${demographics.height_cm} cm` : "",
+    demographics.weight_kg ? `${demographics.weight_kg} kg` : "",
+    demographics.bmi ? `BMI ${demographics.bmi}` : "",
+  ].filter(Boolean).join(" · ");
+  const prescriptionMeta = latestPrescription
+    ? [formatShortDate(latestPrescription.issued_at), formatMoneyFils(latestPrescription.amount_fils)].filter(Boolean).join(" · ")
+    : "";
+  const timelineConsultations = asArray(chart?.timeline).filter((entry) => String(entry?.type || "").toLowerCase() === "consultation");
+  const previousConsultation = timelineConsultations[1]
+    || asArray(chart?.consultations).find((entry) => entry?.id !== appointmentId)
+    || asArray(patient.visit_history).find((entry) => entry?.id !== appointmentId)
+    || null;
+  const previousTitle = previousConsultation?.title || previousConsultation?.service_name || previousConsultation?.service || "Consultation";
+  const previousDate = formatShortDate(previousConsultation?.occurred_at || previousConsultation?.completed_at || previousConsultation?.scheduled_at || previousConsultation?.date);
+  const previousNote = previousConsultation?.description || previousConsultation?.doctor_notes || previousConsultation?.summary || previousConsultation?.note || "";
 
   return (
     <section className="appointment-clinical-card">
-      <CareSummaryStrip
-        medication={chart?.clinical?.current_medications?.[0]}
-        latestPrescription={latestPrescription}
-        latestDelivery={latestDelivery}
-        refills={refills}
-      />
+      <dl className="schedule-clinical-facts">
+        <div><dt>Member</dt><dd>{member}</dd></div>
+        {heightWeight ? <div><dt>Height / weight</dt><dd>{heightWeight}</dd></div> : null}
+        <div><dt>Current medication</dt><dd>{medication}</dd></div>
+        {prescriptionMeta ? <div><dt>Last prescription</dt><dd>{prescriptionMeta}</dd></div> : null}
+      </dl>
 
-      <CompactLifecycle steps={lifecycle} />
-
-      <DoctorNotesCompact
-        chart={chart}
-        contextType="SCHEDULE"
-        onNoteSaved={onNoteSaved}
-      />
-
-      {latestPrescription ? (
-        <div className="appointment-clinical-block">
-          <div className="appointment-clinical-head">
-            <div>
-              <span>Latest prescription</span>
-              <strong>{prescriptionStatusLabel(latestPrescription)}</strong>
-            </div>
-            {latestPrescription.can_amend ? (
-              <button type="button" className="btn-ghost" onClick={() => onAmendPrescription?.(patientPayload, latestPrescription)}>Re-issue</button>
-            ) : null}
-          </div>
-          <div className="appointment-summary-row">
-            <strong>{prescriptionItems || latestPrescription.title || "Prescription"}</strong>
-            <span>{[formatMoneyFils(latestPrescription.amount_fils), formatDateTime(latestPrescription.issued_at)].filter(Boolean).join(" · ") || "Details unavailable"}</span>
-          </div>
-        </div>
-      ) : null}
-
-      {latestDelivery ? (
-        <div className="appointment-clinical-block">
-          <div className="appointment-clinical-head">
-            <div>
-              <span>Medication order</span>
-              <strong>{medicationStatusLabel(latestDelivery)}</strong>
-            </div>
-          </div>
-          <div className="appointment-summary-row">
-            <strong>{deliveryItems || "Medication order"}</strong>
-            <span>{[formatMoneyFils(latestDelivery.amount_fils), formatDate(latestDelivery.delivered_at || latestDelivery.paid_at)].filter(Boolean).join(" · ") || "No delivery date"}</span>
-          </div>
+      {previousConsultation ? (
+        <div className="schedule-previous-consultation">
+          <span>Previous consultation</span>
+          <p>{previousTitle}{previousDate ? <> · <em>{previousDate}</em></> : null}</p>
+          {previousNote ? <small>{previousNote}</small> : null}
         </div>
       ) : null}
     </section>
@@ -1304,7 +1285,7 @@ function ClinicalProfileModal({ chart, onClose, onSaved }) {
   );
 }
 
-function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSaved, onPrescribeLabs }) {
+function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSaved }) {
   const [outcome, setOutcome] = useStatePC("");
   const [note, setNote] = useStatePC("");
   const [saving, setSaving] = useStatePC(false);
@@ -1351,26 +1332,11 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSave
         <div className="quickwlp-dialog-head">
           <div>
             <div id="consult-outcome-title" className="quickwlp-dialog-title">Record consultation outcome</div>
-            <p>{patientName ? `Close the clinical decision for ${patientName}.` : "Close the clinical decision for this consultation."}</p>
+            <p>{patientName ? `Close the clinical decision for ${patientName}. Each option states its consequence.` : "Close the clinical decision for this consultation. Each option states its consequence."}</p>
           </div>
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Close</button>
         </div>
 
         <div className="consult-outcome-options">
-          {onPrescribeLabs ? (
-            <button
-              type="button"
-              className="consult-outcome-option consult-outcome-option-labs"
-              onClick={onPrescribeLabs}
-              disabled={saving}
-            >
-              <div className="consult-outcome-option-title">
-                <strong>Prescribe lab tests</strong>
-                <span className="consult-outcome-new-badge">New</span>
-              </div>
-              <span>Choose a package, individual biomarkers, or both.</span>
-            </button>
-          ) : null}
           {CONSULT_OUTCOME_OPTIONS.map((option) => (
             <button
               type="button"
@@ -1386,12 +1352,12 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, onClose, onSave
         </div>
 
         <label className="consult-outcome-note">
-          <span>Internal note</span>
+          <span>Internal note (optional)</span>
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Optional clinical context for the outcome."
-            rows={3}
+            placeholder="Clinical context for this outcome"
+            rows={2}
             maxLength={1000}
             disabled={saving}
           />
@@ -1412,12 +1378,14 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
   const [draft, setDraft] = useStatePC("");
   const [category, setCategory] = useStatePC("CLINICAL_NOTE");
   const [saving, setSaving] = useStatePC(false);
+  const [saved, setSaved] = useStatePC(false);
   const [error, setError] = useStatePC("");
 
   useEffectPC(() => {
     setNotes(asArray(chart?.notes));
     setDraft("");
     setCategory("CLINICAL_NOTE");
+    setSaved(false);
   }, [chart?.patient?.id, chart?.notes]);
 
   const save = async () => {
@@ -1437,6 +1405,7 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
       const nextNotes = [data.note, ...notes];
       setNotes(nextNotes);
       setDraft("");
+      setSaved(true);
       onNoteSaved?.(data.note);
     } catch {
       setError("Could not save doctor note.");
@@ -1449,10 +1418,10 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
     <ChartSection title="Doctor notes" subtitle="Internal clinical handover and follow-up context." className="doctor-notes-section">
       <div className="doctor-note-composer">
         <NoteCategoryPicker value={category} onChange={setCategory} />
-        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Add a concise internal note..." maxLength={4000} rows={3} />
+        <textarea value={draft} onChange={(event) => { setDraft(event.target.value); setSaved(false); }} placeholder="Add a concise internal note..." maxLength={4000} rows={3} />
         <div className="doctor-note-composer-foot">
-          <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
-          <button type="button" className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving" : "Save note"}</button>
+          <span>{saving ? "Saving…" : saved ? "Saved" : draft.trim().length ? `Unsaved · ${draft.trim().length}/4000` : "Internal only"}</span>
+          <button type="button" className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save note"}</button>
         </div>
       </div>
       {error ? <div className="doctor-note-error">{error}</div> : null}
@@ -1524,6 +1493,164 @@ function ClinicalActionTrail({ events }) {
   );
 }
 
+function HubPatientChart({
+  chart,
+  lifecycle,
+  medication,
+  latestPrescription,
+  deliveries,
+  refills,
+  patientPayload,
+  onAmendPrescription,
+}) {
+  const { Avatar, ClinicalContextBanner } = window.DD_UI;
+  const patient = chart.patient || {};
+  const clinical = chart.clinical || {};
+  const consultations = asArray(chart.consultations);
+  const latestDelivery = deliveries[0];
+  const nextAction = asArray(chart.next_actions)[0];
+  const careState = currentCareState({ chart, nextAction, medication, latestPrescription, latestDelivery });
+  const consultation = asArray(chart.consultations)[0];
+  const paymentKey = lifecycleKey(chart?.lifecycle?.payment);
+  const fulfillmentKey = lifecycleKey(chart?.lifecycle?.fulfillment);
+  const refill = refills[0];
+  const prescriptionStatus = String(latestPrescription?.status || "").toUpperCase();
+  const needsOutcome = isRecordOutcomeAction(nextAction);
+  const hubLifecycle = lifecycle.map((step, index) => {
+    if (index === 0) {
+      return {
+        ...step,
+        label: "Consult",
+        meta: consultation ? formatShortDate(consultation.completed_at || consultation.scheduled_at) || step.meta : "None",
+      };
+    }
+    if (index === 1) {
+      return {
+        ...step,
+        meta: consultationStatus(consultation) === "completed" ? "Recorded" : step.meta,
+        state: needsOutcome ? "current" : consultation ? "done" : "pending",
+      };
+    }
+    if (index === 2) {
+      return {
+        ...step,
+        meta: latestPrescription ? prescriptionStatusLabel(latestPrescription) : "Not issued",
+        state: latestPrescription ? (prescriptionStatus === "PUBLISHED" ? "current" : "done") : "pending",
+      };
+    }
+    if (index === 3) {
+      return {
+        ...step,
+        meta: lifecyclePaymentLabel(chart, latestPrescription, latestDelivery),
+        state: paymentKey === "PAID" ? "done" : paymentKey === "UNPAID" ? "current" : step.state,
+      };
+    }
+    if (index === 4) {
+      return {
+        ...step,
+        meta: lifecycleFulfillmentLabel(chart, latestDelivery),
+        state: fulfillmentKey === "DELIVERED" ? "done" : fulfillmentKey === "PAID_AWAITING_DELIVERY" ? "current" : step.state,
+      };
+    }
+    if (index === 5) {
+      return {
+        ...step,
+        meta: refill ? "Review due" : "Not due",
+        state: refill ? "current" : "pending",
+      };
+    }
+    return step;
+  });
+
+  return (
+    <article className="hub-patient-chart">
+      <header className="hub-patient-chart-head">
+        <div className="patient-emr-identity">
+          <Avatar initials={patient.initials || "P"} name={patient.name || "Patient"} size="lg" />
+          <div>
+            <h2>{patient.name || "Patient"}</h2>
+            <div className="meta">
+              {[
+                patient.phone,
+                patient.email,
+                patient.age ? `${patient.age}y` : null,
+                titleCase(patient.sex),
+                patient.address || patient.address_line || patient.formatted_address,
+              ].filter(Boolean).join(" · ")}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="hub-care-state-strip" aria-label="Current care state">
+        <ChartFact label="Current care state" value={careState} />
+        <ChartFact label="Medication" value={medication?.name || itemLabel(latestPrescription?.items) || "Not listed"} />
+        <ChartFact label="Payment" value={lifecyclePaymentLabel(chart, latestPrescription, latestDelivery)} />
+        <ChartFact label="Delivery" value={lifecycleFulfillmentLabel(chart, latestDelivery)} />
+      </div>
+
+      <ClinicalContextBanner allergies={clinical.allergies} conditions={clinical.conditions} label="Safety" />
+
+      <section className="hub-chart-thread">
+        <div className="hub-chart-section-label">Clinical thread</div>
+        <RxLifecycleStrip steps={hubLifecycle} />
+      </section>
+
+      <div className="hub-chart-columns">
+        <section className="hub-chart-column">
+          <div className="hub-chart-section-label">Current medication</div>
+          {asArray(clinical.current_medications).length ? (
+            <div className="hub-chart-flat-list">
+              {clinical.current_medications.map((item, index) => (
+                <div className="hub-chart-flat-row" key={`${item.name}-${index}`}>
+                  <div><strong>{item.name}</strong><span>{item.schedule || "Current medication"}</span></div>
+                  {item.since ? <time>Since {formatDate(item.since)}</time> : null}
+                </div>
+              ))}
+            </div>
+          ) : <EmptyInline>No active medication recorded.</EmptyInline>}
+
+          {latestPrescription ? (
+            <div className="hub-chart-latest-prescription">
+              <span>Latest prescription</span>
+              <div>
+                <strong>{itemLabel(latestPrescription.items) || latestPrescription.title || "Prescription"}</strong>
+                <em>{[prescriptionStatusLabel(latestPrescription), formatMoneyFils(latestPrescription.amount_fils), formatShortDate(latestPrescription.issued_at)].filter(Boolean).join(" · ")}</em>
+              </div>
+              {latestPrescription.can_amend ? <button type="button" onClick={() => onAmendPrescription?.(patientPayload, latestPrescription)}>Re-issue</button> : null}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="hub-chart-column hub-chart-notes">
+          <div className="hub-chart-section-label">Doctor notes</div>
+          {asArray(chart.notes).length ? asArray(chart.notes).slice(0, 2).map((note, index) => (
+            <div className="hub-chart-note" key={note.note_id || note.id || `${note.created_at}-${index}`}>
+              <span>{note.actor?.display_name || "Clinical team"} · {formatDateTime(note.created_at)}</span>
+              <p>{note.note_text}</p>
+            </div>
+          )) : <EmptyInline>No doctor notes yet.</EmptyInline>}
+        </section>
+      </div>
+
+      <details className="hub-chart-history">
+        <summary>Show visit history ({consultations.length})</summary>
+        <div className="hub-chart-flat-list">
+          {consultations.length ? consultations.map((consultation, index) => (
+            <div className="hub-chart-flat-row" key={consultation.id || index}>
+              <div>
+                <strong>{consultation.service_name || consultation.title || "Consultation"}</strong>
+                <span>{titleCase(consultation.status || "Completed")}</span>
+              </div>
+              <time>{formatDateTime(consultation.completed_at || consultation.scheduled_start_at || consultation.date)}</time>
+            </div>
+          )) : <EmptyInline>No visit history recorded.</EmptyInline>}
+        </div>
+      </details>
+    </article>
+  );
+}
+
 function PatientChart({
   patientId,
   initialChart,
@@ -1546,7 +1673,8 @@ function PatientChart({
   const compact = mode === "compact";
   const appointmentMode = mode === "appointment";
   const taskMode = mode === "task";
-  const focusedMode = compact || appointmentMode || taskMode;
+  const hubMode = mode === "hub";
+  const focusedMode = compact || appointmentMode || taskMode || hubMode;
 
   useEffectPC(() => {
     setChart(initialChart || null);
@@ -1650,18 +1778,29 @@ function PatientChart({
 
   const prescriptionAction = prescriptionActionForChart({ chart, context, medication, amendablePrescription, nextAction });
 
+  if (hubMode) {
+    return (
+      <HubPatientChart
+        chart={chart}
+        lifecycle={lifecycle}
+        medication={medication}
+        latestPrescription={latestPrescription}
+        deliveries={deliveries}
+        refills={enrichedRefills}
+        patientPayload={patientPayload}
+        onAmendPrescription={onAmendPrescription}
+        onNoteSaved={saveNoteAndRefreshChart}
+      />
+    );
+  }
+
   if (appointmentMode) {
     return (
       <div className={`patient-chart-unified patient-chart-${mode} focus-${focus}`}>
         <AppointmentClinicalCard
           chart={chart}
-          lifecycle={lifecycle}
           latestPrescription={latestPrescription}
-          deliveries={deliveries}
-          refills={enrichedRefills}
-          patientPayload={patientPayload}
-          onAmendPrescription={onAmendPrescription}
-          onNoteSaved={saveNoteLocally}
+          appointmentId={context?.appointment?.id}
         />
       </div>
     );
@@ -1676,10 +1815,9 @@ function PatientChart({
           latestPrescription={latestPrescription}
           deliveries={deliveries}
           refills={enrichedRefills}
-          patientPayload={patientPayload}
-          onAmendPrescription={onAmendPrescription}
-          onNoteSaved={saveNoteLocally}
-        />
+        patientPayload={patientPayload}
+        onAmendPrescription={onAmendPrescription}
+      />
       </div>
     );
   }

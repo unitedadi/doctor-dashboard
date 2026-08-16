@@ -1,5 +1,5 @@
 import * as React from "react";
-import { API_BASE, DOCTOR_ID } from "../config.js";
+import { API_BASE, DOCTOR_ID, LOCAL_PREVIEW } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
 import { StreamChat } from "stream-chat";
 import {
@@ -609,8 +609,8 @@ function EmptyChatPanel() {
 
 function PatientHubLensControl({ active, needsReplyCount, loading, onChange }) {
   const filters = [
-    { key: "all", label: "Conversations", count: null },
     { key: "needs_reply", label: "Needs reply", count: needsReplyCount },
+    { key: "all", label: "Conversations", count: null },
     { key: "charts", label: "Charts", count: null },
   ];
 
@@ -631,12 +631,6 @@ function PatientHubLensControl({ active, needsReplyCount, loading, onChange }) {
   );
 }
 
-function channelTriageChip({ needsReply, prescribablePatient, track, service }) {
-  if (needsReply) return { tone: "reply", label: "Needs reply" };
-  if (prescribablePatient?.can_prescribe) return { tone: "ready", label: "Rx ready" };
-  return { tone: "track", label: formatTrackKey(track || service) };
-}
-
 function StreamChannelRows({ channels, patientDirectory, prescribableDirectory = [], needsReplySet }) {
   const { channel: activeChannel, client, setActiveChannel } = useChatContext("StreamChannelRows");
   const replySet = needsReplySet || new Set();
@@ -653,7 +647,7 @@ function StreamChannelRows({ channels, patientDirectory, prescribableDirectory =
         const needsReply = replySet.has(item.id);
         const prescribablePatient = findChannelPatient(item, client.userID, prescribableDirectory);
         const allergies = asArray(patient.allergies);
-        const chip = channelTriageChip({ needsReply, prescribablePatient, track, service });
+        const trackLabel = formatTrackKey(track || service);
 
         return (
           <button
@@ -668,9 +662,9 @@ function StreamChannelRows({ channels, patientDirectory, prescribableDirectory =
                 <span className="stream-kit-row-name">{patientName}</span>
                 <span className="stream-kit-row-time">{formatChannelTime(item)}</span>
               </span>
-              {patient.phone ? <span className="stream-kit-row-phone">{patient.phone}</span> : null}
               <span className="stream-kit-row-tags">
-                <span className={`stream-kit-row-chip ${chip.tone}`}>{chip.label}</span>
+                {needsReply ? <span className="stream-kit-row-chip reply">Needs reply</span> : null}
+                {trackLabel ? <span className="stream-kit-row-chip track">{trackLabel}</span> : null}
                 {allergies.length ? (
                   <span className="stream-kit-row-allergy" title={`Allergies: ${allergies.join(", ")}`}>Allergy</span>
                 ) : null}
@@ -725,22 +719,24 @@ function ClinicalChatHeader({ channel, context, contextLoading, contextError, fa
   const latestCompletedAt = formatContextDateTime(context?.rx?.latest_completed_at);
   const meta = compactPatientSubtitle(patient);
   const canPrescribe = context?.actions?.can_prescribe ?? Boolean(prescribablePatient?.can_prescribe);
+  const track = context?.rx?.track_key || patient?.track_key || channel?.data?.track_key || channel?.data?.trackKey || "";
+  const allergies = asArray(patient?.allergies || context?.patient?.allergies);
+  const consultLine = latestCompletedAt ? `Last consult ${latestCompletedAt}` : "No completed consult";
+  const prescriptionLine = canPrescribe ? "Prescription ready" : disabledReasonCopy(context?.rx?.can_prescribe_reason);
 
   return (
     <div className="clinical-chat-header">
       <div className="clinical-chat-main">
         <div className="clinical-chat-avatar">{patient?.initials || "P"}</div>
         <div className="clinical-chat-identity">
-          <div className="clinical-chat-name">{patient?.name || "Patient"}</div>
-          <div className="clinical-chat-meta">
-            {contextLoading ? "Checking Rx eligibility..." : contextError ? "Patient context from chat" : meta || "Patient context from chat"}
+          <div className="clinical-chat-identity-line">
+            <div className="clinical-chat-name">{patient?.name || "Patient"}</div>
+            {track ? <span className="stream-kit-row-chip track">{formatTrackKey(track)}</span> : null}
+            {allergies.length ? <span className="stream-kit-row-allergy">Allergy · {allergies.join(", ")}</span> : null}
           </div>
-        </div>
-      </div>
-      <div className="clinical-chat-header-center">
-        <div className="clinical-memory-line">
-          <strong>{latestCompletedAt ? `Last consult ${latestCompletedAt}` : "No completed consult found"}</strong>
-          <span>{canPrescribe ? "Prescription ready" : disabledReasonCopy(context?.rx?.can_prescribe_reason)}</span>
+          <div className="clinical-chat-meta">
+            {contextLoading ? "Checking Rx eligibility..." : contextError ? meta || "Patient context from chat" : `${consultLine} · ${prescriptionLine}`}
+          </div>
         </div>
       </div>
       <div className="clinical-chat-actions">
@@ -774,6 +770,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
   const [loading, setLoading] = useStateC(true);
   const [saving, setSaving] = useStateC(false);
   const [error, setError] = useStateC("");
+  const [saved, setSaved] = useStateC(false);
 
   const loadNotes = React.useCallback(async () => {
     if (!patientId) return;
@@ -816,6 +813,7 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
       });
       setNotes((current) => [data.note, ...current]);
       setDraft("");
+      setSaved(true);
     } catch {
       setError("Could not save note.");
     } finally {
@@ -833,14 +831,17 @@ function ClinicalDoctorNotes({ patientId, initialNotes = [] }) {
         <NoteCategoryPicker value={category} onChange={setCategory} />
         <textarea
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setSaved(false);
+          }}
           placeholder="Add internal note..."
           maxLength={4000}
           rows={3}
         />
         <div className="clinical-note-composer-foot">
-          <span>{draft.trim().length ? `${draft.trim().length}/4000` : "Internal only"}</span>
-          <button type="button" onClick={save} disabled={saving}>{saving ? "Saving" : "Save"}</button>
+          <span>{saving ? "Saving…" : saved ? "Saved" : draft.trim().length ? `Unsaved · ${draft.trim().length}/4000` : "Internal only"}</span>
+          <button type="button" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
         </div>
       </div>
       {error ? <div className="clinical-note-error">{error}</div> : null}
@@ -1135,6 +1136,8 @@ function StreamConversation({ directChannel, compact = false, directResponseTask
   const [railOpen, setRailOpen] = useStateC(false);
   const [responseTaskSaving, setResponseTaskSaving] = useStateC(false);
   const [responseTaskError, setResponseTaskError] = useStateC("");
+  const [confirmNoReply, setConfirmNoReply] = useStateC(false);
+  const [actionToast, setActionToast] = useStateC("");
 
   const prescribablePatient = activePrescribablePatient || directoryPrescribablePatient;
   const patientFileId = channelContext?.patient?.id || fallbackPatient?.id || channel?.data?.patient_id || channel?.data?.patientId || "";
@@ -1223,14 +1226,12 @@ function StreamConversation({ directChannel, compact = false, directResponseTask
     setRailOpen(false);
     setResponseTaskSaving(false);
     setResponseTaskError("");
+    setConfirmNoReply(false);
+    setActionToast("");
   }, [channel?.id, responseTask?.stream_message_id]);
 
   const markNoReplyNeeded = async () => {
     if (!channel?.id || !responseTask?.stream_message_id || responseTaskSaving) return;
-    const confirmed = window.confirm(
-      "Clear this conversation from Needs reply? It will return automatically when the patient sends another message."
-    );
-    if (!confirmed) return;
 
     setResponseTaskSaving(true);
     setResponseTaskError("");
@@ -1249,6 +1250,8 @@ function StreamConversation({ directChannel, compact = false, directResponseTask
         await channel.markRead().catch(() => {});
       }
       onResponseTaskResolved?.(channel.id, true);
+      setActionToast("Conversation cleared from Needs reply");
+      window.setTimeout(() => setActionToast(""), 3200);
     } catch (err) {
       setResponseTaskError(
         err?.status === 409
@@ -1258,6 +1261,7 @@ function StreamConversation({ directChannel, compact = false, directResponseTask
       onResponseTaskResolved?.(channel.id, false);
     } finally {
       setResponseTaskSaving(false);
+      setConfirmNoReply(false);
     }
   };
 
@@ -1280,7 +1284,7 @@ function StreamConversation({ directChannel, compact = false, directResponseTask
                     responseTask={responseTask}
                     responseTaskError={responseTaskError}
                     responseTaskSaving={responseTaskSaving}
-                    onNoReplyNeeded={markNoReplyNeeded}
+                    onNoReplyNeeded={() => setConfirmNoReply(true)}
                     onOpenPatient={onOpenPatient}
                     onPrescribe={onPrescribe}
                     onToggleRail={() => setRailOpen((value) => !value)}
@@ -1318,6 +1322,17 @@ function StreamConversation({ directChannel, compact = false, directResponseTask
           )}
         </div>
       </Channel>
+      <window.DD_UI.ConfirmationModal
+        open={confirmNoReply}
+        title="Clear from Needs reply?"
+        description={`The conversation with ${fallbackPatient?.name || "this patient"} leaves the Needs reply queue without a message. It returns automatically if the patient writes again.`}
+        confirmLabel="No reply needed"
+        variant="compact"
+        busy={responseTaskSaving}
+        onConfirm={markNoReplyNeeded}
+        onCancel={() => setConfirmNoReply(false)}
+      />
+      <window.DD_UI.ActionToast message={actionToast} />
     </div>
   );
 }
@@ -1522,6 +1537,98 @@ function PatientChatDrawer({ open, patientId, customerId, channelId, patientName
   );
 }
 
+function LocalPreviewPatientHub({ onOpenChart, onReplyResolved, replyResolved = false }) {
+  const { I } = window.DD_UI;
+  const [confirmNoReply, setConfirmNoReply] = useStateC(false);
+  const [actionToast, setActionToast] = useStateC("");
+  const conversations = [
+    { name: "Omar Al Hashimi", time: "4:50 PM", tags: ["Needs reply", "Peptides", "Allergy"], preview: "Anything I should change before our consult?", unread: 2, active: true },
+    { name: "Maya Petrov", time: "3:33 PM", tags: ["Peptides"], preview: "Payment done for the BPC vials.", unread: 1 },
+    { name: "Fatima Al Suwaidi", time: "9:08 PM", tags: ["Weight loss", "Allergy"], preview: "Will do, thank you!" },
+    { name: "Khalid Al Marri", time: "1:08 AM", tags: ["Peptides"], preview: "I saw the new prescription link expired." },
+    { name: "Yousef Al Fardan", time: "9:08 PM", tags: ["Weight loss", "Allergy"], preview: "Understood. I have been less consistent." },
+  ];
+  const thread = [
+    { label: "Consult", meta: "Aug 15", state: "done" },
+    { label: "Prescription", meta: "Active", state: "done" },
+    { label: "Payment", meta: "Paid", state: "done" },
+    { label: "Delivery", meta: "Delivered", state: "done" },
+    { label: "Refill", meta: "Not due", state: "pending" },
+  ];
+
+  return (
+    <div className="local-preview-hub" aria-label="Local Patient Hub preview">
+      <section className="local-preview-conversation-list">
+        {conversations.map((conversation) => {
+          const tags = replyResolved && conversation.active
+            ? conversation.tags.filter((tag) => tag !== "Needs reply")
+            : conversation.tags;
+          return (
+          <button type="button" className={conversation.active ? "active" : ""} key={conversation.name}>
+            <span className="local-preview-row-top"><strong>{conversation.name}</strong><time>{conversation.time}</time></span>
+            <span className="local-preview-tags">
+              {tags.map((tag) => <em className={tag.toLowerCase().replace(/\s+/g, "-")} key={tag}>{tag}</em>)}
+            </span>
+            <span className="local-preview-row-bottom"><span>{conversation.preview}</span>{conversation.unread ? <b>{conversation.unread}</b> : null}</span>
+          </button>
+          );
+        })}
+      </section>
+
+      <section className="local-preview-thread">
+        <header>
+          <span className="local-preview-avatar">OH</span>
+          <div>
+            <span className="local-preview-thread-identity"><strong>Omar Al Hashimi</strong><em>Peptides</em><em className="allergy">Allergy · Penicillin, Pollen</em></span>
+            <span>Last consult Aug 15, 8:52 AM · No prescription due</span>
+          </div>
+          {!replyResolved ? <button type="button" onClick={() => setConfirmNoReply(true)}>No reply needed</button> : null}
+        </header>
+        <div className="local-preview-messages">
+          <div><p>Good morning Doctor. Done with day 14 of BPC-157, shoulder feels noticeably better.</p><span>Omar · 4:04 PM</span></div>
+          <div><p>Slight redness at the injection site this morning.</p><span>Omar · 4:05 PM</span></div>
+          <div><p>Anything I should change before our consult at 10?</p><span>Omar · 4:50 PM</span></div>
+        </div>
+        <footer><input aria-label="Message the patient" placeholder="Message the patient" /><button type="button" aria-label="Send message">{I.send}</button></footer>
+      </section>
+
+      <aside className="local-preview-rail">
+        <div className="local-preview-safety">{I.warn}<span><strong>Safety</strong> · Allergies: Penicillin, Pollen. Conditions: Recovery (post-op shoulder), Pre-diabetes</span></div>
+        <div className="local-preview-label">Current plan</div>
+        <div className="local-preview-plan"><strong>BPC-157 500 mcg</strong><span>Subcutaneous, twice daily</span></div>
+        <div className="local-preview-plan"><strong>Metformin 500 mg</strong><span>Twice daily, with meals</span></div>
+        <div className="local-preview-label spaced">Latest consultation</div>
+        <div className="local-preview-consult"><strong>Lab review · phone</strong><span>Aug 15, 8:52 AM · Reviewed HbA1c and lipids.</span></div>
+        <div className="local-preview-label spaced">Prescription state</div>
+        <div className="local-preview-mini-thread">
+          {thread.map((step) => <div key={step.label}><i className={step.state} /><strong>{step.label}</strong><span>{step.meta}</span></div>)}
+        </div>
+        <div className="local-preview-label spaced">Doctor note</div>
+        <div className="local-preview-note-tags"><button type="button" className="active">Clinical</button><button type="button">Medication</button><button type="button">Safety</button><button type="button">Follow-up</button></div>
+        <textarea rows={3} placeholder="Add internal clinical context" />
+        <div className="local-preview-note-actions"><span>Internal only</span><button type="button" disabled>Save note</button></div>
+        <div className="local-preview-existing-note"><span>Dr. Marwa · Aug 1, 9:12 AM</span><p>Shoulder rehab progressing. Reassess BPC-157 need after week 4.</p></div>
+        <div className="local-preview-rail-actions"><button type="button" onClick={onOpenChart}>Open chart</button><p>Prescribing is unavailable: no completed consultation requires it right now.</p></div>
+      </aside>
+      <window.DD_UI.ConfirmationModal
+        open={confirmNoReply}
+        title="Clear from Needs reply?"
+        description="The conversation with Omar Al Hashimi leaves the Needs reply queue without a message. It returns automatically if the patient writes again."
+        confirmLabel="No reply needed"
+        variant="compact"
+        onCancel={() => setConfirmNoReply(false)}
+        onConfirm={() => {
+          setConfirmNoReply(false);
+          onReplyResolved?.();
+          setActionToast("Cleared from Needs reply · returns if the patient writes again");
+          window.setTimeout(() => setActionToast(""), 3200);
+        }}
+      />
+      <window.DD_UI.ActionToast message={actionToast} icon={I.check} />
+    </div>
+  );
+}
+
 function ChatView({ initialPatientId, initialCustomerId, initialChannelId: routeInitialChannelId, initialHubMode, onOpenPatient, onPrescribe, onAmendPrescription }) {
   const { Topbar } = window.DD_UI;
   const PatientsView = window.DD_PatientsView;
@@ -1534,6 +1641,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
   const [hubLens, setHubLens] = useStateC(initialHubMode || "all");
   const [needsReplyTasks, setNeedsReplyTasks] = useStateC([]);
   const [needsReplyLoading, setNeedsReplyLoading] = useStateC(true);
+  const [localReplyResolved, setLocalReplyResolved] = useStateC(false);
   const [loading, setLoading] = useStateC(true);
   const [error, setError] = useStateC("");
   const loadIdRef = React.useRef(0);
@@ -1595,13 +1703,12 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
     setLoading(true);
     setError("");
     try {
-      const streamClient = await connectDoctorChatClient();
-
       const patientsPayload = await fetchJson(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`).catch(() => ({ patients: [] }));
       const patients = patientsPayload.patients || [];
       setPatientDirectory(patients);
       const prescribablePayload = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?doctor_id=${DOCTOR_ID}&limit=100&offset=0`).catch(() => ({ patients: [] }));
       setPrescribableDirectory((prescribablePayload.patients || []).map(mapPrescribablePatient));
+      const streamClient = await connectDoctorChatClient();
 
       if (routeInitialChannelId) {
         setInitialChannelId(routeInitialChannelId);
@@ -1708,19 +1815,19 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
   return (
     <>
       <Topbar
-        title="Patient Hub"
-        subtitle={loading ? "Connecting to patient conversations" : "Patient chat, clinical file, and prescribing context in one workspace."}
+        title="Patient hub"
+        subtitle={loading ? "Connecting to patient conversations" : "Conversations, charts, and prescribing context in one place."}
         right={(
           <PatientHubLensControl
             active={hubLens}
-            needsReplyCount={needsReplyChannelIds.length}
+            needsReplyCount={LOCAL_PREVIEW && localReplyResolved ? 0 : needsReplyChannelIds.length}
             loading={needsReplyLoading}
             onChange={setHubLens}
           />
         )}
       />
 
-      {error && (
+      {error && hubLens !== "charts" && !LOCAL_PREVIEW && (
         <div className="api-state chat-api-state">
           <span>{error}</span>
           <button type="button" className="btn-ghost" onClick={loadChat}>Retry</button>
@@ -1785,6 +1892,17 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
             </div>
           </Chat>
         </div>
+      ) : LOCAL_PREVIEW && hubLens === "needs_reply" && localReplyResolved ? (
+        <div className="patient-hub-empty-lens">
+          <strong>No patient replies waiting</strong>
+          <span>Patient messages appear here only when there is no newer doctor or care-team reply.</span>
+        </div>
+      ) : LOCAL_PREVIEW && hubLens !== "charts" ? (
+        <LocalPreviewPatientHub
+          onOpenChart={() => setHubLens("charts")}
+          onReplyResolved={() => setLocalReplyResolved(true)}
+          replyResolved={localReplyResolved}
+        />
       ) : (
         <EmptyChatPanel />
       )}

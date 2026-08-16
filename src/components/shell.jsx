@@ -15,11 +15,14 @@ import {
   FlaskConical,
   House,
   ListFilter,
+  LogOut,
   MapPin,
   MessageSquareText,
   Mic,
   Minus,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Phone,
   Pill,
@@ -66,6 +69,8 @@ const I = {
   chevronRight: L(ChevronRight),
   chevronLeft: L(ChevronLeft),
   chevronDown: L(ChevronDown),
+  panelLeftClose: L(PanelLeftClose, 16),
+  panelLeftOpen: L(PanelLeftOpen, 16),
   phone: L(Phone),
   video: L(Video),
   home: L(House),
@@ -85,6 +90,7 @@ const I = {
   shieldCheck: L(ShieldCheck),
   bell: L(Bell),
   bellOff: L(BellOff),
+  logOut: L(LogOut),
   drop: L(Droplet),
   dot: <Circle size={12} fill="currentColor" strokeWidth={0} />,
 };
@@ -92,7 +98,7 @@ const I = {
 // ============================================================
 // Avatar
 // ============================================================
-function Avatar({ initials, name, size = "md", online }) {
+function Avatar({ initials, name, size = "md", online, tone = "neutral" }) {
   const cls = ["avatar", size === "lg" ? "lg" : size === "xl" ? "xl" : size === "sm" ? "sm" : ""].filter(Boolean).join(" ");
   // Subtle colour variety per name (deterministic), but tan-toned
   const palette = [
@@ -102,7 +108,7 @@ function Avatar({ initials, name, size = "md", online }) {
     { bg: "#F7EEE0", fg: "#173B3D" },
   ];
   const idx = (name || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0) % palette.length;
-  const c = palette[idx];
+  const c = tone === "inverse" ? { bg: "#173B3D", fg: "#FEF9EF" } : palette[idx];
   if (online) {
     return (
       <span className="avatar-wrap">
@@ -128,50 +134,95 @@ function Sidebar({
   notificationLabel,
   notificationDisabled,
   onToggleNotification,
+  rating,
+  doctorEmail,
+  onSignOut,
 }) {
   const items = [
     { id: "appointments", label: "Schedule", icon: I.calendar, count: appointmentCount },
-    { id: "clinical-inbox", label: "Clinical Inbox", icon: I.shieldCheck, count: clinicalInboxCount, urgent: true },
-    { id: "patient-hub", label: "Patient Hub", icon: I.message, count: unreadChats },
+    { id: "clinical-inbox", label: "Clinical inbox", icon: I.shieldCheck, count: clinicalInboxCount, urgent: true },
+    { id: "patient-hub", label: "Patient hub", icon: I.message, count: unreadChats },
   ];
   const D = window.DD_DATA.DOCTOR;
+  const storageKey = `dd-sidebar-collapsed:${D.accountId || D.doctorId || "doctor"}`;
+  const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem(storageKey) === "1");
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, collapsed ? "1" : "0");
+  }, [collapsed, storageKey]);
+
+  useEffect(() => {
+    if (!accountOpen) return undefined;
+    const close = (event) => {
+      if (!accountRef.current?.contains(event.target)) setAccountOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [accountOpen]);
+
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
       <div className="sidebar-brand">
         <img src="assets/logo-dardoc-teal.svg" alt="DarDoc" />
+        <button type="button" className="sidebar-collapse" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+          {collapsed ? I.panelLeftOpen : I.panelLeftClose}
+        </button>
       </div>
 
       <div className="nav-section-label">Workspace</div>
       {items.map((it) => (
-        <div key={it.id}
+        <button key={it.id}
+             type="button"
              className={"nav-item" + (active === it.id ? " active" : "")}
+             aria-current={active === it.id ? "page" : undefined}
+             aria-label={it.label}
+             title={collapsed ? it.label : undefined}
              onClick={() => onNav(it.id)}>
           {it.icon}
-          <span>{it.label}</span>
+          <span className="nav-label">{it.label}</span>
           {it.count != null && it.count > 0 ? (
             <span className={"count" + (it.urgent ? " urgent" : "")}>{it.count}</span>
           ) : null}
-        </div>
+        </button>
       ))}
 
-      <div className="sidebar-doctor">
-        <div className="sidebar-doctor-profile">
-          <Avatar initials={D.initials} name={D.name} size="md" />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ font: "500 13px/1.2 var(--dd-font)", color: "var(--dd-text-primary)" }}>{D.name}</div>
-            <div style={{ font: "400 11px/1.3 var(--dd-font)", color: "var(--dd-text-secondary)", marginTop: 2 }}>{D.title}</div>
+      <div className="sidebar-doctor" ref={accountRef}>
+        <button type="button" className="sidebar-doctor-profile" onClick={() => setAccountOpen((value) => !value)} aria-expanded={accountOpen} title={collapsed ? D.name : undefined}>
+          <Avatar initials={D.initials} name={D.name} size="md" tone="inverse" />
+          <div className="sidebar-doctor-copy">
+            <div>{D.name}</div>
+            <span>{rating ? `★ ${rating.average.toFixed(1)}` : D.title}</span>
           </div>
-        </div>
-        <button
-          type="button"
-          className={"doctor-alert-toggle" + (notificationState === "on" ? " active" : "")}
-          disabled={notificationDisabled}
-          onClick={onToggleNotification}
-          title={notificationState === "blocked" ? "Allow notifications in your browser settings" : notificationLabel}
-        >
-          {notificationState === "blocked" ? I.bellOff : I.bell}
-          <span>{notificationLabel}</span>
+          <span className="sidebar-account-more">{I.more}</span>
         </button>
+        {accountOpen ? (
+          <div className="sidebar-account-menu">
+            <div className="sidebar-account-identity">
+              <strong>{D.name}</strong>
+              {doctorEmail || D.email ? <span>{doctorEmail || D.email}</span> : null}
+              <small>{D.title}</small>
+              {rating ? <em><span aria-hidden="true">★</span>{rating.average.toFixed(2)} average from {rating.count} patient ratings</em> : null}
+            </div>
+            <div className="sidebar-account-divider" />
+            <button
+              type="button"
+              className={"doctor-alert-toggle" + (notificationState === "on" ? " active" : "")}
+              disabled={notificationDisabled}
+              onClick={onToggleNotification}
+              title={notificationState === "blocked" ? "Allow notifications in your browser settings" : notificationLabel}
+            >
+              <span className="doctor-alert-label">{notificationState === "blocked" ? I.bellOff : I.bell}<span>Message alerts</span></span>
+              <span className="doctor-alert-control">
+                <span>{notificationLabel}</span>
+                <span className="doctor-alert-track"><span /></span>
+              </span>
+            </button>
+            <div className="sidebar-account-divider" />
+            <button type="button" className="sidebar-signout" disabled={!onSignOut} onClick={onSignOut}>{I.logOut}<span>Sign out</span></button>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
@@ -180,7 +231,7 @@ function Sidebar({
 // ============================================================
 // Topbar
 // ============================================================
-function Topbar({ title, subtitle, right, search, onSearch }) {
+function Topbar({ title, subtitle, right, search, onSearch, searchPlaceholder = "Search patients, drugs, notes" }) {
   return (
     <div className="topbar">
       {(title || subtitle) ? (
@@ -192,7 +243,7 @@ function Topbar({ title, subtitle, right, search, onSearch }) {
       {search != null && (
         <div className="search">
           {I.search}
-          <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Search patients, drugs, notes" />
+          <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder={searchPlaceholder} />
         </div>
       )}
       {right}
