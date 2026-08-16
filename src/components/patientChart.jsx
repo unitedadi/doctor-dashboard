@@ -1299,6 +1299,10 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, appointmentSour
       setError("Select the consultation outcome.");
       return;
     }
+    if (!String(note || "").trim()) {
+      setError("Enter a clinical note.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -1343,13 +1347,14 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, appointmentSour
         ) : null}
 
         <label className="consult-outcome-note">
-          <span>Internal note (optional)</span>
+          <span>Internal note (required)</span>
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder="Clinical context for this outcome"
             rows={2}
             maxLength={1000}
+            required
             disabled={saving}
           />
         </label>
@@ -1357,7 +1362,7 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, appointmentSour
         {error ? <div className="quickwlp-dialog-error">{error}</div> : null}
         <div className="quickwlp-dialog-actions">
           <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" className="btn-primary" onClick={save} disabled={saving || !outcome}>{saving ? "Saving" : "Save outcome"}</button>
+          <button type="button" className="btn-primary" onClick={save} disabled={saving || !outcome || !String(note || "").trim()}>{saving ? "Saving" : "Save outcome"}</button>
         </div>
       </div>
     </div>

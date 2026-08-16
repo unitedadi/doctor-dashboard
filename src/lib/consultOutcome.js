@@ -115,9 +115,13 @@ function futureDubaiOffsetIso(localValue, now) {
 }
 
 export function buildConsultOutcomePayload({ outcome, note, followUpLocal, now = new Date() }) {
+  const normalizedNote = String(note || "").trim();
+  if (!normalizedNote) {
+    throw new Error("Enter a clinical note.");
+  }
   const payload = {
     outcome,
-    note: String(note || "").trim() || null,
+    note: normalizedNote,
   };
   if (outcome === "PATIENT_UNDECIDED") {
     payload.follow_up_at = futureDubaiOffsetIso(followUpLocal, now);
@@ -127,6 +131,8 @@ export function buildConsultOutcomePayload({ outcome, note, followUpLocal, now =
 
 export function consultOutcomeErrorMessage(error, payload) {
   const code = String(error || "");
+  const noteErrors = payload?.details?.fieldErrors?.note || [];
+  if (code === "Enter a clinical note." || noteErrors.length) return "Enter a clinical note.";
   const followUpErrors = payload?.details?.fieldErrors?.follow_up_at || [];
   if (followUpErrors.includes("follow_up_at_required")) return "Choose a follow-up date and time.";
   if (followUpErrors.includes("follow_up_at_must_be_future")) return "Choose a future follow-up time in Dubai.";
