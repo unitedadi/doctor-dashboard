@@ -85,11 +85,56 @@ test("never replays the same alert or unknown service-worker messages", () => {
   assert.equal(plays, 1);
 });
 
+test("starts sound on load when Chrome already allows audio", async () => {
+  const serviceWorkerListeners = new Map();
+  const windowListeners = new Map();
+  const played = [];
+  let soundReady = false;
+  let unlocks = 0;
+
+  const stop = startDoctorAlertSound({
+    serviceWorker: {
+      addEventListener: (name, listener) => serviceWorkerListeners.set(name, listener),
+      removeEventListener: (name) => serviceWorkerListeners.delete(name),
+    },
+    eventTarget: {
+      addEventListener: (name, listener) => windowListeners.set(name, listener),
+      removeEventListener: (name) => windowListeners.delete(name),
+    },
+    unlockSound: async () => {
+      unlocks += 1;
+      soundReady = true;
+      return true;
+    },
+    play: (type) => {
+      if (!soundReady) return false;
+      played.push(type);
+      return true;
+    },
+    storage: null,
+    tabAttention: { show: () => undefined, stop: () => undefined },
+  });
+
+  await Promise.resolve();
+  assert.equal(unlocks, 1);
+  assert.equal(serviceWorkerListeners.get("message")({
+    data: {
+      source: "dardoc-doctor-alert",
+      event_id: "message-after-load",
+      type: "message.new",
+    },
+  }), true);
+  assert.deepEqual(played, ["message.new"]);
+
+  stop();
+});
+
 test("keeps an alert pending until the first user interaction unlocks sound", async () => {
   const serviceWorkerListeners = new Map();
   const windowListeners = new Map();
   const played = [];
   let soundReady = false;
+  let unlocks = 0;
   let attentionShows = 0;
   let attentionStops = 0;
 
@@ -103,6 +148,8 @@ test("keeps an alert pending until the first user interaction unlocks sound", as
       removeEventListener: (name) => windowListeners.delete(name),
     },
     unlockSound: async () => {
+      unlocks += 1;
+      if (unlocks === 1) return false;
       soundReady = true;
       return true;
     },
@@ -131,6 +178,7 @@ test("keeps an alert pending until the first user interaction unlocks sound", as
 
   await windowListeners.get("pointerdown")();
   assert.deepEqual(played, ["message.new"]);
+  assert.equal(unlocks, 2);
 
   assert.equal(serviceWorkerListeners.get("message")(alert), false);
   assert.deepEqual(played, ["message.new"]);

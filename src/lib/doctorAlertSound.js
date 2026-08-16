@@ -171,6 +171,7 @@ export function startDoctorAlertSound({
   serviceWorker.addEventListener("message", onAlert);
   eventTarget.addEventListener("pointerdown", unlock, { capture: true });
   eventTarget.addEventListener("keydown", unlock, { capture: true });
+  void unlock();
 
   return () => {
     serviceWorker.removeEventListener("message", onAlert);
