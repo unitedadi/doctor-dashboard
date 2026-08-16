@@ -34,5 +34,10 @@ test("provides visible recovery guidance when browser notifications are blocked"
     detail: "Open this site's browser settings, set Notifications to Allow, then check again.",
     action: "Check again",
   });
+  assert.deepEqual(doctorChatPushRecovery("unavailable"), {
+    title: "Alerts are temporarily unavailable",
+    detail: "Appointments, messages, and refill requests remain in their work queues.",
+    action: "Try again",
+  });
   assert.equal(doctorChatPushRecovery("on"), null);
 });
