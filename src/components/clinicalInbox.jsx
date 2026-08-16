@@ -1,6 +1,7 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
+import { clinicalTaskCategory, isDoctorClinicalTask, summarizeClinicalInboxTasks } from "../lib/clinicalInboxSummary.js";
 
 /* global React */
 const { useEffect: useEffectI, useMemo: useMemoI, useState: useStateI } = React;
@@ -13,15 +14,6 @@ const GROUPS = [
   { key: "lab_results_ready", label: "Lab results ready" },
   { key: "message_needs_response", label: "Needs reply" },
 ];
-
-const DOCTOR_TASK_CATEGORIES = new Set([
-  "needs_prescription",
-  "needs_outcome",
-  "message_needs_response",
-  "reissue",
-  "refill_review",
-  "lab_results_ready",
-]);
 
 const CATEGORY_COPY = {
   needs_prescription: {
@@ -236,7 +228,7 @@ function mapClinicalTask(item) {
   const patientName = patient.name || item.patient_name || "Unknown patient";
   return {
     id: item.id || `${item.category || item.type}:${item.source_id || item.refill_request_id || item.appointment_id}`,
-    category: String(item.category || (item.type === "REFILL_REVIEW" ? "refill_review" : "needs_prescription")).toLowerCase(),
+    category: clinicalTaskCategory(item),
     type: item.type || "",
     priority: item.priority || "Review",
     title: item.title || "Clinical task",
@@ -268,24 +260,6 @@ function mapClinicalTask(item) {
     detail: item.detail || "",
     raw: item,
   };
-}
-
-function isDoctorClinicalTask(task) {
-  if (!task) return false;
-  const category = String(task.category || "").toLowerCase();
-  if (!DOCTOR_TASK_CATEGORIES.has(category)) return false;
-  const action = String(task.action || "").toUpperCase();
-  if (!action) return true;
-  return [
-    "PRESCRIBE_RX",
-    "PRESCRIBE_QUICK_WLP",
-    "PRESCRIBE_REFILL",
-    "REPLY_TO_PATIENT",
-    "REISSUE_PRESCRIPTION",
-    "AMEND_PRESCRIPTION",
-    "RECORD_CONSULT_OUTCOME",
-    "REVIEW_LAB_RESULTS",
-  ].includes(action);
 }
 
 function TaskRow({ task, selected, onSelect }) {
@@ -430,7 +404,7 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
   );
 }
 
-function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp, onCountChange }) {
+function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp, onCountChange, onBreakdownChange, initialCategory = "" }) {
   const { Topbar, ConfirmationModal, ActionToast } = window.DD_UI;
   const PatientChatDrawer = window.DD_PatientChatDrawer;
   const ConsultOutcomeModal = window.DD_ConsultOutcomeModal;
@@ -447,6 +421,11 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const [dismissTask, setDismissTask] = useStateI(null);
   const [actionError, setActionError] = useStateI("");
   const [actionToast, setActionToast] = useStateI("");
+  const [categoryFilter, setCategoryFilter] = useStateI(initialCategory);
+
+  useEffectI(() => {
+    setCategoryFilter(GROUPS.some((group) => group.key === initialCategory) ? initialCategory : "");
+  }, [initialCategory]);
 
   useEffectI(() => {
     let cancelled = false;
@@ -499,7 +478,9 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
       const nextTasks = tasks.filter((item) => item.refillRequestId !== refillRequestId);
       setTasks(nextTasks);
       setSelectedId((selected) => nextTasks.some((item) => item.id === selected) ? selected : nextTasks[0]?.id || null);
-      onCountChange?.(nextTasks.length);
+      const summary = summarizeClinicalInboxTasks(nextTasks);
+      onCountChange?.(summary.total);
+      onBreakdownChange?.(summary);
       setReloadToken((value) => value + 1);
       setActionToast("Refill request closed as no refill needed");
       window.setTimeout(() => setActionToast(""), 3200);
@@ -511,11 +492,15 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     }
   };
 
-  const activeTasks = tasks;
+  const activeTasks = categoryFilter ? tasks.filter((task) => task.category === categoryFilter) : tasks;
 
   useEffectI(() => {
-    if (!loading && !error) onCountChange?.(activeTasks.length);
-  }, [activeTasks.length, error, loading, onCountChange]);
+    if (!loading && !error) {
+      const summary = summarizeClinicalInboxTasks(tasks);
+      onCountChange?.(summary.total);
+      onBreakdownChange?.(summary);
+    }
+  }, [error, loading, onBreakdownChange, onCountChange, tasks]);
 
   const visibleTasks = useMemoI(() => {
     const query = search.trim().toLowerCase();
@@ -531,6 +516,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   })).filter((group) => group.tasks.length), [visibleTasks]);
 
   const selected = visibleTasks.find((task) => task.id === selectedId) || visibleTasks[0] || null;
+  const selectedGroup = GROUPS.find((group) => group.key === categoryFilter);
   return (
     <div className="screen clinical-inbox-screen fade-in">
       <Topbar
@@ -549,6 +535,13 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
             </div>
           )}
           {actionError ? <div className="clinical-inbox-warning" role="alert">{actionError}</div> : null}
+
+          {selectedGroup ? (
+            <div className="clinical-inbox-active-filter" role="status">
+              <span>Showing {selectedGroup.label.toLowerCase()}</span>
+              <button type="button" onClick={() => setCategoryFilter("")}>Show all tasks</button>
+            </div>
+          ) : null}
 
           <div className="clinical-task-list">
             {loading ? (

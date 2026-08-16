@@ -2259,6 +2259,11 @@ body {
   font: 400 14px/1.25 var(--dd-font);
 }
 
+.patient-assessment-head > div {
+  display: grid;
+  gap: 3px;
+}
+
 .patient-assessment-head span,
 .patient-assessment-head em {
   color: var(--dd-text-tertiary);
@@ -8628,6 +8633,18 @@ body {
 .hub-care-state-strip .patient-chart-fact:first-child strong { font: 400 15px/1.35 var(--dd-font); }
 
 .hub-patient-chart > .v2-clinical-context { margin: 16px 0 0; }
+.hub-patient-chart > .hub-patient-assessment {
+  margin-top: 22px;
+  padding: 20px 0 0;
+  border: 0;
+  border-top: 1px solid rgba(23,59,61,0.08);
+  border-radius: 0;
+  background: transparent;
+}
+.hub-patient-assessment .patient-chart-section-head { margin-bottom: 14px; }
+.hub-patient-assessment .patient-chart-section-head h3 { font: 400 15px/1.25 var(--dd-font); }
+.hub-patient-assessment .patient-assessment-grid { border-color: rgba(23,59,61,0.07); background: rgba(23,59,61,0.055); }
+.hub-patient-assessment .patient-assessment-grid div { background: rgba(255,252,246,0.9); }
 .hub-chart-thread { margin-top: 26px; padding: 0; border: 0; }
 .hub-chart-thread .v2-clinical-thread { margin-top: 14px; }
 .hub-chart-section-label { color: var(--dd-text-tertiary); font: 400 11px/1.2 var(--dd-font); letter-spacing: 1.5px; text-transform: uppercase; }
@@ -9104,6 +9121,80 @@ body {
 .sidebar-account-more { display: inline-flex; margin-left: auto; color: var(--dd-text-secondary); }
 .sidebar-account-menu { bottom: 62px; }
 
+.sidebar-inbox-shortcuts {
+  display: grid;
+  gap: 2px;
+  margin: 3px 8px 7px 37px;
+}
+
+.sidebar-inbox-shortcuts button {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dd-text-secondary);
+  font: 400 11.5px/1.25 var(--dd-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-inbox-shortcuts button:hover,
+.sidebar-inbox-shortcuts button.active {
+  background: rgba(23,59,61,0.055);
+  color: var(--dd-accent);
+}
+
+.sidebar-inbox-shortcuts strong {
+  min-width: 20px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(23,59,61,0.07);
+  color: inherit;
+  font: 500 10.5px/1 var(--dd-font);
+  text-align: center;
+}
+
+.sidebar.collapsed .sidebar-inbox-shortcuts { display: none; }
+
+.doctor-alert-help {
+  margin: 2px 6px 6px;
+  padding: 10px 12px 11px;
+  border-radius: 10px;
+  background: rgba(247,238,224,0.72);
+}
+
+.doctor-alert-help strong {
+  display: block;
+  color: var(--dd-text-primary);
+  font: 500 11.5px/1.35 var(--dd-font);
+}
+
+.doctor-alert-help p {
+  margin: 4px 0 9px;
+  color: var(--dd-text-secondary);
+  font: 400 11px/1.45 var(--dd-font);
+}
+
+.doctor-alert-help button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(23,59,61,0.13);
+  border-radius: 999px;
+  background: var(--dd-bg);
+  color: var(--dd-accent);
+  font: 500 11px/1 var(--dd-font);
+  cursor: pointer;
+}
+
+.doctor-alert-help button:hover:not(:disabled) { background: rgba(23,59,61,0.05); }
+.doctor-alert-help button:disabled { cursor: default; opacity: 0.55; }
+
 .topbar { align-items: flex-end; padding: 18px clamp(20px, 2.3vw, 32px) 14px; background: transparent; }
 .topbar h1 { font: 400 clamp(21px, 1.65vw, 24px)/1.2 var(--dd-font); letter-spacing: -0.005em; }
 .topbar .sub { margin-top: 3px; }
@@ -9368,6 +9459,30 @@ body {
 }
 
 .clinical-task-list { padding: 18px 12px 48px; }
+.clinical-inbox-active-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 14px 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--dd-cell);
+  color: var(--dd-text-secondary);
+  font: 400 12px/1.35 var(--dd-font);
+}
+.clinical-inbox-active-filter button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(23,59,61,0.12);
+  border-radius: 999px;
+  background: var(--dd-bg);
+  color: var(--dd-accent);
+  font: 500 11px/1 var(--dd-font);
+  cursor: pointer;
+}
+.clinical-inbox-active-filter button:hover { background: rgba(23,59,61,0.05); }
 .clinical-task-group { padding-top: 0; }
 .clinical-task-group-head {
   justify-content: flex-start;

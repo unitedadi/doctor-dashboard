@@ -877,15 +877,21 @@ function PrescriptionGuardrails({
   );
 }
 
-function AssessmentReader({ assessment }) {
+function AssessmentReader({ assessment, title = "Assessment answers", subtitle = "Latest intake answers in readable clinical language.", className = "" }) {
   const submissions = asArray(assessment?.submissions);
   const latest = submissions[0];
   const pairs = assessmentAnswerPairs(latest);
   const groups = groupedAssessmentPairs(pairs);
   const basic = assessment?.basic || {};
+  const basicPairs = [
+    { label: "Body shape", value: humanizeAnswerValue(basic.body_shape) },
+    { label: "Activity", value: humanizeAnswerValue(basic.activity_level) },
+    { label: "Pregnancy", value: humanizeAnswerValue(basic.pregnancy_status) },
+    { label: "Breastfeeding", value: humanizeAnswerValue(basic.breastfeeding_status) },
+  ].filter((item) => item.value);
 
   return (
-    <ChartSection title="Assessment answers" subtitle="Latest intake answers in readable clinical language." className="patient-assessment-section">
+    <ChartSection title={title} subtitle={subtitle} className={`patient-assessment-section ${className}`.trim()}>
       {latest ? (
         <>
           <div className="patient-assessment-head">
@@ -915,13 +921,12 @@ function AssessmentReader({ assessment }) {
             <EmptyInline>No detailed answers available for the latest assessment.</EmptyInline>
           )}
         </>
-      ) : (
+      ) : basicPairs.length ? (
         <div className="patient-assessment-grid">
-          <div><span>Body shape</span><strong>{humanizeAnswerValue(basic.body_shape) || "Not provided"}</strong></div>
-          <div><span>Activity</span><strong>{humanizeAnswerValue(basic.activity_level) || "Not provided"}</strong></div>
-          <div><span>Pregnancy</span><strong>{humanizeAnswerValue(basic.pregnancy_status) || "Not provided"}</strong></div>
-          <div><span>Breastfeeding</span><strong>{humanizeAnswerValue(basic.breastfeeding_status) || "Not provided"}</strong></div>
+          {basicPairs.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
         </div>
+      ) : (
+        <EmptyInline>No pre-consult assessment was submitted.</EmptyInline>
       )}
     </ChartSection>
   );
@@ -1590,6 +1595,13 @@ function HubPatientChart({
       </div>
 
       <ClinicalContextBanner allergies={clinical.allergies} conditions={clinical.conditions} label="Safety" />
+
+      <AssessmentReader
+        assessment={clinical.assessment}
+        title="Pre-consult assessment"
+        subtitle="Answers submitted by the patient before the consultation."
+        className="hub-patient-assessment"
+      />
 
       <section className="hub-chart-thread">
         <div className="hub-chart-section-label">Clinical thread</div>

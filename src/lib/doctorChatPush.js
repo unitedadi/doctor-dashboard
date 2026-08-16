@@ -4,6 +4,24 @@ function pushSupported() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+export function doctorChatPushRecovery(state) {
+  if (state === "blocked") {
+    return {
+      title: "Alerts are blocked in this browser",
+      detail: "Open this site's browser settings, set Notifications to Allow, then check again.",
+      action: "Check again",
+    };
+  }
+  if (state === "unavailable") {
+    return {
+      title: "Alerts are temporarily unavailable",
+      detail: "Patient messages still appear in Needs reply.",
+      action: "Try again",
+    };
+  }
+  return null;
+}
+
 function applicationServerKey(value) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
