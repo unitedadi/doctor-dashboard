@@ -7,4 +7,5 @@
   </defs>
   <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#dardoc)"/>
   <path d="M18 16H30C41.2 16 48 21.9 48 32C48 42.1 41.2 48 30 48H18V16ZM27 24V40H30.2C35.8 40 39 37.3 39 32C39 26.7 35.8 24 30.2 24H27Z" fill="white"/>
+  <circle cx="50" cy="14" r="10" fill="#D92D20" stroke="white" stroke-width="4"/>
 </svg>

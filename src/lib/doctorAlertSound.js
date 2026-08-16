@@ -4,6 +4,8 @@ const DOCTOR_ALERT_TYPES = new Set([
   "message.new",
   "refill_request.new",
 ]);
+const DOCTOR_DASHBOARD_TITLE = "DarDoc Doctor Dashboard";
+const DOCTOR_ATTENTION_TITLE = "● New activity | DarDoc Doctor Dashboard";
 
 let audioContext = null;
 
@@ -37,10 +39,58 @@ export function playDoctorAlertSound({ context = audioContext } = {}) {
   return true;
 }
 
+export function createDoctorTabAttention({
+  documentTarget = globalThis.document,
+  eventTarget = globalThis.window,
+  title = DOCTOR_DASHBOARD_TITLE,
+  attentionTitle = DOCTOR_ATTENTION_TITLE,
+  favicon = "/favicon.svg",
+  attentionFavicon = "/favicon-alert.svg",
+} = {}) {
+  if (!documentTarget) {
+    return {
+      show: () => false,
+      clear: () => false,
+      stop: () => undefined,
+    };
+  }
+
+  const icon = documentTarget.querySelector?.('link[rel~="icon"]') || null;
+  const show = () => {
+    if (!documentTarget.hidden && documentTarget.hasFocus?.()) return false;
+    documentTarget.title = attentionTitle;
+    icon?.setAttribute("href", attentionFavicon);
+    return true;
+  };
+  const clear = () => {
+    documentTarget.title = title;
+    icon?.setAttribute("href", favicon);
+    return true;
+  };
+  const onVisibilityChange = () => {
+    if (!documentTarget.hidden) clear();
+  };
+
+  documentTarget.addEventListener?.("visibilitychange", onVisibilityChange);
+  eventTarget?.addEventListener?.("focus", clear);
+
+  return {
+    show,
+    clear,
+    stop: () => {
+      documentTarget.removeEventListener?.("visibilitychange", onVisibilityChange);
+      eventTarget?.removeEventListener?.("focus", clear);
+      clear();
+    },
+  };
+}
+
 export function createDoctorAlertMessageHandler({
   play = () => playDoctorAlertSound(),
   storage = globalThis.sessionStorage,
   seen = new Set(),
+  accepted = new Set(),
+  onAccepted = () => undefined,
   onPending = () => undefined,
 } = {}) {
   return (event) => {
@@ -56,6 +106,15 @@ export function createDoctorAlertMessageHandler({
       if (storage?.getItem(key)) return false;
     } catch {
       // The in-memory set still prevents duplicates when storage is unavailable.
+    }
+
+    if (!accepted.has(key)) {
+      accepted.add(key);
+      try {
+        onAccepted(alert);
+      } catch {
+        // A tab indicator failure must never prevent the foreground chime.
+      }
     }
 
     if (!play(alert.type)) {
@@ -79,13 +138,18 @@ export function startDoctorAlertSound({
   unlockSound = unlockDoctorAlertSound,
   play = () => playDoctorAlertSound(),
   storage = globalThis.sessionStorage,
+  tabAttention = createDoctorTabAttention(),
 } = {}) {
-  if (!serviceWorker) return () => undefined;
+  if (!serviceWorker) {
+    tabAttention.stop();
+    return () => undefined;
+  }
 
   const pending = new Map();
   const handleAlert = createDoctorAlertMessageHandler({
     play,
     storage,
+    onAccepted: () => tabAttention.show(),
     onPending: (alert) => pending.set(alert.event_id, alert),
   });
   const onAlert = (event) => {
@@ -112,5 +176,6 @@ export function startDoctorAlertSound({
     serviceWorker.removeEventListener("message", onAlert);
     eventTarget.removeEventListener("pointerdown", unlock, { capture: true });
     eventTarget.removeEventListener("keydown", unlock, { capture: true });
+    tabAttention.stop();
   };
 }

@@ -3,8 +3,50 @@ import assert from "node:assert/strict";
 
 import {
   createDoctorAlertMessageHandler,
+  createDoctorTabAttention,
   startDoctorAlertSound,
 } from "../src/lib/doctorAlertSound.js";
+
+test("shows a private tab indicator in the background and clears it on return", () => {
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  let focused = false;
+  const icon = {
+    href: "/favicon.svg",
+    setAttribute: (name, value) => {
+      if (name === "href") icon.href = value;
+    },
+  };
+  const documentTarget = {
+    title: "DarDoc Doctor Dashboard",
+    hidden: true,
+    hasFocus: () => focused,
+    querySelector: () => icon,
+    addEventListener: (name, listener) => documentListeners.set(name, listener),
+    removeEventListener: (name) => documentListeners.delete(name),
+  };
+  const eventTarget = {
+    addEventListener: (name, listener) => windowListeners.set(name, listener),
+    removeEventListener: (name) => windowListeners.delete(name),
+  };
+  const attention = createDoctorTabAttention({ documentTarget, eventTarget });
+
+  assert.equal(attention.show(), true);
+  assert.equal(documentTarget.title, "● New activity | DarDoc Doctor Dashboard");
+  assert.equal(icon.href, "/favicon-alert.svg");
+
+  documentTarget.hidden = false;
+  focused = true;
+  documentListeners.get("visibilitychange")();
+  assert.equal(documentTarget.title, "DarDoc Doctor Dashboard");
+  assert.equal(icon.href, "/favicon.svg");
+  assert.equal(attention.show(), false);
+  assert.equal(documentTarget.title, "DarDoc Doctor Dashboard");
+
+  attention.stop();
+  assert.equal(documentListeners.size, 0);
+  assert.equal(windowListeners.size, 0);
+});
 
 test("plays one foreground chime for each supported doctor alert type", () => {
   const played = [];
@@ -48,6 +90,8 @@ test("keeps an alert pending until the first user interaction unlocks sound", as
   const windowListeners = new Map();
   const played = [];
   let soundReady = false;
+  let attentionShows = 0;
+  let attentionStops = 0;
 
   const stop = startDoctorAlertSound({
     serviceWorker: {
@@ -68,6 +112,10 @@ test("keeps an alert pending until the first user interaction unlocks sound", as
       return true;
     },
     storage: null,
+    tabAttention: {
+      show: () => { attentionShows += 1; },
+      stop: () => { attentionStops += 1; },
+    },
   });
 
   const alert = {
@@ -79,14 +127,17 @@ test("keeps an alert pending until the first user interaction unlocks sound", as
   };
   assert.equal(serviceWorkerListeners.get("message")(alert), false);
   assert.deepEqual(played, []);
+  assert.equal(attentionShows, 1);
 
   await windowListeners.get("pointerdown")();
   assert.deepEqual(played, ["message.new"]);
 
   assert.equal(serviceWorkerListeners.get("message")(alert), false);
   assert.deepEqual(played, ["message.new"]);
+  assert.equal(attentionShows, 1);
 
   stop();
   assert.equal(serviceWorkerListeners.size, 0);
   assert.equal(windowListeners.size, 0);
+  assert.equal(attentionStops, 1);
 });
