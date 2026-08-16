@@ -4,10 +4,14 @@ import assert from "node:assert/strict";
 import {
   availableConsultOutcomes,
   buildConsultOutcomePayload,
+  calendarDaysForMonth,
+  combineDubaiFollowUpValue,
   consultOutcomeAfterSave,
   consultOutcomeErrorMessage,
   defaultDubaiFollowUpValue,
   minimumDubaiFollowUpValue,
+  shiftCalendarMonth,
+  splitDubaiFollowUpValue,
 } from "../src/lib/consultOutcome.js";
 
 const fixedNow = new Date("2026-08-16T11:00:00.000Z");
@@ -68,4 +72,15 @@ test("provides Dubai-local defaults and human clinical errors", () => {
     consultOutcomeErrorMessage("validation_error", { details: { fieldErrors: { follow_up_at: ["follow_up_at_required"] } } }),
     "Choose a follow-up date and time.",
   );
+});
+
+test("builds the custom calendar without changing the backend date-time value", () => {
+  assert.deepEqual(splitDubaiFollowUpValue("2026-08-17T15:30"), { dateKey: "2026-08-17", time: "15:30" });
+  assert.equal(combineDubaiFollowUpValue("2026-08-19", "09:15"), "2026-08-19T09:15");
+  assert.equal(shiftCalendarMonth("2026-12", 1), "2027-01");
+
+  const august = calendarDaysForMonth("2026-08");
+  assert.equal(august.length, 42);
+  assert.equal(august[5], "2026-08-01");
+  assert.equal(august[35], "2026-08-31");
 });

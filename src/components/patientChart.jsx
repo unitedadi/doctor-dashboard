@@ -1,13 +1,13 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
+import { ConsultFollowUpPicker } from "./consultFollowUpPicker.jsx";
 import {
   availableConsultOutcomes,
   buildConsultOutcomePayload,
   consultOutcomeAfterSave,
   consultOutcomeErrorMessage,
   defaultDubaiFollowUpValue,
-  minimumDubaiFollowUpValue,
 } from "../lib/consultOutcome.js";
 
 /* global React */
@@ -1339,18 +1339,7 @@ function ConsultOutcomeModal({ open, appointmentId, patientName, appointmentSour
         </div>
 
         {outcome === "PATIENT_UNDECIDED" ? (
-          <label className="consult-outcome-reminder">
-            <span>Support follow-up date and time</span>
-            <input
-              type="datetime-local"
-              value={followUpLocal}
-              min={minimumDubaiFollowUpValue()}
-              onChange={(event) => setFollowUpLocal(event.target.value)}
-              disabled={saving}
-              required
-            />
-            <small>Dubai time. This creates the Support follow-up before the doctor task closes.</small>
-          </label>
+          <ConsultFollowUpPicker value={followUpLocal} onChange={setFollowUpLocal} disabled={saving} />
         ) : null}
 
         <label className="consult-outcome-note">

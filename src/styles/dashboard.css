@@ -6032,24 +6032,11 @@ body {
   margin-top: 16px;
 }
 
-.consult-outcome-reminder {
-  display: grid;
-  gap: 6px;
-  margin-top: 16px;
-}
-
-.consult-outcome-reminder span,
 .consult-outcome-note > span {
   color: var(--dd-text-primary);
   font: 400 12px/1.35 var(--dd-font);
 }
 
-.consult-outcome-reminder small {
-  color: var(--dd-text-secondary);
-  font: 400 11px/1.4 var(--dd-font);
-}
-
-.consult-outcome-reminder input,
 .consult-outcome-note textarea {
   width: 100%;
   border: 1px solid var(--dd-divider);
@@ -6066,10 +6053,219 @@ body {
   resize: vertical;
 }
 
-.consult-outcome-reminder input:focus,
 .consult-outcome-note textarea:focus {
   border-color: rgba(23,59,61,0.35);
   box-shadow: 0 0 0 3px rgba(23,59,61,0.08);
+}
+
+.consult-follow-up-picker {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(23,59,61,0.14);
+  border-radius: 16px;
+  background: #fbfcfc;
+}
+
+.consult-follow-up-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 16px;
+  background: var(--dd-accent);
+  color: #fff;
+}
+
+.consult-follow-up-summary > div {
+  display: grid;
+  gap: 2px;
+}
+
+.consult-follow-up-summary span {
+  color: rgba(255,255,255,0.68);
+  font: 500 10px/1.3 var(--dd-font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.consult-follow-up-summary strong {
+  color: #fff;
+  font: 500 14px/1.35 var(--dd-font);
+}
+
+.consult-follow-up-summary .consult-follow-up-zone {
+  flex: none;
+  border: 1px solid rgba(255,255,255,0.24);
+  border-radius: 999px;
+  color: rgba(255,255,255,0.84);
+  padding: 5px 8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.consult-follow-up-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 164px;
+  gap: 18px;
+  padding: 16px;
+}
+
+.consult-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.consult-calendar-head strong {
+  color: var(--dd-text-primary);
+  font: 500 13px/1.3 var(--dd-font);
+}
+
+.consult-calendar-head > div {
+  display: flex;
+  gap: 4px;
+}
+
+.consult-calendar-head button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(23,59,61,0.12);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--dd-text-primary);
+  cursor: pointer;
+  font: 500 14px/1 var(--dd-font);
+}
+
+.consult-calendar-head button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.consult-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.consult-calendar-weekday {
+  color: var(--dd-text-tertiary);
+  font: 500 9px/1 var(--dd-font);
+  padding: 4px 0 7px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.consult-calendar-grid button,
+.consult-calendar-empty {
+  aspect-ratio: 1;
+}
+
+.consult-calendar-grid button {
+  min-width: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--dd-text-primary);
+  cursor: pointer;
+  font: 500 11px/1 var(--dd-font);
+}
+
+.consult-calendar-grid button:hover:not(:disabled) {
+  background: rgba(23,59,61,0.07);
+}
+
+.consult-calendar-grid button[aria-current="date"]:not(.selected) {
+  box-shadow: inset 0 0 0 1px rgba(23,59,61,0.28);
+}
+
+.consult-calendar-grid button.selected {
+  background: var(--dd-accent);
+  color: #fff;
+}
+
+.consult-calendar-grid button:disabled {
+  color: rgba(23,59,61,0.22);
+  cursor: default;
+}
+
+.consult-follow-up-time {
+  display: flex;
+  flex-direction: column;
+  padding-left: 17px;
+  border-left: 1px solid rgba(23,59,61,0.10);
+}
+
+.consult-follow-up-time > label {
+  color: var(--dd-text-primary);
+  font: 500 12px/1.3 var(--dd-font);
+  margin-bottom: 8px;
+}
+
+.consult-follow-up-time > input {
+  width: 100%;
+  border: 1px solid rgba(23,59,61,0.16);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--dd-text-primary);
+  font: 500 14px/1 var(--dd-font);
+  outline: none;
+  padding: 10px 11px;
+}
+
+.consult-follow-up-time > input:focus {
+  border-color: rgba(23,59,61,0.42);
+  box-shadow: 0 0 0 3px rgba(23,59,61,0.08);
+}
+
+.consult-follow-up-time-shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.consult-follow-up-time-shortcuts button {
+  border: 1px solid rgba(23,59,61,0.10);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--dd-text-secondary);
+  cursor: pointer;
+  font: 500 10px/1 var(--dd-font);
+  padding: 8px 5px;
+}
+
+.consult-follow-up-time-shortcuts button.selected {
+  border-color: var(--dd-accent);
+  background: var(--dd-fill-light);
+  color: var(--dd-accent);
+}
+
+.consult-follow-up-time-shortcuts button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.consult-follow-up-time small {
+  margin-top: auto;
+  padding-top: 10px;
+  color: var(--dd-text-tertiary);
+  font: 400 10px/1.4 var(--dd-font);
+}
+
+@media (max-width: 720px) {
+  .consult-follow-up-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .consult-follow-up-time {
+    padding-left: 0;
+    padding-top: 14px;
+    border-top: 1px solid rgba(23,59,61,0.10);
+    border-left: 0;
+  }
 }
 
 .clinical-task-priority.needs_outcome {

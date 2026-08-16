@@ -68,6 +68,39 @@ export function minimumDubaiFollowUpValue(now = new Date()) {
   return dubaiDateTimeInputValue(new Date(now.getTime() + 5 * 60 * 1000));
 }
 
+export function splitDubaiFollowUpValue(value) {
+  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/);
+  return match ? { dateKey: match[1], time: match[2] } : { dateKey: "", time: "" };
+}
+
+export function combineDubaiFollowUpValue(dateKey, time) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) return "";
+  if (!/^\d{2}:\d{2}$/.test(String(time || ""))) return "";
+  return `${dateKey}T${time}`;
+}
+
+export function shiftCalendarMonth(monthKey, offset) {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return "";
+  const shifted = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1 + Number(offset || 0), 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function calendarDaysForMonth(monthKey) {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return [];
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const mondayOffset = (new Date(Date.UTC(year, monthIndex, 1)).getUTCDay() + 6) % 7;
+  return Array.from({ length: 42 }, (_, index) => {
+    const day = index - mondayOffset + 1;
+    return day >= 1 && day <= daysInMonth
+      ? `${monthKey}-${String(day).padStart(2, "0")}`
+      : null;
+  });
+}
+
 function futureDubaiOffsetIso(localValue, now) {
   const normalized = String(localValue || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) {
