@@ -306,8 +306,11 @@ const NOTE_CATEGORIES = [
   { value: "MEDICATION_DECISION", label: "Medication decision" },
   { value: "SAFETY_RISK", label: "Safety/risk" },
   { value: "FOLLOW_UP", label: "Follow-up" },
-  { value: "ADMIN_HANDOFF", label: "Admin handoff" },
+  { value: "ADMIN_HANDOFF", label: "Handoff note" },
 ];
+const PATIENT_HUB_NOTE_CATEGORIES = NOTE_CATEGORIES.filter((category) => (
+  category.value === "CLINICAL_NOTE" || category.value === "ADMIN_HANDOFF"
+));
 
 function noteCategoryLabel(value) {
   return NOTE_CATEGORIES.find((item) => item.value === value)?.label || "Clinical note";
@@ -318,10 +321,10 @@ function consultOutcomeLabel(value) {
   return availableConsultOutcomes("").find((option) => option.value === normalized)?.label || titleCase(value || "Outcome");
 }
 
-function NoteCategoryPicker({ value, onChange, compact = false }) {
+function NoteCategoryPicker({ value, onChange, compact = false, categories = NOTE_CATEGORIES }) {
   return (
     <div className={compact ? "doctor-note-category-pills compact" : "doctor-note-category-pills"} aria-label="Note category">
-      {NOTE_CATEGORIES.map((category) => (
+      {categories.map((category) => (
         <button
           key={category.value}
           type="button"
@@ -1376,6 +1379,7 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
   const [saving, setSaving] = useStatePC(false);
   const [saved, setSaved] = useStatePC(false);
   const [error, setError] = useStatePC("");
+  const categories = contextType === "PATIENT_HUB" ? PATIENT_HUB_NOTE_CATEGORIES : NOTE_CATEGORIES;
 
   useEffectPC(() => {
     setNotes(asArray(chart?.notes));
@@ -1413,7 +1417,7 @@ function DoctorNotes({ chart, contextType, onNoteSaved }) {
   return (
     <ChartSection title="Doctor notes" subtitle="Internal clinical handover and follow-up context." className="doctor-notes-section">
       <div className="doctor-note-composer">
-        <NoteCategoryPicker value={category} onChange={setCategory} />
+        <NoteCategoryPicker value={category} onChange={setCategory} categories={categories} />
         <textarea value={draft} onChange={(event) => { setDraft(event.target.value); setSaved(false); }} placeholder="Add a concise internal note..." maxLength={4000} rows={3} />
         <div className="doctor-note-composer-foot">
           <span>{saving ? "Saving…" : saved ? "Saved" : draft.trim().length ? `Unsaved · ${draft.trim().length}/4000` : "Internal only"}</span>
@@ -1941,7 +1945,7 @@ function PatientChart({
           />
         )}
 
-        {!focusedMode && (
+        {!focusedMode && focus !== "patient-hub" && (
           <CareSummaryStrip
             medication={medication}
             latestPrescription={latestPrescription}
@@ -2058,14 +2062,11 @@ function PatientChart({
                 latestDelivery={deliveries[0]}
               />
 
-              <ChartSection title="Clinical profile" subtitle="Vitals, safety flags, and current patient facts." action={<button type="button" onClick={() => setEditingProfile(true)}>Update</button>} className="patient-chart-overview">
+              <ChartSection title="Clinical profile" subtitle="Vitals and patient details." action={<button type="button" onClick={() => setEditingProfile(true)}>Update</button>} className="patient-chart-overview">
                 <div className="patient-profile-facts">
                   <ChartFact label="Track" value={trackLabel(trackKey)} />
-                  <ChartFact label="Current medication" value={medication?.name || "Not listed"} />
                   <ChartFact label="Height / weight" value={[demographics.height_cm ? `${demographics.height_cm} cm` : null, demographics.weight_kg ? `${demographics.weight_kg} kg` : null].filter(Boolean).join(" · ") || "Not provided"} />
                   <ChartFact label="BMI" value={demographics.bmi || "Not provided"} />
-                  <ChartFact label="Allergies" value={clinical.allergies?.length ? clinical.allergies.join(", ") : "None reported"} />
-                  <ChartFact label="Conditions" value={clinical.conditions?.length ? clinical.conditions.join(", ") : "None reported"} />
                   <ChartFact label="Address" value={patient.address || "Not provided"} />
                 </div>
               </ChartSection>

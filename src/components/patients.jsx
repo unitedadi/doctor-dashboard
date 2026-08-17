@@ -1,6 +1,11 @@
 import * as React from "react";
-import { API_BASE, DOCTOR_ID } from "../config.js";
+import { API_BASE, DOCTOR_ID, LOCAL_PREVIEW } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
+import {
+  loadDoctorPatientDirectories,
+  peekDoctorPatientDirectories,
+} from "../lib/doctorPatientDirectory.js";
+import { patientMatchesSearch } from "../lib/patientSearch.js";
 
 /* global React */
 const { useEffect: useEffectP, useMemo: useMemoP, useState: useStateP } = React;
@@ -33,7 +38,7 @@ const NOTE_CATEGORIES = [
   { value: "MEDICATION_DECISION", label: "Medication decision" },
   { value: "SAFETY_RISK", label: "Safety/risk" },
   { value: "FOLLOW_UP", label: "Follow-up" },
-  { value: "ADMIN_HANDOFF", label: "Admin handoff" },
+  { value: "ADMIN_HANDOFF", label: "Handoff note" },
 ];
 
 function noteCategoryLabel(value) {
@@ -470,39 +475,130 @@ function mapPatient(item) {
   };
 }
 
+function mapDirectoryPatients(directories) {
+  if (!directories) return [];
+  const prescribablePatients = directories.prescribablePatients.map(mapPrescribablePatient);
+  const prescribableByPatient = new Map();
+  const prescribableByCustomer = new Map();
+  for (const item of prescribablePatients) {
+    if (item.canPrescribe && item.id && !prescribableByPatient.has(item.id)) prescribableByPatient.set(item.id, item);
+    if (item.canPrescribe && item.customerId && !prescribableByCustomer.has(item.customerId)) prescribableByCustomer.set(item.customerId, item);
+  }
+  return directories.patients.map((item) => {
+    const patient = mapPatient(item);
+    return {
+      ...patient,
+      prescribe: prescribableByPatient.get(patient.id) || prescribableByCustomer.get(patient.customerId) || null,
+    };
+  });
+}
+
+function localPreviewDirectories() {
+  if (!LOCAL_PREVIEW) return null;
+  return {
+    patients: asArray(window.DD_DATA?.PATIENTS).map((patient) => ({
+      ...patient,
+      customer_id: patient.customer_id || `preview-${patient.id}`,
+      demographics: {
+        height_cm: Number.parseFloat(patient.height) || null,
+        weight_kg: Number.parseFloat(patient.weight) || null,
+        bmi: Number.parseFloat(patient.bmi) || null,
+      },
+      visit_history: patient.visit_history || patient.history || [],
+      upcoming_appointment: patient.upcoming_appointment || (patient.upcoming ? {
+        ...patient.upcoming,
+        date: patient.upcoming.date === "Today" ? dubaiToday() : patient.upcoming.date,
+        service_name: patient.upcoming.service_name || patient.upcoming.service || "Consultation",
+      } : null),
+    })),
+    prescribablePatients: [],
+    fetchedAt: Date.now(),
+  };
+}
+
+function localPreviewPatientChart(patient) {
+  const consultations = asArray(patient.visitHistory).map((visit, index) => ({
+    id: `preview-consultation-${patient.id}-${index}`,
+    service_name: visit.title || "Consultation",
+    status: "COMPLETED",
+    completed_at: visit.date || null,
+  }));
+  const notes = asArray(patient.visitHistory)
+    .filter((visit) => visit.note)
+    .map((visit, index) => ({
+      note_id: `preview-note-${patient.id}-${index}`,
+      note_text: visit.note,
+      note_category: "CLINICAL_NOTE",
+      created_at: visit.date || null,
+      actor: { display_name: "Clinical team", actor_type: "DOCTOR" },
+    }));
+
+  return {
+    patient: {
+      id: patient.id,
+      customer_id: patient.customerId,
+      name: patient.name,
+      initials: patient.initials,
+      phone: patient.phone,
+      email: patient.email,
+      age: patient.age,
+      sex: patient.sex,
+      address: patient.address,
+    },
+    clinical: {
+      demographics: {
+        height_cm: patient.demographics?.heightCm || null,
+        weight_kg: patient.demographics?.weightKg || null,
+        bmi: patient.demographics?.bmi || null,
+      },
+      allergies: asArray(patient.allergies),
+      conditions: asArray(patient.conditions),
+      current_medications: asArray(patient.medications),
+      assessment: null,
+    },
+    consultations,
+    prescriptions: asArray(patient.prescriptionHistory),
+    medication_delivery: asArray(patient.deliveredMedications),
+    refills: asArray(patient.refillHistory),
+    lab_requests: asArray(patient.latestLabs),
+    notes,
+    action_events: [],
+    next_actions: [],
+    timeline: consultations.map((consultation) => ({
+      type: "CONSULTATION",
+      title: consultation.service_name,
+      occurred_at: consultation.completed_at,
+    })),
+  };
+}
+
 function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescribe, onAmendPrescription, embedded = false }) {
   const { I, Avatar, Topbar } = window.DD_UI;
   const PatientChart = window.DD_PatientChart;
-  const [patients, setPatients] = useStateP([]);
+  const initialDirectories = peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID }) || localPreviewDirectories();
+  const [patients, setPatients] = useStateP(() => mapDirectoryPatients(initialDirectories));
   const [search, setSearch] = useStateP("");
   const [filter, setFilter] = useStateP("all");
   const [selectedId, setSelectedId] = useStateP(initialPatientId || null);
-  const [loading, setLoading] = useStateP(true);
+  const [loading, setLoading] = useStateP(() => !initialDirectories);
   const [error, setError] = useStateP("");
   const today = useMemoP(() => dubaiToday(), []);
 
-  const loadPatients = React.useCallback(async () => {
-    setLoading(true);
+  const loadPatients = React.useCallback(async ({ force = false } = {}) => {
+    const cached = peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID }) || localPreviewDirectories();
+    if (LOCAL_PREVIEW && !peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID })) {
+      setLoading(false);
+      return;
+    }
+    if (!cached) setLoading(true);
     setError("");
     try {
-      const [data, prescribableData] = await Promise.all([
-        fetchJson(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`),
-        fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?doctor_id=${DOCTOR_ID}&limit=100&offset=0`).catch(() => ({ patients: [] })),
-      ]);
-      const prescribablePatients = (prescribableData.patients || []).map(mapPrescribablePatient);
-      const prescribableByPatient = new Map();
-      const prescribableByCustomer = new Map();
-      for (const item of prescribablePatients) {
-        if (item.canPrescribe && item.id && !prescribableByPatient.has(item.id)) prescribableByPatient.set(item.id, item);
-        if (item.canPrescribe && item.customerId && !prescribableByCustomer.has(item.customerId)) prescribableByCustomer.set(item.customerId, item);
-      }
-      const nextPatients = (data.patients || []).map((item) => {
-        const patient = mapPatient(item);
-        return {
-          ...patient,
-          prescribe: prescribableByPatient.get(patient.id) || prescribableByCustomer.get(patient.customerId) || null,
-        };
+      const directories = await loadDoctorPatientDirectories({
+        apiBase: API_BASE,
+        doctorId: DOCTOR_ID,
+        force,
       });
+      const nextPatients = mapDirectoryPatients(directories);
       setPatients(nextPatients);
       setSelectedId((current) => {
         if (initialPatientId && nextPatients.some((patient) => patient.id === initialPatientId)) return initialPatientId;
@@ -514,11 +610,12 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
         return nextPatients[0]?.id || null;
       });
     } catch {
-      setError("Could not load patients from the dev API.");
+      if (!cached) setError("Could not load patient charts. Try again.");
     } finally {
       setLoading(false);
     }
   }, [initialCustomerId, initialPatientId]);
+  const reloadPatients = React.useCallback(() => loadPatients({ force: true }), [loadPatients]);
 
   useEffectP(() => {
     const selected = patients.find((patient) => patient.id === selectedId);
@@ -569,15 +666,11 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
 
   const patientsToday = patients.filter((patient) => patient.upcoming?.date === today).length;
   const filtered = patients.filter((patient) => {
-    const query = search.trim().toLowerCase();
-    if (query) {
-      const haystack = [patient.name, patient.phone, patient.email, patient.city].filter(Boolean).join(" ").toLowerCase();
-      if (!haystack.includes(query)) return false;
-    }
+    if (!patientMatchesSearch(patient, search)) return false;
     if (filter === "today" && patient.upcoming?.date !== today) return false;
     return true;
   });
-  const p = patients.find((patient) => patient.id === selectedId) || filtered[0] || null;
+  const p = filtered.find((patient) => patient.id === selectedId) || filtered[0] || null;
 
   return (
     <>
@@ -592,6 +685,21 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
       )}
       <div className={`patient-layout${embedded ? " patient-layout-hub" : ""}`}>
         <div className="patient-list dd-scroll">
+          {embedded && (
+            <div className="patient-hub-chart-search-wrap">
+              <label className="patient-hub-chart-search">
+                {I.search}
+                <input
+                  aria-label="Search patient charts by name or mobile number"
+                  autoComplete="off"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name or mobile number"
+                />
+              </label>
+              <span>{search.trim() ? `${filtered.length} of ${patients.length} patients` : `${patients.length} patients`}</span>
+            </div>
+          )}
           {!embedded && <div className="filter">
             <button type="button" className={"chip" + (filter === "all" ? " on" : "")} onClick={() => setFilter("all")}>All <b>{patients.length}</b></button>
             <button type="button" className={"chip" + (filter === "today" ? " on" : "")} onClick={() => setFilter("today")}>Today <b>{patientsToday}</b></button>
@@ -599,7 +707,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           {error && (
             <div className="api-state patient-api-state">
               <span>{error}</span>
-              <button type="button" className="btn-ghost" onClick={loadPatients}>Retry</button>
+              <button type="button" className="btn-ghost" onClick={reloadPatients}>Retry</button>
             </div>
           )}
           {loading ? (
@@ -609,7 +717,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           ) : filtered.map((pat) => {
             const primaryMedication = medicationName(pat.medications[0]);
             const primaryTrack = trackLabel(pat.prescriptionHistory[0]?.trackKey || pat.prescribe?.trackKey);
-            const embeddedMeta = [primaryTrack, primaryMedication].filter(Boolean).join(" · ") || pat.phone || "";
+            const embeddedMeta = [pat.phone, primaryTrack, primaryMedication].filter(Boolean).join(" · ");
             const hasAmendable = Boolean(findAmendablePrescription(pat.prescriptionHistory));
             const hasActiveRx = hasActiveRxPrescription(pat.prescriptionHistory);
             const statusLabel = hasAmendable
@@ -651,7 +759,8 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           ) : p && PatientChart ? (
             <PatientChart
               patientId={p.id}
-              mode={embedded ? "hub" : "full"}
+              initialChart={LOCAL_PREVIEW ? localPreviewPatientChart(p) : undefined}
+              mode="full"
               focus="patient-hub"
               context={{ prescribable: p.prescribe }}
               onMessage={(id, customerId) => onMessage?.(id || p.id, customerId || p.customerId)}
@@ -659,7 +768,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
               onAmendPrescription={onAmendPrescription}
             />
           ) : p ? (
-            <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={loadPatients} />
+            <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={reloadPatients} />
           ) : (
             <div className="empty-state">Select a patient</div>
           )}
