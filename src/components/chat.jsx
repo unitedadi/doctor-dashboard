@@ -1688,7 +1688,8 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
           : nextTasks
       ));
     } catch {
-      setNeedsReplyTasks((current) => (current.length ? [] : current));
+      // Keep the last verified tasks so a transient refresh failure does not hide
+      // an available No reply needed action while the conversation is open.
     } finally {
       setNeedsReplyLoading(false);
     }

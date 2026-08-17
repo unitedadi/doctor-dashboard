@@ -8674,6 +8674,7 @@ body {
 .v2-confirm-dialog.compact h2 { font: 400 19px/1.3 var(--dd-font); }
 .v2-confirm-dialog.compact p { color: var(--dd-text-secondary); font: 400 13px/1.55 var(--dd-font); }
 .v2-confirm-dialog.compact .v2-confirm-actions { margin-top: 20px; }
+.v2-confirm-phone { display: block; margin-top: 12px; color: var(--dd-text-primary); font: 500 22px/1.2 var(--dd-font); letter-spacing: 0.02em; }
 .v2-button { min-height: 0; padding: 11px 22px; border: 0; border-radius: var(--dd-radius-pill); font: 500 13px/1 var(--dd-font); cursor: pointer; }
 .v2-button.primary { background: var(--dd-accent); color: var(--dd-on-dark-1); }
 .v2-button.secondary { border: 1px solid rgba(23,59,61,0.12); background: transparent; color: var(--dd-accent); }
@@ -8686,6 +8687,11 @@ body {
 @keyframes v2-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes v2-toast-up { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .v2-confirm-dialog, .v2-action-toast { animation: none; } }
+
+@media (max-width: 1180px) {
+  .clinical-chat-header { flex-wrap: wrap; }
+  .clinical-chat-actions { width: 100%; justify-content: flex-start; margin-left: 48px; }
+}
 
 /* Schedule v2 */
 .apt-layout { grid-template-columns: minmax(0, 1fr) clamp(354px, 30vw, 410px); }
@@ -9055,6 +9061,15 @@ body {
 .local-preview-rail-actions { margin-top: 18px; }
 .local-preview-rail-actions button { padding: 10px 16px; border: 1px solid rgba(23,59,61,0.12); border-radius: 999px; background: transparent; color: var(--dd-accent); font: 500 12.5px/1 var(--dd-font); cursor: pointer; }
 .local-preview-rail-actions p { margin: 14px 0 0; color: var(--dd-text-secondary); font: 400 12px/1.5 var(--dd-font); }
+
+@media (max-width: 1180px) {
+  .local-preview-hub { grid-template-columns: minmax(240px, 280px) minmax(0, 1fr); }
+  .local-preview-rail { display: none; }
+  .local-preview-thread > header { display: grid; grid-template-columns: 38px minmax(0, 1fr); }
+  .local-preview-thread-identity { flex-wrap: wrap; }
+  .local-preview-thread-identity em { max-width: 100%; }
+  .local-preview-thread > header button { grid-column: 2; width: fit-content; }
+}
 
 @media (max-width: 1360px) {
   .patient-layout.patient-layout-hub { grid-template-columns: clamp(262px, 21vw, 320px) minmax(0, 1fr); }

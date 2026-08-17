@@ -554,8 +554,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [loading, setLoading] = useStateA(true);
   const [error, setError] = useStateA("");
   const [joiningId, setJoiningId] = useStateA(null);
-  const [callingId, setCallingId] = useStateA(null);
-  const [callConfirm, setCallConfirm] = useStateA(null);
+  const [phoneTarget, setPhoneTarget] = useStateA(null);
   const [completingId, setCompletingId] = useStateA(null);
   const [completeConfirm, setCompleteConfirm] = useStateA(null);
   const [noShowingId, setNoShowingId] = useStateA(null);
@@ -658,14 +657,17 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     selectedActionState.canPrescribe &&
     !blocksQuickWlpPrescription(selected.status) &&
     !selectedHasMedicationOrder;
-  const selectedHasJoinOrCall = Boolean(
+  const selectedHasJoinAction = Boolean(
     selected?.meetingLink &&
     appointmentStatusBucket(selected.status) === "upcoming" &&
     !joinedAppointments[selected.id] &&
     !appointmentSlotEnded(selected, nowMs)
   );
+  const selectedHasPhoneAction = Boolean(selected);
+  const selectedPatientPhone = String(selectedPatient?.phone || "").trim();
   const selectedHasClinicalActions = Boolean(
-    selectedHasJoinOrCall ||
+    selectedHasJoinAction ||
+    selectedHasPhoneAction ||
     canCompleteSelected ||
     canNoShowSelected ||
     canCancelSelected ||
@@ -770,26 +772,17 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
       setJoiningId(null);
     }
   };
-  const callPatient = async () => {
-    if (!callConfirm) return;
-    const appointment = callConfirm;
-    setCallingId(appointment.id);
-    setCallConfirm(null);
-    setError("");
+  const copyPatientPhone = async () => {
+    const phone = String(phoneTarget?.patient?.phone || "").trim();
+    if (!phone) return;
     try {
-      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/call`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doctor_id: DOCTOR_ID }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "call_failed");
-      setCallToast(`Calling ${appointment.patient.name}`);
+      await window.navigator.clipboard.writeText(phone);
+      setPhoneTarget(null);
+      setCallToast("Phone number copied");
       setTimeout(() => setCallToast(""), 2400);
     } catch {
-      setError("Could not call the patient for this appointment.");
-    } finally {
-      setCallingId(null);
+      setCallToast("Could not copy. Dial the number shown.");
+      setTimeout(() => setCallToast(""), 3200);
     }
   };
   const completeConsultation = async () => {
@@ -1128,7 +1121,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               {(selectedHasClinicalActions || selectedHasPatientChart || !selectedIsQuickWlp || selectedHasLockedOutcomeNote) && (
                 <section className="workbench-section workbench-section-actions">
                   <div className="workbench-actions workbench-actions-primary">
-                    {selectedHasJoinOrCall ? (
+                    {selectedHasJoinAction ? (
                       <button className="workbench-action-button primary" onClick={(event) => joinAppointment(selected, event)} disabled={joiningId === selected.id}>
                         {I.video}<span>{joiningId === selected.id ? "Opening session..." : "Join video consultation"}</span>
                       </button>
@@ -1156,15 +1149,14 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   </div>
 
                   <div className="workbench-actions workbench-actions-secondary">
-                    {selectedHasJoinOrCall ? (
-                      <button
-                        className="workbench-action-button secondary"
-                        onClick={() => setCallConfirm(selected)}
-                        disabled={callingId === selected.id}
-                      >
-                        <span>{callingId === selected.id ? "Calling..." : "Call patient"}</span>
-                      </button>
-                    ) : null}
+                    <button
+                      className="workbench-action-button secondary"
+                      onClick={() => setPhoneTarget(selected)}
+                      disabled={!selectedPatientPhone}
+                      title={selectedPatientPhone ? "Show patient phone number" : "Phone number not available"}
+                    >
+                      <span>{selectedPatientPhone ? "Call patient" : "Phone number not available"}</span>
+                    </button>
                     {selectedHasPatientChart ? (
                       <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id, selectedPatient.customerId)}>Open chart</button>
                     ) : null}
@@ -1206,14 +1198,19 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
           ) : <div className="empty-state">Select an appointment</div>}
         </div>
       </div>
-      {callConfirm && (
+      {phoneTarget && (
         <ConfirmationModal
-          title="Call patient?"
-          description="Join the meeting first, then call the patient so they can connect directly."
-          confirmLabel="Call patient"
-          onCancel={() => setCallConfirm(null)}
-          onConfirm={callPatient}
-          busy={Boolean(callingId)}
+          title={`Call ${phoneTarget.patient.name}`}
+          description={(
+            <>
+              Use your phone to dial this number.
+              <strong className="v2-confirm-phone">{phoneTarget.patient.phone}</strong>
+            </>
+          )}
+          confirmLabel="Copy number"
+          cancelLabel="Close"
+          onCancel={() => setPhoneTarget(null)}
+          onConfirm={copyPatientPhone}
         />
       )}
       {completeConfirm && (
