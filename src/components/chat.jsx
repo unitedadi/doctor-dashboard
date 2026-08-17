@@ -1,6 +1,10 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID, LOCAL_PREVIEW } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
+import {
+  loadDoctorPatientDirectories,
+  peekDoctorPatientDirectories,
+} from "../lib/doctorPatientDirectory.js";
 import { StreamChat } from "stream-chat";
 import {
   Channel,
@@ -79,7 +83,7 @@ const NOTE_CATEGORIES = [
   { value: "MEDICATION_DECISION", label: "Medication decision" },
   { value: "SAFETY_RISK", label: "Safety/risk" },
   { value: "FOLLOW_UP", label: "Follow-up" },
-  { value: "ADMIN_HANDOFF", label: "Admin handoff" },
+  { value: "ADMIN_HANDOFF", label: "Handoff note" },
 ];
 
 function noteCategoryLabel(value) {
@@ -1632,19 +1636,23 @@ function LocalPreviewPatientHub({ onOpenChart, onReplyResolved, replyResolved = 
 function ChatView({ initialPatientId, initialCustomerId, initialChannelId: routeInitialChannelId, initialHubMode, onOpenPatient, onPrescribe, onAmendPrescription }) {
   const { Topbar } = window.DD_UI;
   const PatientsView = window.DD_PatientsView;
+  const cachedDirectories = peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID });
   const [client, setClient] = useStateC(null);
   const [initialChannelId, setInitialChannelId] = useStateC("");
   const [hubPatientId, setHubPatientId] = useStateC(initialPatientId || "");
   const [hubCustomerId, setHubCustomerId] = useStateC(initialCustomerId || "");
-  const [patientDirectory, setPatientDirectory] = useStateC([]);
-  const [prescribableDirectory, setPrescribableDirectory] = useStateC([]);
-  const [hubLens, setHubLens] = useStateC(initialHubMode || "all");
+  const [patientDirectory, setPatientDirectory] = useStateC(() => cachedDirectories?.patients || []);
+  const [prescribableDirectory, setPrescribableDirectory] = useStateC(() => (
+    (cachedDirectories?.prescribablePatients || []).map(mapPrescribablePatient)
+  ));
+  const [hubLens, setHubLens] = useStateC(initialHubMode || "charts");
   const [needsReplyTasks, setNeedsReplyTasks] = useStateC([]);
   const [needsReplyLoading, setNeedsReplyLoading] = useStateC(true);
   const [localReplyResolved, setLocalReplyResolved] = useStateC(false);
-  const [loading, setLoading] = useStateC(true);
-  const [error, setError] = useStateC("");
+  const [chatLoading, setChatLoading] = useStateC(false);
+  const [chatError, setChatError] = useStateC("");
   const loadIdRef = React.useRef(0);
+  const connectedClientRef = React.useRef(null);
 
   useEffectC(() => {
     setHubPatientId(initialPatientId || "");
@@ -1654,6 +1662,18 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
   useEffectC(() => {
     if (initialHubMode) setHubLens(initialHubMode);
   }, [initialHubMode]);
+
+  useEffectC(() => {
+    let cancelled = false;
+    loadDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID })
+      .then((directories) => {
+        if (cancelled) return;
+        setPatientDirectory(directories.patients);
+        setPrescribableDirectory(directories.prescribablePatients.map(mapPrescribablePatient));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const loadNeedsReplyTasks = React.useCallback(async () => {
     setNeedsReplyLoading(true);
@@ -1700,14 +1720,9 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
   const loadChat = React.useCallback(async () => {
     const loadId = loadIdRef.current + 1;
     loadIdRef.current = loadId;
-    setLoading(true);
-    setError("");
+    setChatLoading(true);
+    setChatError("");
     try {
-      const patientsPayload = await fetchJson(`${API_BASE}/doctor/dashboard/patients?doctor_id=${DOCTOR_ID}`).catch(() => ({ patients: [] }));
-      const patients = patientsPayload.patients || [];
-      setPatientDirectory(patients);
-      const prescribablePayload = await fetchJson(`${API_BASE}/doctor/rx/prescribable-patients?doctor_id=${DOCTOR_ID}&limit=100&offset=0`).catch(() => ({ patients: [] }));
-      setPrescribableDirectory((prescribablePayload.patients || []).map(mapPrescribablePatient));
       const streamClient = await connectDoctorChatClient();
 
       if (routeInitialChannelId) {
@@ -1722,28 +1737,28 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
       setClient(streamClient);
       return streamClient;
     } catch (err) {
-      if (loadId === loadIdRef.current) setError(err.message || "Could not connect GetStream chat.");
+      if (loadId === loadIdRef.current) setChatError(err.message || "Could not connect patient conversations.");
       return null;
     } finally {
-      if (loadId === loadIdRef.current) setLoading(false);
+      if (loadId === loadIdRef.current) setChatLoading(false);
     }
   }, [routeInitialChannelId]);
 
   useEffectC(() => {
-    let connectedClient = null;
-    let cancelled = false;
+    if (hubLens === "charts" || client || chatLoading || chatError) return;
+    loadChat();
+  }, [chatError, chatLoading, client, hubLens, loadChat]);
 
-    loadChat().then((streamClient) => {
-      if (!cancelled) connectedClient = streamClient;
-      else if (streamClient) streamClient.disconnectUser().catch(() => {});
-    });
+  useEffectC(() => {
+    connectedClientRef.current = client;
+  }, [client]);
 
+  useEffectC(() => {
     return () => {
-      cancelled = true;
       loadIdRef.current += 1;
-      if (connectedClient) connectedClient.disconnectUser().catch(() => {});
+      connectedClientRef.current?.disconnectUser().catch(() => {});
     };
-  }, [loadChat]);
+  }, []);
 
   useEffectC(() => {
     if (!client || !hubPatientId || hubLens === "charts") return undefined;
@@ -1774,7 +1789,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
         });
         await createdChannel.watch().catch(() => {});
       } catch {
-        if (!cancelled) setError("Could not open patient chat.");
+        if (!cancelled) setChatError("Could not open patient chat.");
       }
     }
 
@@ -1816,7 +1831,11 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
     <>
       <Topbar
         title="Patient hub"
-        subtitle={loading ? "Connecting to patient conversations" : "Conversations, charts, and prescribing context in one place."}
+        subtitle={hubLens === "charts"
+          ? "Find patients by name or mobile number and open their complete clinical chart."
+          : chatLoading
+            ? "Connecting to patient conversations"
+            : "Conversations, charts, and prescribing context in one place."}
         right={(
           <PatientHubLensControl
             active={hubLens}
@@ -1827,16 +1846,14 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
         )}
       />
 
-      {error && hubLens !== "charts" && !LOCAL_PREVIEW && (
+      {chatError && hubLens !== "charts" && !LOCAL_PREVIEW && (
         <div className="api-state chat-api-state">
-          <span>{error}</span>
+          <span>{chatError}</span>
           <button type="button" className="btn-ghost" onClick={loadChat}>Retry</button>
         </div>
       )}
 
-      {loading ? (
-        <div className="empty-state stream-chat-empty">Connecting to GetStream...</div>
-      ) : hubLens === "charts" && PatientsView ? (
+      {hubLens === "charts" && PatientsView ? (
         <div className="patient-hub-chart-shell">
           <PatientsView
             embedded
@@ -1852,6 +1869,8 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
             onAmendPrescription={onAmendPrescription}
           />
         </div>
+      ) : chatLoading ? (
+        <div className="empty-state stream-chat-empty">Connecting to patient conversations...</div>
       ) : client ? (
         <div className="stream-chat-shell stream-chat-kit-shell">
           <Chat client={client} theme="str-chat__theme-light">

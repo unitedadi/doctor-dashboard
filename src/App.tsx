@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { StreamChat } from 'stream-chat'
 import './data.js'
 import './components/shell.jsx'
 import './components/clinicalUi.jsx'
@@ -29,15 +28,6 @@ type AppointmentCountPayload = {
 
 type ClinicalInboxCountPayload = {
   tasks?: unknown[]
-}
-
-type ChatTokenPayload = {
-  api_key: string
-  user_id: string
-  user_token: string
-  user?: {
-    name?: string
-  }
 }
 
 type FeedbackMetricsPayload = {
@@ -103,14 +93,6 @@ function dubaiToday() {
   }).format(new Date())
 }
 
-async function fetchChatToken() {
-  return fetchJson<ChatTokenPayload>(`${API_BASE}/doctor/chat/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ doctor_id: DOCTOR_ID }),
-  })
-}
-
 function initialNavigation(): { route: string; context: Record<string, string> } {
   const params = new URLSearchParams(window.location.search)
   const view = params.get('view')
@@ -141,7 +123,6 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
   const [clinicalInboxBreakdown, setClinicalInboxBreakdown] = useState<ClinicalInboxSummary | null>(null)
-  const [unreadChats, setUnreadChats] = useState<number | null>(null)
   const [rating, setRating] = useState<{ average: number; count: number } | null>(null)
   const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })
   const [pushBusy, setPushBusy] = useState(false)
@@ -153,6 +134,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   const ChatView = window.DD_ChatView
   const PrescribeView = window.DD_PrescribeView
   const RefillsView = window.DD_RefillsView
+  const unreadChats = clinicalInboxBreakdown?.needsReply ?? null
 
   const routeLabel = (id: string) => ({
     appointments: 'Schedule',
@@ -304,39 +286,6 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
 
     return () => {
       cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    let streamClient: StreamChat | null = null
-
-    async function loadUnreadChats() {
-      try {
-        const token = await fetchChatToken()
-        streamClient = new StreamChat(token.api_key, { timeout: 15000 })
-        await streamClient.connectUser({ id: token.user_id, name: token.user?.name }, token.user_token)
-        const channels = await streamClient.queryChannels(
-          { type: 'messaging', members: { $in: [token.user_id] } },
-          { last_message_at: -1 },
-          { limit: 100, state: true, watch: false },
-        )
-        const visibleUnread = channels.reduce((sum, channel) => sum + (channel.countUnread?.() || 0), 0)
-        if (!cancelled) setUnreadChats(visibleUnread)
-      } catch {
-        if (!cancelled) setUnreadChats(null)
-      } finally {
-        streamClient?.disconnectUser().catch(() => undefined)
-      }
-    }
-
-    loadUnreadChats()
-    const interval = window.setInterval(loadUnreadChats, 60000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-      streamClient?.disconnectUser().catch(() => undefined)
     }
   }, [])
 
