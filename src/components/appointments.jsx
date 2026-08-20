@@ -554,6 +554,8 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [loading, setLoading] = useStateA(true);
   const [error, setError] = useStateA("");
   const [joiningId, setJoiningId] = useStateA(null);
+  const [callingId, setCallingId] = useStateA(null);
+  const [callConfirm, setCallConfirm] = useStateA(null);
   const [phoneTarget, setPhoneTarget] = useStateA(null);
   const [completingId, setCompletingId] = useStateA(null);
   const [completeConfirm, setCompleteConfirm] = useStateA(null);
@@ -770,6 +772,28 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
       setError("Could not open the appointment session.");
     } finally {
       setJoiningId(null);
+    }
+  };
+  const callPatient = async () => {
+    if (!callConfirm) return;
+    const appointment = callConfirm;
+    setCallingId(appointment.id);
+    setCallConfirm(null);
+    setError("");
+    try {
+      const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doctor_id: DOCTOR_ID }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "call_failed");
+      setCallToast(`Calling ${appointment.patient.name}`);
+      setTimeout(() => setCallToast(""), 2400);
+    } catch {
+      setError("Could not call the patient for this appointment.");
+    } finally {
+      setCallingId(null);
     }
   };
   const copyPatientPhone = async () => {
@@ -1151,11 +1175,11 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                   <div className="workbench-actions workbench-actions-secondary">
                     <button
                       className="workbench-action-button secondary"
-                      onClick={() => setPhoneTarget(selected)}
-                      disabled={!selectedPatientPhone}
-                      title={selectedPatientPhone ? "Show patient phone number" : "Phone number not available"}
+                      onClick={() => selectedIsQuickWlp ? setPhoneTarget(selected) : setCallConfirm(selected)}
+                      disabled={selectedIsQuickWlp ? !selectedPatientPhone : callingId === selected.id}
+                      title={selectedIsQuickWlp ? (selectedPatientPhone ? "Show patient phone number" : "Phone number not available") : "Call patient"}
                     >
-                      <span>{selectedPatientPhone ? "Call patient" : "Phone number not available"}</span>
+                      <span>{selectedIsQuickWlp && !selectedPatientPhone ? "Phone number not available" : callingId === selected.id ? "Calling..." : "Call patient"}</span>
                     </button>
                     {selectedHasPatientChart ? (
                       <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id, selectedPatient.customerId)}>Open chart</button>
@@ -1198,6 +1222,16 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
           ) : <div className="empty-state">Select an appointment</div>}
         </div>
       </div>
+      {callConfirm && (
+        <ConfirmationModal
+          title="Call patient?"
+          description="Join the meeting first, then call the patient so they can connect directly."
+          confirmLabel="Call patient"
+          onCancel={() => setCallConfirm(null)}
+          onConfirm={callPatient}
+          busy={Boolean(callingId)}
+        />
+      )}
       {phoneTarget && (
         <ConfirmationModal
           title={`Call ${phoneTarget.patient.name}`}

@@ -6,12 +6,16 @@ const appointmentsSource = await readFile(new URL("../src/components/appointment
 const chatSource = await readFile(new URL("../src/components/chat.jsx", import.meta.url), "utf8");
 const dashboardStyles = await readFile(new URL("../src/styles/dashboard.css", import.meta.url), "utf8");
 
-test("Call patient reveals and copies the authorized appointment phone without triggering a backend call", () => {
-  assert.match(appointmentsSource, /title=\{selectedPatientPhone \? "Show patient phone number"/);
+test("Call patient triggers the backend VoIP call for Rx and keeps the phone fallback for Quick WLP", () => {
+  assert.match(appointmentsSource, /appointments\/\$\{appointment\.id\}\/call/);
+  assert.match(appointmentsSource, /body: JSON\.stringify\(\{ doctor_id: DOCTOR_ID \}\)/);
+  assert.match(appointmentsSource, /description="Join the meeting first, then call the patient so they can connect directly\."/);
+  assert.match(appointmentsSource, /confirmLabel="Call patient"/);
+  assert.match(appointmentsSource, /selectedIsQuickWlp \? setPhoneTarget\(selected\) : setCallConfirm\(selected\)/);
+  assert.match(appointmentsSource, /"Show patient phone number"/);
   assert.match(appointmentsSource, /Use your phone to dial this number/);
   assert.match(appointmentsSource, /confirmLabel="Copy number"/);
   assert.match(appointmentsSource, /navigator\.clipboard\.writeText\(phone\)/);
-  assert.doesNotMatch(appointmentsSource, /appointments\/\$\{appointment\.id\}\/call/);
 });
 
 test("No reply needed remains contract-gated and survives a transient task refresh failure", () => {
