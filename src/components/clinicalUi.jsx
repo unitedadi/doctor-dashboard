@@ -47,12 +47,20 @@ function ClinicalThread({ steps = [], layout = "vertical", label = "Clinical thr
   );
 }
 
-function ClinicalContextBanner({ allergies, conditions, riskExplanation = "", label = "Clinical context", always = false }) {
+function ClinicalContextBanner({
+  allergies,
+  conditions,
+  pregnancyStatus = "",
+  riskExplanation = "",
+  label = "Clinical context",
+  always = false,
+}) {
   const allergyList = toList(allergies);
   const conditionList = toList(conditions);
-  if (!always && !allergyList.length && !conditionList.length && !riskExplanation) return null;
+  const pregnancy = String(pregnancyStatus || "").trim();
+  if (!always && !allergyList.length && !conditionList.length && !pregnancy && !riskExplanation) return null;
 
-  const risk = Boolean(allergyList.length || riskExplanation);
+  const risk = Boolean(allergyList.length || riskExplanation || pregnancy.toLowerCase().startsWith("yes"));
   return (
     <div className={`v2-clinical-context ${risk ? "risk" : "neutral"}`} role={risk ? "alert" : undefined}>
       {risk ? (
@@ -68,8 +76,9 @@ function ClinicalContextBanner({ allergies, conditions, riskExplanation = "", la
         {allergyList.length ? `Allergies: ${allergyList.join(", ")}.` : ""}
         {allergyList.length && conditionList.length ? " " : ""}
         {conditionList.length ? `Conditions: ${conditionList.join(", ")}.` : ""}
+        {pregnancy ? ` Pregnancy: ${pregnancy}.` : ""}
         {riskExplanation ? ` ${riskExplanation}` : ""}
-        {!allergyList.length && !conditionList.length && !riskExplanation ? "No allergies or conditions recorded." : ""}
+        {!allergyList.length && !conditionList.length && !pregnancy && !riskExplanation ? "No allergies or conditions recorded." : ""}
       </span>
     </div>
   );

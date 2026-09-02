@@ -479,6 +479,42 @@ function safetyList(value) {
     .join(", ");
 }
 
+function numberOrNull(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function multilineToList(value) {
+  return String(value || "")
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function incompleteClinicalFields(chart) {
+  return Array.from(new Set(
+    listItems(chart?.clinical?.assessment?.submissions)
+      .filter((submission) => submission?.validation_status === "INCOMPLETE_CLINICAL_DETAILS")
+      .flatMap((submission) => listItems(submission?.missing_clinical_fields))
+      .map((field) => String(field || "").trim())
+      .filter(Boolean)
+  ));
+}
+
+function clinicalFieldLabel(value) {
+  return String(value || "").replace(/_/g, " ");
+}
+
+function updateClinicalProfile(patientId, body) {
+  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/clinical-profile?doctor_id=${DOCTOR_ID}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function firstRefillValue(source, keys) {
   for (const key of keys) {
     const value = source?.[key];
@@ -724,9 +760,105 @@ function errorCopy(error, payload) {
     doctor_lab_catalog_selection_invalid: "One or more selected lab tests are no longer available.",
     doctor_lab_product_not_found: "One of the selected lab tests is no longer available. Refresh the catalog and try again.",
     doctor_lab_request_already_active: "This consultation already has an active lab request.",
+    rx_clinical_details_incomplete: payload?.missing_fields?.length
+      ? `Complete ${payload.missing_fields.map(clinicalFieldLabel).join(", ")} before issuing this prescription.`
+      : "Complete the missing clinical details before issuing this prescription.",
     valid_idempotency_key_required: "Could not safely submit this lab request. Please try again.",
   };
   return copy[error] || error || "Could not issue this prescription.";
+}
+
+function PrescriptionClinicalProfileModal({ chart, onClose, onSaved }) {
+  const clinical = chart?.clinical || {};
+  const demographics = clinical.demographics || {};
+  const basic = clinical.assessment?.basic || {};
+  const medicationText = basic.regular_medications
+    || basic.regular_medications_text
+    || listItems(clinical.current_medications).map((item) => item?.name || item).filter(Boolean).join("\n");
+  const [draft, setDraft] = useStateR({
+    height_cm: demographics.height_cm ?? "",
+    current_weight_kg: demographics.weight_kg ?? "",
+    allergies_text: listItems(clinical.allergies).join("\n"),
+    conditions_text: listItems(clinical.conditions).join("\n"),
+    regular_medications_text: medicationText,
+    pregnancy_status: basic.pregnancy_status ?? "",
+    breastfeeding_status: basic.breastfeeding_status ?? "",
+  });
+  const [saving, setSaving] = useStateR(false);
+  const [saveError, setSaveError] = useStateR("");
+  const conditionsComplete = multilineToList(draft.conditions_text).length > 0;
+
+  const setField = (field, value) => {
+    setDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const save = async () => {
+    if (!conditionsComplete) {
+      setSaveError("Record the condition, or enter No known medical conditions.");
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    try {
+      const result = await updateClinicalProfile(chart.patient.id, {
+        height_cm: numberOrNull(draft.height_cm),
+        current_weight_kg: numberOrNull(draft.current_weight_kg),
+        allergies_json: { types: multilineToList(draft.allergies_text) },
+        medical_conditions_json: { selected: multilineToList(draft.conditions_text) },
+        regular_medications_text: String(draft.regular_medications_text || "").trim() || null,
+        pregnancy_status: String(draft.pregnancy_status || "").trim() || null,
+        breastfeeding_status: String(draft.breastfeeding_status || "").trim() || null,
+      });
+      onSaved(result.patient_file);
+    } catch (err) {
+      setSaveError(err.message || "Could not update the clinical profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="quickwlp-dialog-backdrop clinical-profile-dialog-backdrop">
+      <div className="quickwlp-dialog clinical-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="prescription-clinical-profile-title">
+        <div className="quickwlp-dialog-head">
+          <div>
+            <div id="prescription-clinical-profile-title" className="quickwlp-dialog-title">Update clinical profile</div>
+            <p>Review the corrected clinical details before issuing the prescription.</p>
+          </div>
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Close</button>
+        </div>
+        <div className="clinical-profile-form">
+          <label><span>Height</span><input value={draft.height_cm} onChange={(event) => setField("height_cm", event.target.value)} placeholder="cm" inputMode="decimal" /></label>
+          <label><span>Weight</span><input value={draft.current_weight_kg} onChange={(event) => setField("current_weight_kg", event.target.value)} placeholder="kg" inputMode="decimal" /></label>
+          <label>
+            <span>Pregnancy</span>
+            <select value={draft.pregnancy_status} onChange={(event) => setField("pregnancy_status", event.target.value)}>
+              <option value="">Not recorded</option>
+              <option value="No">No</option>
+              <option value="Yes, I am currently pregnant">Yes, currently pregnant</option>
+              <option value="I am trying to conceive or planning a pregnancy">Trying to conceive or planning a pregnancy</option>
+            </select>
+          </label>
+          <label>
+            <span>Breastfeeding</span>
+            <select value={draft.breastfeeding_status} onChange={(event) => setField("breastfeeding_status", event.target.value)}>
+              <option value="">Not recorded</option>
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+          </label>
+          <label><span>Allergies</span><textarea value={draft.allergies_text} onChange={(event) => setField("allergies_text", event.target.value)} placeholder="One per line" /></label>
+          <label><span>Medical conditions</span><textarea value={draft.conditions_text} onChange={(event) => setField("conditions_text", event.target.value)} placeholder="One per line, or No known medical conditions" /></label>
+          <label className="clinical-profile-form-wide"><span>Current medications</span><textarea value={draft.regular_medications_text} onChange={(event) => setField("regular_medications_text", event.target.value)} placeholder="One per line" /></label>
+        </div>
+        {saveError ? <div className="quickwlp-dialog-error">{saveError}</div> : null}
+        <div className="quickwlp-dialog-actions">
+          <button type="button" className="btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="btn-primary" onClick={save} disabled={saving || !conditionsComplete}>{saving ? "Saving" : "Save clinical profile"}</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PrescribeView({
@@ -781,6 +913,8 @@ function PrescribeView({
   const [patientChart, setPatientChart] = useStateR(null);
   const [patientChartLoading, setPatientChartLoading] = useStateR(false);
   const [patientChartError, setPatientChartError] = useStateR("");
+  const [clinicalProfileOpen, setClinicalProfileOpen] = useStateR(false);
+  const [clinicalBlockerFields, setClinicalBlockerFields] = useStateR([]);
   const [orderMode, setOrderMode] = useStateR(initialOrderMode === "lab" ? "lab" : "medication");
   const [labPackages, setLabPackages] = useStateR([]);
   const [labBiomarkers, setLabBiomarkers] = useStateR([]);
@@ -903,7 +1037,13 @@ function PrescribeView({
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
   const productCatalogs = patient ? TRACKS : [...TRACKS, SUPPLEMENTS_CATALOG];
   const hasUnpricedCartItems = cart.some((item) => priceFils(item.price_fils) === undefined);
-  const canPublish = Boolean(cart.length && !hasUnpricedCartItems && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
+  const chartClinicalBlockerFields = useMemoR(() => incompleteClinicalFields(patientChart), [patientChart]);
+  const missingClinicalFields = useMemoR(
+    () => Array.from(new Set([...chartClinicalBlockerFields, ...clinicalBlockerFields])),
+    [chartClinicalBlockerFields, clinicalBlockerFields]
+  );
+  const hasClinicalBlocker = !isQuickWlpMode && missingClinicalFields.length > 0;
+  const canPublish = Boolean(cart.length && !hasUnpricedCartItems && !hasClinicalBlocker && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
   const labPatientId = isQuickWlpMode ? patient?.labPatientId : patient?.id;
   const labConsultationId = initialConsultationId || patient?.latestCompletedConsultationId || "";
   const labConsultationSource = initialConsultationSource || (isQuickWlpMode ? "QUICKWLP" : "RX");
@@ -971,6 +1111,8 @@ function PrescribeView({
     setSelectedLabBiomarkerIds([]);
     setLabQuery("");
     setCompletion(null);
+    setClinicalProfileOpen(false);
+    setClinicalBlockerFields([]);
     labIdempotencyKey.current = "";
   }, [initialOrderMode, patient?.key]);
 
@@ -1036,7 +1178,11 @@ function PrescribeView({
     setPatientChartError("");
     fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patient.id)}/chart?doctor_id=${DOCTOR_ID}`)
       .then((data) => {
-        if (!cancelled) setPatientChart(data.chart || data);
+        if (!cancelled) {
+          const nextChart = data.chart || data;
+          setPatientChart(nextChart);
+          setClinicalBlockerFields(incompleteClinicalFields(nextChart));
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -1436,6 +1582,10 @@ function PrescribeView({
       if (!isQuickWlpMode) await loadPatients();
       if (onSent) onSent();
     } catch (err) {
+      if (err.message === "rx_clinical_details_incomplete") {
+        const backendFields = listItems(err.payload?.missing_fields);
+        setClinicalBlockerFields(backendFields.length ? backendFields : ["medical_conditions"]);
+      }
       setError(errorCopy(err.message, err.payload));
     } finally {
       setPublishing(false);
@@ -1463,12 +1613,20 @@ function PrescribeView({
       <div className="rx-layout">
         <div className="rx-main">
           <div className="rx-main-scroll dd-scroll">
-            {error && (
+            {hasClinicalBlocker ? (
+              <div className="api-state rx-api-state rx-clinical-blocker" role="alert">
+                <span>
+                  <strong>Clinical details need review</strong>
+                  Complete {missingClinicalFields.map(clinicalFieldLabel).join(", ")} before issuing this prescription.
+                </span>
+                <button type="button" className="btn-primary" onClick={() => setClinicalProfileOpen(true)}>Update clinical profile</button>
+              </div>
+            ) : error ? (
               <div className="api-state rx-api-state">
                 <span>{errorCopy(error)}</span>
                 <button type="button" className="btn-ghost" onClick={loadPatients}>Retry</button>
               </div>
-            )}
+            ) : null}
 
             {!patient && contextualRxMode ? (
               <div className="rx-context-empty">
@@ -1545,11 +1703,12 @@ function PrescribeView({
                   {!isQuickWlpMode && !contextualRxMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
 
-                {!isQuickWlpMode ? (
+                {!isQuickWlpMode && !hasClinicalBlocker ? (
                   <div className="rx-prescribe-context">
                     <ClinicalContextBanner
                       allergies={patientChart?.clinical?.allergies}
                       conditions={patientChart?.clinical?.conditions}
+                      pregnancyStatus={patientChart?.clinical?.assessment?.basic?.pregnancy_status}
                       label="Safety"
                       always
                     />
@@ -1854,7 +2013,9 @@ function PrescribeView({
               <div className="rx-issue-action">
                 {!canPublish && !publishing ? (
                   <div className="rx-issue-note">
-                    {cart.length === 0
+                    {hasClinicalBlocker
+                      ? "Update the clinical profile before issuing."
+                      : cart.length === 0
                       ? "Select at least one item to continue."
                       : hasUnpricedCartItems
                         ? "A current catalogue price is unavailable. Refresh before issuing."
@@ -1875,6 +2036,20 @@ function PrescribeView({
         </div>
       </div>
       )}
+
+      {clinicalProfileOpen && patientChart ? (
+        <PrescriptionClinicalProfileModal
+          chart={patientChart}
+          onClose={() => setClinicalProfileOpen(false)}
+          onSaved={(patientFile) => {
+            setPatientChart(patientFile);
+            setClinicalBlockerFields([]);
+            setError("");
+            setClinicalProfileOpen(false);
+            setSentToast("Clinical profile updated. Review and issue the prescription.");
+          }}
+        />
+      ) : null}
 
       <ActionToast message={sentToast} icon={I.check} />
     </>
