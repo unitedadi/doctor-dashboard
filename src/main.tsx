@@ -15,9 +15,9 @@ import { setApiTokenProvider } from './lib/authFetch.js'
 
 setActiveDoctorAccount(resolveDoctorAccountFromLocation() || undefined)
 
-const SKIP_CLERK =
+const SKIP_CLERK = import.meta.env.DEV && (
   import.meta.env.VITE_SKIP_CLERK === '1' ||
-  import.meta.env.VITE_SKIP_CLERK === 'true'
+  import.meta.env.VITE_SKIP_CLERK === 'true')
 
 function isMobileDevice() {
   if (typeof window === 'undefined') return false

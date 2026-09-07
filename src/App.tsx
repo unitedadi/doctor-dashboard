@@ -12,6 +12,7 @@ import './components/refills.jsx'
 import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
+import { prescriptionAmendmentContext } from './lib/prescriptionAmendment.js'
 import { summarizeClinicalInboxTasks, type ClinicalInboxSummary } from './lib/clinicalInboxSummary.js'
 import { playDoctorAlertSound, startDoctorAlertSound, unlockDoctorAlertSound } from './lib/doctorAlertSound.js'
 import {
@@ -122,6 +123,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   const [routeContext, setRouteContext] = useState<Record<string, string>>(initialNavigationState.context)
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
+  const [clinicalRevision, setClinicalRevision] = useState(0)
   const [clinicalInboxBreakdown, setClinicalInboxBreakdown] = useState<ClinicalInboxSummary | null>(null)
   const [rating, setRating] = useState<{ average: number; count: number } | null>(null)
   const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })
@@ -189,7 +191,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
         }
       })
     return () => { cancelled = true }
-  }, [])
+  }, [route, clinicalRevision])
 
   useEffect(() => {
     let cancelled = false
@@ -243,31 +245,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   }
 
   const openAmendPrescription = (patient: DashboardPatientPayload, prescription: DashboardActionPayload) => {
-    const source = prescription?.source || ''
-    const items = Array.isArray(prescription?.items) ? prescription.items : []
-    const base = {
-      amendSource: source,
-      amendId: prescription?.id || '',
-      amendItems: JSON.stringify(items),
-      patientId: patient?.id || '',
-      customerId: patient?.customerId || patient?.customer_id || '',
-      patientName: patient?.name || '',
-      patientPhone: patient?.phone || '',
-      trackKey: prescription?.trackKey || prescription?.track_key || patient?.trackKey || patient?.track_key || 'weight-loss',
-      prescriptionMode: 'reissue',
-    }
-    if (source === 'quickwlp_prescription') {
-      go('prescribe', {
-        ...base,
-        quickWlpLeadId: prescription?.quickWlpLeadId || prescription?.lead_id || '',
-        quickWlpName: patient?.name || '',
-        quickWlpPhone: patient?.phone || '',
-        quickWlpEmail: patient?.email || '',
-        quickWlpDoctorId: DOCTOR_ID,
-      })
-      return
-    }
-    go('prescribe', base)
+    go('prescribe', prescriptionAmendmentContext(patient, prescription, DOCTOR_ID))
   }
 
   useEffect(() => {
@@ -437,7 +415,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
             initialPatientPhone={routeContext.patientPhone}
             originLabel={routeContext.originLabel}
             onBack={() => go(routeContext.originRoute || 'appointments')}
-            onSent={() => undefined}
+            onSent={() => setClinicalRevision((revision) => revision + 1)}
           />
         )}
       </main>

@@ -1,5 +1,7 @@
 import * as React from "react";
 import { API_BASE, DOCTOR_ID, LOCAL_PREVIEW } from "../config.js";
+import { loadDoctorPatientPage } from "../lib/doctorPatientPage.js";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchJson } from "../lib/authFetch.js";
 import {
   loadDoctorPatientDirectories,
@@ -278,7 +280,10 @@ function mapPrescriptionHistoryItem(item) {
   return {
     id: item.id || item.prescription_id,
     source: item.source || (item.checkout_url ? "quickwlp_prescription" : "rx_care_plan"),
-    trackKey: item.track_key || "weight-loss",
+    trackKey: item.track_key || "",
+    seller_id: item.seller_id || "",
+    seller_name: item.seller_name || "",
+    b2b_promo_code: item.b2b_promo_code || "",
     quickWlpLeadId: item.lead_id || item.quickwlp_lead_id || "",
     checkoutUrl: item.checkout_url || "",
     checkoutExpiresAt: item.checkout_expires_at || "",
@@ -578,13 +583,19 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
   const initialDirectories = peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID }) || localPreviewDirectories();
   const [patients, setPatients] = useStateP(() => mapDirectoryPatients(initialDirectories));
   const [search, setSearch] = useStateP("");
+  const [pageSearch, setPageSearch] = useStateP("");
+  const [offset, setOffset] = useStateP(0);
+  const [total, setTotal] = useStateP(0);
+  const [reloadPage, setReloadPage] = useStateP(0);
   const [filter, setFilter] = useStateP("all");
   const [selectedId, setSelectedId] = useStateP(initialPatientId || null);
   const [loading, setLoading] = useStateP(() => !initialDirectories);
   const [error, setError] = useStateP("");
   const today = useMemoP(() => dubaiToday(), []);
+  const pagedDirectory = embedded && !LOCAL_PREVIEW && (!initialCustomerId || Boolean(initialPatientId));
 
   const loadPatients = React.useCallback(async ({ force = false } = {}) => {
+    if (pagedDirectory) return;
     const cached = peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID }) || localPreviewDirectories();
     if (LOCAL_PREVIEW && !peekDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID })) {
       setLoading(false);
@@ -614,12 +625,42 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
     } finally {
       setLoading(false);
     }
-  }, [initialCustomerId, initialPatientId]);
-  const reloadPatients = React.useCallback(() => loadPatients({ force: true }), [loadPatients]);
+  }, [initialCustomerId, initialPatientId, pagedDirectory]);
+  const reloadPatients = React.useCallback(() => {
+    if (pagedDirectory) setReloadPage((value) => value + 1);
+    else loadPatients({ force: true });
+  }, [loadPatients, pagedDirectory]);
+
+  useEffectP(() => {
+    const timer = setTimeout(() => { setPageSearch(search); setOffset(0); }, 150);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffectP(() => {
+    if (!pagedDirectory) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    loadDoctorPatientPage({ apiBase: API_BASE, doctorId: DOCTOR_ID, search: pageSearch, offset })
+      .then(async (data) => {
+        let rows = data.patients;
+        if (initialPatientId && !pageSearch && offset === 0 && !rows.some((row) => row.id === initialPatientId)) {
+          const selected = await loadDoctorPatientPage({ apiBase: API_BASE, doctorId: DOCTOR_ID, patientId: initialPatientId });
+          rows = [...selected.patients, ...rows];
+        }
+        if (cancelled) return;
+        setPatients(rows.map(mapPatient));
+        setTotal(data.total);
+        setSelectedId((current) => rows.some((row) => row.id === current) ? current : rows[0]?.id || null);
+      })
+      .catch(() => { if (!cancelled) setError("Could not load patient charts. Try again."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [pagedDirectory, pageSearch, offset, initialPatientId, reloadPage]);
 
   useEffectP(() => {
     const selected = patients.find((patient) => patient.id === selectedId);
-    if (!selected || selected.prescribe || selected.prescribeChecked) return undefined;
+    if (embedded || !selected || selected.prescribe || selected.prescribeChecked) return undefined;
 
     let cancelled = false;
     const loadSelectedPrescribeContext = async () => {
@@ -650,7 +691,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
 
     loadSelectedPrescribeContext();
     return () => { cancelled = true; };
-  }, [patients, selectedId]);
+  }, [patients, selectedId, embedded]);
 
   useEffectP(() => {
     loadPatients();
@@ -666,7 +707,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
 
   const patientsToday = patients.filter((patient) => patient.upcoming?.date === today).length;
   const filtered = patients.filter((patient) => {
-    if (!patientMatchesSearch(patient, search)) return false;
+    if (!pagedDirectory && !patientMatchesSearch(patient, search)) return false;
     if (filter === "today" && patient.upcoming?.date !== today) return false;
     return true;
   });
@@ -697,7 +738,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
                   placeholder="Search name or mobile number"
                 />
               </label>
-              <span>{search.trim() ? `${filtered.length} of ${patients.length} patients` : `${patients.length} patients`}</span>
+              <span>{pagedDirectory ? `${total} patients` : `${patients.length} patients`}</span>
             </div>
           )}
           {!embedded && <div className="filter">
@@ -751,6 +792,11 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
             );
           })}
           {!loading && filtered.length === 0 && <div style={{ padding: 24, color: "var(--dd-text-tertiary)", font: "400 13px/1.5 var(--dd-font)" }}>No patients found.</div>}
+          {pagedDirectory && total > 30 && <div className="filter">
+            <button type="button" className="icon-btn" title="Previous patients" aria-label="Previous patients" disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - 30))}><ChevronLeft size={16} /></button>
+            <span>{Math.floor(offset / 30) + 1} / {Math.ceil(total / 30)}</span>
+            <button type="button" className="icon-btn" title="Next patients" aria-label="Next patients" disabled={loading || offset + 30 >= total} onClick={() => setOffset(offset + 30)}><ChevronRight size={16} /></button>
+          </div>}
         </div>
 
         <div className="patient-pane dd-scroll fade-in" key={p?.id || "empty"}>

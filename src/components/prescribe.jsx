@@ -927,7 +927,7 @@ function PrescribeView({
   const [refillContextLoading, setRefillContextLoading] = useStateR(false);
   const labIdempotencyKey = useRefR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
-  const quickWlpTrackKey = initialQuickWlpTrackKey === "peptides" ? "peptides" : "weight-loss";
+  const quickWlpTrackKey = initialQuickWlpTrackKey || initialTrackKey || "weight-loss";
   const quickWlpSellerId = initialQuickWlpSellerId || SUPPLEMENT_SELLER_ID;
   const quickWlpSellerName = initialQuickWlpSellerName || (initialQuickWlpSellerId ? initialQuickWlpSellerId : "DarDoc");
   const quickWlpPromoCode = initialQuickWlpPromoCode || "";
@@ -1579,7 +1579,6 @@ function PrescribeView({
           : workflowCopy.success
       );
       setTimeout(() => setSentToast(""), 2600);
-      if (!isQuickWlpMode) await loadPatients();
       if (onSent) onSent();
     } catch (err) {
       if (err.message === "rx_clinical_details_incomplete") {

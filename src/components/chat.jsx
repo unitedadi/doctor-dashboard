@@ -1665,6 +1665,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
 
   useEffectC(() => {
     let cancelled = false;
+    if (hubLens === "charts") return undefined;
     loadDoctorPatientDirectories({ apiBase: API_BASE, doctorId: DOCTOR_ID })
       .then((directories) => {
         if (cancelled) return;
@@ -1673,7 +1674,7 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [hubLens]);
 
   const loadNeedsReplyTasks = React.useCallback(async () => {
     setNeedsReplyLoading(true);

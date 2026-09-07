@@ -134,8 +134,16 @@ function itemLabel(items) {
     .join(", ");
 }
 
-function fetchPatientChart(patientId) {
-  return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/chart?doctor_id=${DOCTOR_ID}`);
+const pendingCharts = new Map();
+function fetchPatientChart(patientId, force = false) {
+  const url = `${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/chart?doctor_id=${DOCTOR_ID}`;
+  if (force || !pendingCharts.has(url)) {
+    const pending = fetchJson(url).finally(() => {
+      if (pendingCharts.get(url) === pending) pendingCharts.delete(url);
+    });
+    pendingCharts.set(url, pending);
+  }
+  return pendingCharts.get(url);
 }
 
 function createDoctorNote(patientId, body) {
@@ -1737,7 +1745,7 @@ function PatientChart({
   const saveNoteLocally = (note) => setChart((current) => ({ ...current, notes: [note, ...asArray(current?.notes)] }));
   const refreshChart = () => {
     if (!chart?.patient?.id) return Promise.resolve();
-    return fetchPatientChart(chart.patient.id)
+    return fetchPatientChart(chart.patient.id, true)
       .then((data) => {
         setChart(data);
         onChartLoaded?.(data);

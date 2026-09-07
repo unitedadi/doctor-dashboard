@@ -1,5 +1,5 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV ? "/api" : "");
-export const LOCAL_PREVIEW = import.meta.env.DEV && (
+export const LOCAL_PREVIEW = import.meta.env.DEV && import.meta.env.VITE_LOCAL_PREVIEW_DATA !== "false" && (
   import.meta.env.VITE_SKIP_CLERK === "1" || import.meta.env.VITE_SKIP_CLERK === "true"
 );
 export const LAB_CATALOG_API_BASE = import.meta.env.VITE_LAB_CATALOG_API_BASE || "";
