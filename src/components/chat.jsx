@@ -25,17 +25,6 @@ function asArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
-function isQuickConsultOnlyPatientRecord(patient) {
-  const history = [
-    ...asArray(patient?.rx_prescription_history),
-    ...asArray(patient?.prescription_history),
-    ...asArray(patient?.prescriptionHistory),
-  ];
-  const hasQuickConsult = history.some((item) => item?.source === "quickwlp_prescription");
-  const hasRxCarePlan = history.some((item) => item?.source === "rx_care_plan");
-  return hasQuickConsult && !hasRxCarePlan;
-}
-
 function fetchChatToken() {
   return fetchJson(`${API_BASE}/doctor/chat/token`, {
     method: "POST",
@@ -1398,14 +1387,10 @@ function PatientChatDrawer({ open, patientId, customerId, channelId, patientName
           const matchedPatient = findChannelPatient(openedChannel, streamClient.userID, patients);
           setResolvedPatient(matchedPatient ? mapPatientForChannel(matchedPatient) : channelPatient(openedChannel, streamClient.userID, patients));
         } else {
-          const patient = patients.find((item) => item.id === patientId || item.customer_id === customerId) || null;
+          const patient = patients.find((item) => item.id === patientId && (!customerId || item.customer_id === customerId)) || null;
           setResolvedPatient(patient ? mapPatientForChannel(patient) : null);
-          if (isQuickConsultOnlyPatientRecord(patient) || patient?.chat?.available === false) {
-            const reason = patient?.chat?.unavailable_reason === "quick_consult_no_chat"
-              ? "Quick Consult patients do not have in-app chat access."
-              : isQuickConsultOnlyPatientRecord(patient)
-                ? "Quick Consult patients do not have in-app chat access."
-              : "Patient chat is not available for this record.";
+          if (patient?.chat?.available !== true) {
+            const reason = patient?.chat?.unavailable_message || "Patient chat is not available for this record.";
             throw new Error(reason);
           }
           const nextPatientId = patient?.id || patientId;
@@ -1767,10 +1752,13 @@ function ChatView({ initialPatientId, initialCustomerId, initialChannelId: route
     let cancelled = false;
 
     async function openPatientChannel() {
-      const patient = patientDirectory.find((item) => item.id === hubPatientId || item.customer_id === hubCustomerId || item.customerId === hubCustomerId);
+      const patient = patientDirectory.find((item) => item.id === hubPatientId && (!hubCustomerId || (item.customer_id || item.customerId) === hubCustomerId));
       const customerId = patient?.customer_id || patient?.customerId || hubCustomerId;
       const patientId = patient?.id || hubPatientId;
-      if (!patientId || !customerId || isQuickConsultOnlyPatientRecord(patient)) return;
+      if (!patientId || !customerId || patient?.chat?.available !== true) {
+        setChatError(patient?.chat?.unavailable_message || "Patient chat is not available for this record.");
+        return;
+      }
       try {
         const opened = await fetchJson(`${API_BASE}/doctor/chat/channels`, {
           method: "POST",

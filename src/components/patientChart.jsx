@@ -114,7 +114,7 @@ function formatMoneyFils(value) {
 
 function trackLabel(value) {
   const normalized = String(value || "").toLowerCase();
-  if (normalized === "weight-loss" || normalized === "weight_loss") return "Weight Loss Rx";
+  if (normalized === "weight-loss" || normalized === "weight_loss") return "Weight Loss";
   if (normalized === "peptides") return "Peptides";
   if (normalized === "quickwlp" || normalized === "quick-wlp") return "Quick Consult";
   return value ? titleCase(value) : "Rx";
@@ -1911,7 +1911,7 @@ function PatientChart({
             <div>
               <h2>{patient.name || "Patient"}</h2>
               <div className="meta">
-                {[patient.phone, patient.email, patient.age ? `${patient.age} years` : null, titleCase(patient.sex), sourceLabel, context?.label].filter(Boolean).map((item, index) => (
+                {[patient.phone, patient.email, patient.age ? `${patient.age} years` : null, titleCase(patient.sex), sourceLabel, chart.program?.membership_label, context?.label].filter(Boolean).map((item, index) => (
                   <React.Fragment key={`${item}-${index}`}>
                     {index > 0 && <span className="dot-sep" />}
                     <span>{item}</span>
@@ -1922,7 +1922,7 @@ function PatientChart({
           </div>
           {!compact && (
             <div className="patient-emr-actions">
-              {onMessage ? <button className="btn-ghost" onClick={() => onMessage(patient.id, patient.customer_id)}>{I.message}<span>Message</span></button> : null}
+              {onMessage ? <button className="btn-ghost" disabled={chart?.program?.chat?.available !== true} title={chart?.program?.chat?.unavailable_message || undefined} onClick={() => onMessage(patient.id, patient.customer_id)}>{I.message}<span>Message</span></button> : null}
               {onOpenPatient && mode !== "full" ? <button className="btn-ghost" onClick={() => onOpenPatient(patient.id, patient.customer_id)}>Open full chart</button> : null}
               {recordOutcomeAction ? (
                 <button className="btn-primary" onClick={() => setOutcomeTarget({ appointmentId: recordOutcomeAppointmentId, patientName: patient.name })}>{I.check}<span>Record outcome</span></button>
@@ -1936,9 +1936,9 @@ function PatientChart({
         </div>
         )}
 
-        {quickConsultChart && !focusedMode ? (
+        {chart?.program?.chat?.available === false && !focusedMode ? (
           <div className="patient-emr-access-note">
-            Quick Consult patient. Chat is not available, but notes, prescriptions, clinical profile, and history stay available in this chart.
+            {chart.program.chat.unavailable_message || "Chat is not available for this patient."}
           </div>
         ) : null}
 

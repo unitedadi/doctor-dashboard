@@ -346,10 +346,7 @@ function prescriptionStatusLabel(prescription) {
 }
 
 function chatUnavailableCopy(patient) {
-  if (patient?.quickConsultOnly || patient?.chat?.unavailable_reason === "quick_consult_no_chat") {
-    return "Quick Consult patients do not have in-app chat access.";
-  }
-  return "Chat is not available for this patient.";
+  return patient?.chat?.unavailable_message || "Chat is not available for this patient.";
 }
 
 function actorRoleLabel(value) {
@@ -472,9 +469,7 @@ function mapPatient(item) {
     prescriptionHistory,
     upcoming: item.upcoming_appointment || null,
     quickConsultOnly,
-    chat: quickConsultOnly
-      ? { available: false, unavailable_reason: "quick_consult_no_chat" }
-      : item.chat || { available: false, unavailable_reason: "chat_locked" },
+    chat: item.chat || { available: false, unavailable_reason: "chat_locked" },
     prescribe: null,
     prescribeChecked: false,
   };
@@ -1421,9 +1416,9 @@ function PatientDetail({ p, onMessage, onPrescribe, onAmendPrescription, onProfi
           </div>
         </div>
 
-        {!p.chat?.available && p.quickConsultOnly ? (
+        {!p.chat?.available ? (
           <div className="patient-emr-access-note">
-            Quick Consult patient. This one-off flow does not include in-app chat access; use the phone number for follow-up.
+            {chatUnavailableCopy(p)}
           </div>
         ) : null}
 

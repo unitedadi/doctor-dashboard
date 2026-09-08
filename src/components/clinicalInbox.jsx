@@ -361,12 +361,6 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
         </dl>
       </section>
 
-      {isQuickWlp ? (
-        <div className="clinical-detail-note">
-          Quick Consult patient. This one-off flow does not include in-app chat access; use the patient phone number for follow-up.
-        </div>
-      ) : null}
-
       <div className="clinical-detail-actions">
         <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>
           {actionLabel}
