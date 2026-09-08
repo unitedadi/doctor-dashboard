@@ -1184,8 +1184,8 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
                     {selectedHasPatientChart ? (
                       <button className="workbench-action-button secondary" onClick={() => onOpenPatient(selectedPatient.id, selectedPatient.customerId)}>Open chart</button>
                     ) : null}
-                    {!selectedIsQuickWlp ? (
-                      <button className="workbench-action-button secondary" onClick={() => onOpenChat?.(selectedPatient.id, selectedPatient.customerId)}>
+                    {onOpenChat ? (
+                      <button className="workbench-action-button secondary" disabled={selected.chat?.available !== true} title={selected.chat?.unavailable_message || undefined} onClick={() => onOpenChat(selectedPatient.id, selectedPatient.customerId)}>
                         Open conversation
                       </button>
                     ) : null}
