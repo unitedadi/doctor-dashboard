@@ -1,3 +1,4 @@
+import PatientDemographics from "./patientDemographics.jsx";
 import * as React from "react";
 import { API_BASE, DOCTOR_ID, LAB_CATALOG_API_BASE, LAB_CATALOG_SELLER_ID, NEEDLES_PRODUCT_ID, SUPPLEMENT_SELLER_ID } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
@@ -744,6 +745,7 @@ function AmendmentReviewPanel({
 
 function errorCopy(error, payload) {
   const copy = {
+    patient_profile_incomplete: "Complete the patient’s details below, then issue the prescription again.",
     doctor_not_found: "Doctor profile is missing or inactive.",
     doctor_track_not_enabled: "Dr. Sami is not enabled for this Rx track yet.",
     rx_prescription_completed_consultation_required: "A completed consultation is required before issuing this prescription.",
@@ -905,6 +907,7 @@ function PrescribeView({
   const [needlesProduct, setNeedlesProduct] = useStateR(null);
   const [autoNeedlesDismissed, setAutoNeedlesDismissed] = useStateR(false);
   const [publishing, setPublishing] = useStateR(false);
+  const [demographicsReady, setDemographicsReady] = useStateR(false);
   const [error, setError] = useStateR("");
   const [sentToast, setSentToast] = useStateR("");
   const [completion, setCompletion] = useStateR(null);
@@ -1043,7 +1046,7 @@ function PrescribeView({
     [chartClinicalBlockerFields, clinicalBlockerFields]
   );
   const hasClinicalBlocker = !isQuickWlpMode && missingClinicalFields.length > 0;
-  const canPublish = Boolean(cart.length && !hasUnpricedCartItems && !hasClinicalBlocker && !publishing && patient && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
+  const canPublish = Boolean(cart.length && !hasUnpricedCartItems && !hasClinicalBlocker && !publishing && patient && (!isQuickWlpMode || demographicsReady) && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
   const labPatientId = isQuickWlpMode ? patient?.labPatientId : patient?.id;
   const labConsultationId = initialConsultationId || patient?.latestCompletedConsultationId || "";
   const labConsultationSource = initialConsultationSource || (isQuickWlpMode ? "QUICKWLP" : "RX");
@@ -1612,6 +1615,7 @@ function PrescribeView({
       <div className="rx-layout">
         <div className="rx-main">
           <div className="rx-main-scroll dd-scroll">
+            {isQuickWlpMode && <PatientDemographics key={initialQuickWlpLeadId} leadId={initialQuickWlpLeadId} doctorId={quickWlpDoctorId} onReady={setDemographicsReady} onSaved={() => setError("")} />}
             {hasClinicalBlocker ? (
               <div className="api-state rx-api-state rx-clinical-blocker" role="alert">
                 <span>

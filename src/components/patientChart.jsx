@@ -1,3 +1,4 @@
+import PatientDemographics from "./patientDemographics.jsx";
 import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
@@ -2070,6 +2071,7 @@ function PatientChart({
                 latestDelivery={deliveries[0]}
               />
 
+              <PatientDemographics key={patient.id} patientId={patient.id} onSaved={refreshChart} />
               <ChartSection title="Clinical profile" subtitle="Vitals and patient details." action={<button type="button" onClick={() => setEditingProfile(true)}>Update</button>} className="patient-chart-overview">
                 <div className="patient-profile-facts">
                   <ChartFact label="Track" value={trackLabel(trackKey)} />
