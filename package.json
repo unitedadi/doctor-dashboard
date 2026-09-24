@@ -10,6 +10,7 @@
     "build:dev": "tsc -b && vite build --mode development",
     "build:prod": "tsc -b && vite build --mode production",
     "test": "node --test",
+    "test:appointments": "node scripts/check-appointment-refresh.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
