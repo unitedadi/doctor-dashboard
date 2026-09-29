@@ -1034,7 +1034,6 @@ function PrescribeView({
         ? "refill"
         : initialPrescriptionMode || "issue";
   const workflowCopy = prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading);
-  const trackLocked = isQuickWlpMode || workflowMode === "refill" || workflowMode === "reissue";
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
@@ -1264,8 +1263,11 @@ function PrescribeView({
             offset: "0",
           });
           if (query.trim()) params.set("q", query.trim());
-          const data = await fetchJson(`${API_BASE}/doctor/rx/tracks/${productCatalogKey}/prescribable-products?${params.toString()}`);
-          if (!cancelled) setProducts((data.products || []).map(normalizeProductIdentity));
+          const data = await fetchJson(`${API_BASE}/doctor/rx/tracks/${trackKey}/prescribable-products?${params.toString()}`);
+          const category = productCatalogKey === "peptides" ? "PEPTIDE" : "WEIGHT_LOSS";
+          if (!cancelled) setProducts((data.products || [])
+            .filter((product) => [category, "MEDICATION"].includes(String(product.attributes_json?.category || product.attributes_json?.product_category || product.category || "").toUpperCase()))
+            .map(normalizeProductIdentity));
         }
       } catch (err) {
         if (!cancelled) {
@@ -1282,7 +1284,7 @@ function PrescribeView({
       setProductsLoading(false);
     }
     return () => { cancelled = true; };
-  }, [isQuickWlpMode, orderMode, patient, productCatalogKey, query, quickWlpDoctorId, quickWlpSellerId]);
+  }, [isQuickWlpMode, orderMode, patient, productCatalogKey, query, quickWlpDoctorId, quickWlpSellerId, trackKey]);
 
   const visibleProducts = useMemoR(() => {
     return products
@@ -1392,7 +1394,7 @@ function PrescribeView({
       catalogKey: productCatalogKey,
     };
     setCart((current) => {
-      if (current.some((entry) => entry.id === item.id)) return current;
+      if (current.some((entry) => entry.product_id === item.product_id)) return current;
       return syncAutoNeedles([...current, item], nextNeedlesProduct, autoNeedlesDismissed);
     });
   };
@@ -1800,18 +1802,11 @@ function PrescribeView({
                     />
                   </div>
                   <div className="rx-track-tabs rx-product-source-tabs">
-                  {trackLocked ? (
-                    <div className="rx-track-lock" role="status">
-                      <span>{activeTrack.label}</span>
-                      <strong>Track locked to this clinical context</strong>
-                    </div>
-                  ) : productCatalogs.map((catalog) => (
+                  {productCatalogs.map((catalog) => (
                     <button
                       key={catalog.key}
                       className={productCatalogKey === catalog.key ? "active" : ""}
                       onClick={() => chooseProductCatalog(catalog.key)}
-                      disabled={Boolean(patient && catalog.key !== patient.trackKey)}
-                      title={patient && catalog.key !== patient.trackKey ? "Backend eligibility is required before switching tracks" : undefined}
                     >
                       {catalog.label}
                     </button>
@@ -1825,8 +1820,7 @@ function PrescribeView({
                   ) : visibleProducts.length ? visibleProducts.map((product) => {
                     const stockLabel = productStockLabel(product, productCatalogKey);
                     const outOfStock = isOutOfStock(product, productCatalogKey);
-                    const cartId = `${productCatalogKey}:${product.product_id}`;
-                    const cartItem = cart.find((item) => item.id === cartId);
+                    const cartItem = cart.find((item) => item.product_id === product.product_id);
                     const quantityLimit = productQuantityLimit(product, productCatalogKey);
                     return (
                       <div
@@ -1846,7 +1840,7 @@ function PrescribeView({
                           <span className="rx-product-qty">
                             <button
                               type="button"
-                              onClick={() => changeProductQuantity(cartId, -1, quantityLimit)}
+                              onClick={() => changeProductQuantity(cartItem.id, -1, quantityLimit)}
                               aria-label={`Decrease ${product.name} quantity`}
                             >
                               {I.minus}
@@ -1854,7 +1848,7 @@ function PrescribeView({
                             <span>{cartItem.quantity}</span>
                             <button
                               type="button"
-                              onClick={() => changeProductQuantity(cartId, 1, quantityLimit)}
+                              onClick={() => changeProductQuantity(cartItem.id, 1, quantityLimit)}
                               disabled={cartItem.quantity >= quantityLimit}
                               aria-label={`Increase ${product.name} quantity`}
                             >

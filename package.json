@@ -11,6 +11,7 @@
     "build:prod": "tsc -b && vite build --mode production",
     "test": "node --test",
     "test:appointments": "node scripts/check-appointment-refresh.mjs",
+    "test:prescription-catalogs": "node scripts/check-prescription-cross-track.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
