@@ -1547,6 +1547,7 @@ function PrescribeView({
         ? {
           doctor_id: patient.doctorId || quickWlpDoctorId,
           seller_id: quickWlpSellerId,
+          ...(!isAmendMode && initialConsultationId ? { consultation_id: initialConsultationId } : {}),
           items,
           ...(isAmendMode ? { reason: amendReason.trim() } : {}),
         }
