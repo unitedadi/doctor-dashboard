@@ -1,4 +1,5 @@
 import PatientDemographics from "./patientDemographics.jsx";
+import RefillMedicationContext from "./refillMedicationContext.jsx";
 import * as React from "react";
 import { API_BASE, DOCTOR_ID, LAB_CATALOG_API_BASE, LAB_CATALOG_SELLER_ID, NEEDLES_PRODUCT_ID, SUPPLEMENT_SELLER_ID } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
@@ -529,6 +530,7 @@ function refillReviewContext(item) {
   const answers = item.questionnaire || item.answers || item.answers_json || item.form || item;
   const sideEffects = firstRefillValue(answers, ["side_effects", "sideEffects"]);
   return {
+    medicationContext: item.medication_context,
     medication: item.current_medication || item.medication_name || item.product_name || item.current_care_plan?.title || "",
     dose: item.current_dose || item.dose || item.current_care_plan?.dose || "",
     doseRequest: firstRefillValue(answers, ["dosage_adjustment", "dose_adjustment", "dosePreference", "dose_preference"]),
@@ -541,26 +543,45 @@ function refillReviewContext(item) {
   };
 }
 
-function RefillReviewContext({ context, loading }) {
+function RefillReviewContext({ context, loading, error, onRetry }) {
   if (loading) return <div className="rx-refill-context loading">Loading refill review…</div>;
+  if (error) return <div className="rx-refill-context" role="alert">{error} <button className="btn-ghost" onClick={onRetry}>Try again</button></div>;
   if (!context) return null;
   const value = (input) => input ? titleCase(input) : "Not provided";
+  const dosePreference = {
+    STAY_CURRENT_DOSE: "Keep current dose",
+    INCREASE_DOSE: "Request an increase",
+    LOWER_DOSE: "Request a lower dose",
+    DISCUSS_BY_PHONE: "Discuss by phone",
+  }[context.doseRequest] || value(context.doseRequest);
+  const progress = {
+    LESS_THAN_4KG: "Less than 4 kg",
+    FOUR_TO_SEVEN_KG: "4–7 kg",
+    EIGHT_TO_TWELVE_KG: "8–12 kg",
+    MORE_THAN_TWELVE_KG: "More than 12 kg",
+  }[context.progress] || value(context.progress);
   return (
-    <section className="rx-refill-context">
-      <div className="section-hdr"><div className="label">Refill review context</div></div>
-      <div className="rx-refill-context-grid">
-        <div><span>Previous medication</span><strong>{[context.medication, context.dose].filter(Boolean).join(" · ") || "Not provided"}</strong></div>
-        <div><span>Requested change</span><strong>{value(context.doseRequest)}</strong></div>
-        <div><span>Weight and progress</span><strong>{[context.currentWeight ? `${context.currentWeight} kg` : "", value(context.progress)].filter(Boolean).join(" · ")}</strong></div>
-        <div className={context.sideEffectsPresent ? "attention" : ""}><span>Side effects</span><strong>{value(context.sideEffects)}</strong></div>
-        <div><span>Delivery experience</span><strong>{value(context.delivery)}</strong></div>
-        <div><span>Patient message</span><strong>{context.message || "No message provided"}</strong></div>
+    <>
+    <RefillMedicationContext context={context.medicationContext} />
+    <section className="refill-checkin" aria-label="Patient check-in">
+      <header className="refill-treatment-heading"><h3>Patient check-in</h3><span className="refill-checkin-source">Patient-reported</span></header>
+      <dl className="refill-checkin-facts">
+        {!context.medicationContext ? <div><dt>Previous medication</dt><dd>{[context.medication, context.dose].filter(Boolean).join(" · ") || "Not provided"}</dd></div> : null}
+        <div><dt>Dose preference</dt><dd>{dosePreference}</dd></div>
+        <div><dt>Current weight</dt><dd>{context.currentWeight ? `${context.currentWeight} kg` : "Not provided"}</dd></div>
+        <div><dt>Weight progress</dt><dd>{progress}</dd></div>
+      </dl>
+      <div className={`refill-side-effects${context.sideEffectsPresent ? " attention" : ""}`}>
+        <span>Side effects</span><strong>{String(context.sideEffects).toUpperCase() === "NONE" ? "None reported" : value(context.sideEffects)}</strong>
       </div>
+      {context.message ? <blockquote className="refill-patient-message"><span>Message to doctor</span><p>{context.message}</p></blockquote> : null}
+      <p className="refill-delivery-feedback">Delivery experience <span>{value(context.delivery)}</span></p>
     </section>
+    </>
   );
 }
 
-function PrescriptionSafetyPanel({ loading, chart, error, eligible }) {
+function PrescriptionSafetyPanel({ loading, chart, error, eligible, refillMedicationContext }) {
   if (loading) {
     return (
       <div className="rx-safety-panel">
@@ -592,21 +613,31 @@ function PrescriptionSafetyPanel({ loading, chart, error, eligible }) {
   const activeMedication = chart.current_medication?.name || safetyList(clinical.current_medications);
   const latestPrescription = prescriptions[0];
   const latestDelivery = deliveries[0];
+  const linkedPrescription = refillMedicationContext?.prior_prescription;
+  const linkedPlan = refillMedicationContext?.care_plans?.[0];
+  const previousPurchase = refillMedicationContext?.previous_purchase;
   const latestAssessment = listItems(clinical.assessment?.submissions)[0];
   const rows = [
     { label: "Allergies", value: allergies || "None recorded", tone: allergies ? "warn" : "neutral" },
     { label: "Conditions", value: conditions || "None recorded", tone: "neutral" },
     { label: "Current medication", value: activeMedication || "Not listed", tone: "neutral" },
     {
-      label: "Last prescription",
-      value: latestPrescription
+      label: refillMedicationContext ? "Linked prescription / plan" : "Last prescription",
+      value: refillMedicationContext
+        ? linkedPrescription ? [prescriptionItemLabel(linkedPrescription.items), formatDateTime(linkedPrescription.issued_at)].filter(Boolean).join(" · ")
+          : linkedPlan ? [linkedPlan.title, formatDateTime(linkedPlan.published_at)].filter(Boolean).join(" · ")
+          : "Clinical history unavailable — review with patient"
+        : latestPrescription
         ? [prescriptionItemLabel(latestPrescription.items), formatDateTime(latestPrescription.issued_at)].filter(Boolean).join(" · ")
         : "No prescription history",
       tone: "neutral",
     },
     {
-      label: "Medication order",
-      value: latestDelivery
+      label: refillMedicationContext ? "Previous purchase" : "Medication order",
+      value: refillMedicationContext
+        ? previousPurchase ? [previousPurchase.order_id, previousPurchase.delivered_at ? "Delivered" : "Paid", formatDateTime(previousPurchase.delivered_at || previousPurchase.paid_at)].join(" · ")
+          : "Previous purchase details unavailable"
+        : latestDelivery
         ? [latestDelivery.status ? titleCase(latestDelivery.status) : "", formatDateTime(latestDelivery.delivered_at || latestDelivery.paid_at)].filter(Boolean).join(" · ")
         : "No paid medication order",
       tone: latestDelivery?.paid_at && !latestDelivery?.delivered_at ? "warn" : "neutral",
@@ -928,6 +959,8 @@ function PrescribeView({
   const [labSubmitting, setLabSubmitting] = useStateR(false);
   const [refillContext, setRefillContext] = useStateR(null);
   const [refillContextLoading, setRefillContextLoading] = useStateR(false);
+  const [refillContextError, setRefillContextError] = useStateR("");
+  const [refillContextRetry, setRefillContextRetry] = useStateR(0);
   const labIdempotencyKey = useRefR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
   const quickWlpTrackKey = initialQuickWlpTrackKey || initialTrackKey || "weight-loss";
@@ -1045,7 +1078,8 @@ function PrescribeView({
     [chartClinicalBlockerFields, clinicalBlockerFields]
   );
   const hasClinicalBlocker = !isQuickWlpMode && missingClinicalFields.length > 0;
-  const canPublish = Boolean(cart.length && !hasUnpricedCartItems && !hasClinicalBlocker && !publishing && patient && (!isQuickWlpMode || demographicsReady) && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
+  const refillContextReady = !initialRefillRequestId || Boolean(refillContext && !refillContextLoading && !refillContextError);
+  const canPublish = Boolean(refillContextReady && cart.length && !hasUnpricedCartItems && !hasClinicalBlocker && !publishing && patient && (!isQuickWlpMode || demographicsReady) && (isQuickWlpMode || patient.customerId) && (!isAmendMode || amendReason.trim().length >= 3));
   const labPatientId = isQuickWlpMode ? patient?.labPatientId : patient?.id;
   const labConsultationId = initialConsultationId || patient?.latestCompletedConsultationId || "";
   const labConsultationSource = initialConsultationSource || (isQuickWlpMode ? "QUICKWLP" : "RX");
@@ -1199,6 +1233,8 @@ function PrescribeView({
   }, [isQuickWlpMode, patient?.id, patient?.key]);
 
   useEffectR(() => {
+    setRefillContext(null);
+    setRefillContextError("");
     if (!initialRefillRequestId) {
       setRefillContext(null);
       setRefillContextLoading(false);
@@ -1206,21 +1242,24 @@ function PrescribeView({
     }
     let cancelled = false;
     setRefillContextLoading(true);
-    const params = new URLSearchParams({ doctor_id: DOCTOR_ID, status: "all", limit: "100", offset: "0" });
-    fetchJson(`${API_BASE}/doctor/rx/refill-requests?${params.toString()}`)
+    const params = new URLSearchParams({ doctor_id: DOCTOR_ID });
+    fetchJson(`${API_BASE}/doctor/rx/refill-requests/${encodeURIComponent(initialRefillRequestId)}?${params.toString()}`)
       .then((data) => {
         if (cancelled) return;
-        const match = listItems(data.requests).find((item) => String(item.refill_request_id || item.request_id || item.id) === String(initialRefillRequestId));
+        const match = data.refill_request;
+        if (!match || match.refill_request_id !== initialRefillRequestId
+          || (initialPatientId && match.patient_id !== initialPatientId)
+          || (initialCustomerId && match.customer_id !== initialCustomerId)) throw new Error("Refill context does not match this patient. Reopen the request from the inbox.");
         setRefillContext(refillReviewContext(match));
       })
-      .catch(() => {
-        if (!cancelled) setRefillContext(null);
+      .catch((err) => {
+        if (!cancelled) setRefillContextError(err.message || "Could not load refill context. Please try again before prescribing.");
       })
       .finally(() => {
         if (!cancelled) setRefillContextLoading(false);
       });
     return () => { cancelled = true; };
-  }, [initialRefillRequestId]);
+  }, [initialRefillRequestId, initialPatientId, initialCustomerId, refillContextRetry]);
 
   useEffectR(() => {
     setAmendPrefilled(false);
@@ -1705,7 +1744,7 @@ function PrescribeView({
                         : [patient.phone, patient.age ? `${patient.age}y` : "", patient.sex, activeTrack.label].filter(Boolean).join(" · ")}
                     </div>
                   </div>
-                  {!isQuickWlpMode ? <time>Completed consult{patient.latestCompletedAt ? ` · ${formatDateTime(patient.latestCompletedAt)}` : ""}</time> : null}
+                  {!isQuickWlpMode ? <time>{workflowMode === "refill" ? "Refill request" : "Completed consult"}{patient.latestCompletedAt ? ` · ${formatDateTime(patient.latestCompletedAt)}` : ""}</time> : null}
                   {!isQuickWlpMode && !contextualRxMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
 
@@ -1721,7 +1760,7 @@ function PrescribeView({
                   </div>
                 ) : null}
 
-                {workflowMode === "refill" ? <RefillReviewContext context={refillContext} loading={refillContextLoading} /> : null}
+                {workflowMode === "refill" ? <RefillReviewContext context={refillContext} loading={refillContextLoading} error={refillContextError} onRetry={() => setRefillContextRetry(value => value + 1)} /> : null}
 
                 {isAmendMode && <AmendmentOriginalPrescription items={amendItems} />}
 
@@ -1943,6 +1982,7 @@ function PrescribeView({
                   chart={patientChart}
                   error={patientChartError}
                   eligible={patient?.canPrescribe}
+                  refillMedicationContext={refillContext?.medicationContext}
                 />
               ) : null}
 
@@ -2005,13 +2045,16 @@ function PrescribeView({
                   chart={patientChart}
                   error={patientChartError}
                   eligible={patient?.canPrescribe}
+                  refillMedicationContext={refillContext?.medicationContext}
                 />
               )}
 
               <div className="rx-issue-action">
                 {!canPublish && !publishing ? (
                   <div className="rx-issue-note">
-                    {hasClinicalBlocker
+                    {!refillContextReady
+                      ? "Load the refill context before issuing."
+                      : hasClinicalBlocker
                       ? "Update the clinical profile before issuing."
                       : cart.length === 0
                       ? "Select at least one item to continue."

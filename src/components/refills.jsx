@@ -1,4 +1,5 @@
 import * as React from "react";
+import RefillMedicationContext from "./refillMedicationContext.jsx";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { fetchJson } from "../lib/authFetch.js";
 
@@ -101,6 +102,7 @@ function mapRefillRequest(item) {
     submittedAt: item.submitted_at || item.created_at,
     trackKey: item.track_key || "weight-loss",
     currentMedication: item.current_medication || item.medication_name || item.product_name || item.current_care_plan?.title || "",
+    medicationContext: item.medication_context,
     currentDose: item.current_dose || item.dose || item.current_care_plan?.dose || "",
     dosageAdjustment: answerLabel("dosage_adjustment", dosageAdjustment),
     deliveryExperience: answerLabel("delivery_experience", deliveryExperience),
@@ -142,13 +144,15 @@ function RefillRequestDetail({ request, onPrescribe }) {
       </div>
 
       <div className="refill-kv-list">
-        <div className="kv-row"><div className="k">Current medication</div><div className="v">{request.currentMedication || "Not provided"}</div></div>
+        {!request.medicationContext ? <div className="kv-row"><div className="k">Previous medication</div><div className="v">{request.currentMedication || "Not provided"}</div></div> : null}
         <div className="kv-row"><div className="k">Dose request</div><div className="v">{request.dosageAdjustment || "Not provided"}</div></div>
         <div className="kv-row"><div className="k">Delivery</div><div className="v">{request.deliveryExperience || "Not provided"}</div></div>
         <div className="kv-row"><div className="k">1 month progress</div><div className="v">{request.progress || "Not provided"}</div></div>
         <div className="kv-row"><div className="k">Current weight</div><div className="v">{request.currentWeight || "Not provided"}</div></div>
         <div className="kv-row"><div className="k">Side effects</div><div className="v">{request.sideEffects || "Not provided"}</div></div>
       </div>
+
+      <RefillMedicationContext context={request.medicationContext} />
 
       <div className="refill-note">
         <div className="label">Message to doctor</div>
