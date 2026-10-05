@@ -21,7 +21,14 @@ test("counts actionable reply and refill work without using unread-message total
     { category: "ops_follow_up", action: "FOLLOW_UP" },
   ]);
 
-  assert.deepEqual(summary, { total: 4, needsReply: 2, refillReview: 1 });
+  assert.deepEqual(summary, { total: 4, needsReply: 2, refillReview: 1, truesightQuestions: 0 });
+});
+
+test("keeps questions patients asked TrueSight to pass on, which were dropped before", () => {
+  const question = { category: "truesight_question", type: "TRUESIGHT_QUESTION", action: "RESOLVE_TRUESIGHT_QUESTION" };
+  assert.equal(isDoctorClinicalTask(question), true);
+  assert.deepEqual(summarizeClinicalInboxTasks([question, { category: "message_needs_response", action: "REPLY_TO_PATIENT" }]),
+    { total: 2, needsReply: 1, refillReview: 0, truesightQuestions: 1 });
 });
 
 test("rejects unsupported actions even when the category name looks clinical", () => {
