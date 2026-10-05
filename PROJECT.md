@@ -93,6 +93,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 - Verification: `npm test` 55/55, `npm run build` (build:prod); RealBackend PR 7284 (questions routes and inbox tasks) goes live first.
 - Follow-up: turning on the conversation and summary needs the member notice decided (new members and the 95 already onboarded).
 
+### 2026-10-05 - Reverted the TrueSight questions inbox
+
+- Source: Aditya ("revert the update on doctors dashboard about questions from people").
+- Changed: reverted 613f466. The clinical inbox again shows only its earlier task types, so RealBackend's `TRUESIGHT_QUESTION` tasks are dropped by `isDoctorClinicalTask` and not shown; the patient chart's TrueSight panel is removed.
+- Verification: `npm test`, `npm run build`.
+- Follow-up: RealBackend still returns the questions in the clinical inbox response and keeps the question routes (unused by this app now).
+
 ### 2026-08-16 14:40 +04 - Restore post-call consultation completion
 
 - Source: Dr. Marwa reported that `Record outcome` never appeared after Karina Manaf's Production consultation.

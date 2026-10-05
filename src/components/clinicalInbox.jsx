@@ -8,7 +8,6 @@ import { clinicalTaskCategory, isDoctorClinicalTask, summarizeClinicalInboxTasks
 const { useEffect: useEffectI, useMemo: useMemoI, useState: useStateI } = React;
 
 const GROUPS = [
-  { key: "truesight_question", label: "Questions via TrueSight" },
   { key: "needs_prescription", label: "Needs prescription" },
   { key: "reissue", label: "Re-issue" },
   { key: "needs_outcome", label: "Needs outcome" },
@@ -18,15 +17,6 @@ const GROUPS = [
 ];
 
 const CATEGORY_COPY = {
-  truesight_question: {
-    label: "Question via TrueSight",
-    queueLabel: "Answer patient question",
-    reason: "The patient asked TrueSight, DarDoc's AI companion, to pass this on, and TrueSight told them it was flagged to their doctor. The note above is TrueSight's summary, not a clinical assessment.",
-    decision: "Reply to the patient in their conversation, then mark the question answered.",
-    closes: "Closed when you mark it answered.",
-    actionFallback: "Reply to patient",
-    tone: "critical",
-  },
   needs_prescription: {
     label: "Needs prescription",
     queueLabel: "Issue prescription",
@@ -155,7 +145,6 @@ function taskCopy(task) {
 
 function sourceLabel(task) {
   const source = String(task?.source || "").toLowerCase();
-  if (source === "truesight_safety_escalation") return "TrueSight";
   if (source === "quickwlp" || source === "quick_wlp") return "Quick Consult";
   if (source === "rx") return "Lifestyle Rx";
   return titleCase(task?.source || "Clinical");
@@ -163,7 +152,6 @@ function sourceLabel(task) {
 
 function sourceMeta(task) {
   const source = String(task?.source || "").toLowerCase();
-  if (source === "truesight_safety_escalation") return "TrueSight";
   if (source === "rx") return "Rx";
   if (source === "quickwlp" || source === "quick_wlp") return "Quick Consult";
   return titleCase(task?.source || "");
@@ -177,18 +165,6 @@ function lifecycleForTask(task) {
       { label: "Booked", meta: "Patient completed checkout", state: "done" },
       { label: "Results ready", meta: formatDateTime(task?.occurredAt) || "Report available", state: "current" },
       { label: "Follow-up", meta: "To be decided", state: "pending" },
-    ];
-  }
-  if (category === "truesight_question") {
-    const acknowledgedAt = task?.raw?.acknowledged_at;
-    return [
-      { label: "Asked TrueSight", meta: formatDateTime(task?.occurredAt) || "Patient question", state: "done" },
-      {
-        label: "Acknowledged",
-        meta: acknowledgedAt ? formatDateTime(acknowledgedAt) : task?.raw?.overdue ? "Overdue" : "Not yet",
-        state: acknowledgedAt ? "done" : "current",
-      },
-      { label: "Answered", meta: "Mark answered after you reply", state: acknowledgedAt ? "current" : "pending" },
     ];
   }
   const isNeedsPrescription = category === "needs_prescription";
@@ -292,14 +268,14 @@ function TaskRow({ task, selected, onSelect }) {
     <button className={`clinical-task-row${selected ? " selected" : ""}`} onClick={() => onSelect(task.id)}>
       <span className="clinical-task-main">
         <strong>{task.patientName}</strong>
-        <em>{task.raw?.overdue ? "Overdue · " : ""}{task.summary || task.title}</em>
+        <em>{task.summary || task.title}</em>
       </span>
       <time>{formatQueueTime(task.occurredAt) || "Time unavailable"}</time>
     </button>
   );
 }
 
-function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId, onAcknowledgeQuestion, onResolveQuestion, questionActionId }) {
+function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId }) {
   const { I, Avatar, StatusChip, ClinicalContextBanner } = window.DD_UI;
   if (!task) {
     return (
@@ -315,9 +291,7 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
   const canOpenPatient = Boolean(task.patientId);
   const canOpenChat = !isQuickWlp && Boolean(task.patientId || task.channelId);
   const copy = taskCopy(task);
-  const isTrueSightQuestion = task.category === "truesight_question";
-  const questionStatus = String(task.raw?.status || "");
-  const actionLabel = isTrueSightQuestion ? copy.actionFallback : task.actionLabel || copy.actionFallback;
+  const actionLabel = task.actionLabel || copy.actionFallback;
   const rawPatient = task.raw?.patient || {};
   const allergies = asArray(rawPatient.allergies || task.raw?.allergies);
   const conditions = asArray(rawPatient.conditions || task.raw?.conditions);
@@ -325,10 +299,6 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
     .map((item) => typeof item === "string" ? item : item?.name || item?.title)
     .find(Boolean) || "Not listed";
   const primaryAction = () => {
-    if (isTrueSightQuestion) {
-      if (canOpenChat) return onOpenContextChat?.(task);
-      return canOpenPatient ? onOpenPatient?.(task.patientId, task.customerId) : undefined;
-    }
     if (task.action === "REVIEW_LAB_RESULTS" || task.category === "lab_results_ready") {
       return downloadLabReport(task.reportUrl).catch((err) => window.alert(err.message));
     }
@@ -365,15 +335,7 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
       </div>
 
       <div className="clinical-detail-status">
-        {isTrueSightQuestion ? (
-          <>
-            {task.raw?.urgency && task.raw.urgency !== "ROUTINE" ? <StatusChip label={titleCase(task.raw.urgency)} tone="risk" /> : null}
-            {task.raw?.overdue ? <StatusChip label="Overdue" tone="risk" /> : null}
-            <StatusChip label={questionStatus === "ACKNOWLEDGED" ? "Acknowledged" : "Not acknowledged"} tone={questionStatus === "ACKNOWLEDGED" ? "active" : "reply"} />
-          </>
-        ) : (
-          <StatusChip label={actionLabel} tone={copy.tone === "critical" ? "risk" : task.category === "message_needs_response" ? "reply" : "active"} />
-        )}
+        <StatusChip label={actionLabel} tone={copy.tone === "critical" ? "risk" : task.category === "message_needs_response" ? "reply" : "active"} />
       </div>
 
       <section className="clinical-decision-summary">
@@ -411,7 +373,7 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
             Open chart
           </button>
         )}
-        {canOpenChat && !isTrueSightQuestion && (
+        {canOpenChat && (
           <button
             className="clinical-secondary-action"
             onClick={() => {
@@ -423,24 +385,6 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
             }}
           >
             Open conversation
-          </button>
-        )}
-        {isTrueSightQuestion && questionStatus === "OPEN" && (
-          <button
-            className="clinical-secondary-action"
-            onClick={() => onAcknowledgeQuestion?.(task)}
-            disabled={questionActionId === task.id}
-          >
-            {questionActionId === task.id ? "Saving..." : "Acknowledge"}
-          </button>
-        )}
-        {isTrueSightQuestion && (
-          <button
-            className="clinical-secondary-action"
-            onClick={() => onResolveQuestion?.(task)}
-            disabled={questionActionId === task.id}
-          >
-            Mark answered
           </button>
         )}
         {task.category === "refill_review" && (
@@ -475,8 +419,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const [actionError, setActionError] = useStateI("");
   const [actionToast, setActionToast] = useStateI("");
   const [categoryFilter, setCategoryFilter] = useStateI(initialCategory);
-  const [questionActionId, setQuestionActionId] = useStateI("");
-  const [resolveQuestionTask, setResolveQuestionTask] = useStateI(null);
 
   useEffectI(() => {
     setCategoryFilter(GROUPS.some((group) => group.key === initialCategory) ? initialCategory : "");
@@ -544,36 +486,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     } finally {
       setRefillActionId("");
       setDismissTask(null);
-    }
-  };
-
-  // Acknowledge says a doctor has the question; mark answered closes it for everyone.
-  const actOnTrueSightQuestion = async (task, kind) => {
-    const endpoint = kind === "resolve" ? task?.raw?.review?.endpoint : task?.raw?.acknowledge?.endpoint;
-    if (!endpoint) return;
-    setQuestionActionId(task.id);
-    setActionError("");
-    try {
-      await fetchJson(`${API_BASE}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ doctor_id: DOCTOR_ID }),
-      });
-      if (kind === "resolve") {
-        const nextTasks = tasks.filter((item) => item.id !== task.id);
-        setTasks(nextTasks);
-        setSelectedId((selected) => nextTasks.some((item) => item.id === selected) ? selected : nextTasks[0]?.id || null);
-      }
-      setReloadToken((value) => value + 1);
-      setActionToast(kind === "resolve" ? "Question marked answered" : "Question acknowledged");
-      window.setTimeout(() => setActionToast(""), 3200);
-    } catch (err) {
-      setActionError(err?.message || (kind === "resolve"
-        ? "Could not mark the question answered. Nothing changed."
-        : "Could not acknowledge the question. Nothing changed."));
-    } finally {
-      setQuestionActionId("");
-      setResolveQuestionTask(null);
     }
   };
 
@@ -670,9 +582,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onPrescribeQuickWlp={onPrescribeQuickWlp}
           onDismissRefill={setDismissTask}
           refillActionId={refillActionId}
-          onAcknowledgeQuestion={(task) => actOnTrueSightQuestion(task, "acknowledge")}
-          onResolveQuestion={setResolveQuestionTask}
-          questionActionId={questionActionId}
         />
       </div>
       {ConsultOutcomeModal && (
@@ -720,15 +629,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
         busy={Boolean(refillActionId)}
         onConfirm={() => dismissRefillReview(dismissTask)}
         onCancel={() => setDismissTask(null)}
-      />
-      <ConfirmationModal
-        open={Boolean(resolveQuestionTask)}
-        title="Mark this question answered?"
-        description={`Do this once you have replied to ${resolveQuestionTask?.patientName || "the patient"}. It leaves the queue for every doctor.`}
-        confirmLabel="Mark answered"
-        busy={Boolean(questionActionId)}
-        onConfirm={() => actOnTrueSightQuestion(resolveQuestionTask, "resolve")}
-        onCancel={() => setResolveQuestionTask(null)}
       />
       <ActionToast message={actionToast} />
     </div>
