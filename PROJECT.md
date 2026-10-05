@@ -106,6 +106,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 - Changed: the code from 613f466 is back as it was. The inbox shows "Questions via TrueSight"; the chart panel stays hidden while `TRUESIGHT_DOCTOR_VIEW_ENABLED` is off.
 - Verification: `npm test`, `npm run build`.
 
+### 2026-10-05 - Reverted the TrueSight questions inbox again
+
+- Source: Aditya ("revert, revert from the push we made on the doctors dashboard").
+- Changed: the app is back to b386d84, as before the first TrueSight push. RealBackend's `TRUESIGHT_QUESTION` tasks are dropped by `isDoctorClinicalTask` and not shown; the patient chart has no TrueSight panel.
+- Verification: `npm test`, `npm run build`.
+- Follow-up: RealBackend still returns the questions in the clinical inbox response and keeps the question routes (unused by this app).
+
 ### 2026-08-16 14:40 +04 - Restore post-call consultation completion
 
 - Source: Dr. Marwa reported that `Record outcome` never appeared after Karina Manaf's Production consultation.
