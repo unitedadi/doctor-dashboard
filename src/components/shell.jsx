@@ -197,6 +197,14 @@ function Sidebar({
             <div className="sidebar-inbox-shortcuts" aria-label="Clinical inbox shortcuts">
               <button
                 type="button"
+                className={activeInboxCategory === "needs_prescription" ? "active" : ""}
+                aria-current={activeInboxCategory === "needs_prescription" ? "page" : undefined}
+                onClick={() => onOpenInboxCategory?.("needs_prescription")}
+              >
+                <span>Needs prescription</span><strong>{clinicalInboxBreakdown.needsPrescription}</strong>
+              </button>
+              <button
+                type="button"
                 className={activeInboxCategory === "message_needs_response" ? "active" : ""}
                 aria-current={activeInboxCategory === "message_needs_response" ? "page" : undefined}
                 onClick={() => onOpenInboxCategory?.("message_needs_response")}

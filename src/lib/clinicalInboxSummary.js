@@ -37,6 +37,7 @@ export function summarizeClinicalInboxTasks(tasks) {
   const visibleTasks = Array.isArray(tasks) ? tasks.filter(isDoctorClinicalTask) : [];
   return {
     total: visibleTasks.length,
+    needsPrescription: visibleTasks.filter((task) => clinicalTaskCategory(task) === "needs_prescription").length,
     needsReply: visibleTasks.filter((task) => clinicalTaskCategory(task) === "message_needs_response").length,
     refillReview: visibleTasks.filter((task) => clinicalTaskCategory(task) === "refill_review").length,
   };

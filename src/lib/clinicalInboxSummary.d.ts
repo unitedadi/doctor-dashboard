@@ -1,5 +1,6 @@
 export type ClinicalInboxSummary = {
   total: number
+  needsPrescription: number
   needsReply: number
   refillReview: number
 }
