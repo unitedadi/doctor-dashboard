@@ -3,6 +3,7 @@ import * as React from "react";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
 import { ConsultFollowUpPicker } from "./consultFollowUpPicker.jsx";
+import { TrueSightConversation, TrueSightSummaryCard } from "./trueSightPanel.jsx";
 import {
   availableConsultOutcomes,
   buildConsultOutcomePayload,
@@ -1186,6 +1187,8 @@ function ChatClinicalCard({
         ) : null}
       </div>
 
+      <TrueSightSummaryCard patientId={patient.id} compact />
+
       <PrescriptionGuardrails
         safetyOnly
         clinical={clinical}
@@ -1954,6 +1957,8 @@ function PatientChart({
           />
         )}
 
+        {!focusedMode && <TrueSightSummaryCard patientId={patient.id} />}
+
         {!focusedMode && focus !== "patient-hub" && (
           <CareSummaryStrip
             medication={medication}
@@ -2053,6 +2058,8 @@ function PatientChart({
             {!focusedMode && (
               <>
                 <AssessmentReader assessment={clinical.assessment} />
+
+                <TrueSightConversation patientId={patient.id} />
 
                 <ChartSection title="Patient timeline" subtitle="Consultations, prescriptions, deliveries, refills, assessments, and notes in one chronological chain.">
                   <Timeline events={chart.timeline} />

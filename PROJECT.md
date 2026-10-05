@@ -78,6 +78,21 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-01 17:30 +04 - Questions patients asked TrueSight to pass on
+
+- Source: Aditya. TrueSight tells patients "I've flagged this to <their doctor>", but 12 such questions were open (one urgent, a day overdue) with no doctor screen showing them.
+- Changed: the clinical inbox shows a "Questions via TrueSight" group from RealBackend's `TRUESIGHT_QUESTION` tasks (category `truesight_question`) with Urgent / Overdue / acknowledgement chips, an AI-companion disclaimer, and Reply to patient, Acknowledge and Mark answered (confirmed) actions on `/doctor/truesight/questions/:id/acknowledge|resolve`. The task allowlist had silently dropped every TrueSight item.
+- Verification: `npm test` 46/46, `npm run lint`, `npm run build`; local `VITE_SKIP_CLERK=1` run fed a real RealBackend clinical-inbox response for made-up members, screenshot taken, and both actions posted to the right endpoints with `doctor_id`.
+- Also added the patient chart's TrueSight panel: a "What TrueSight holds" card on the five layers (Understand, Measure, Find, Help, Follow through; compact in the chat rail) and a "TrueSight conversation" thread above the patient timeline, both from `/doctor/truesight/patients/:id/summary|conversation`. They render nothing until RealBackend's `TRUESIGHT_DOCTOR_VIEW_ENABLED` is on, which waits for the patient notice. Verified with `test/truesightDoctorView.test.mjs` and local screenshots fed with made-up payloads.
+- Follow-up: needs the paired RealBackend change live first. TrueSight symptom and supply signals (`treatment_safety`, `REVIEW_TRUESIGHT_SIGNAL`) are still filtered out and need their own review UI.
+
+### 2026-10-05 - Shipping the TrueSight questions inbox
+
+- Source: Aditya ("Questions inbox now"): ship the questions so doctors see them today; the conversation and summary stay off until members are told their care team can see them. 48 questions were open, 37 past their deadline.
+- Changed: the 1 Oct work moved onto main b386d84 unchanged. The TrueSight panel renders nothing while RealBackend answers `available: false` (`TRUESIGHT_DOCTOR_VIEW_ENABLED` unset), so only the inbox group shows.
+- Verification: `npm test` 55/55, `npm run build` (build:prod); RealBackend PR 7284 (questions routes and inbox tasks) goes live first.
+- Follow-up: turning on the conversation and summary needs the member notice decided (new members and the 95 already onboarded).
+
 ### 2026-08-16 14:40 +04 - Restore post-call consultation completion
 
 - Source: Dr. Marwa reported that `Record outcome` never appeared after Karina Manaf's Production consultation.
