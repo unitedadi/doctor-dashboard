@@ -1,4 +1,5 @@
 import * as React from "react";
+import RefillMedicationContext from "./refillMedicationContext.jsx";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
 import { clinicalTaskCategory, isDoctorClinicalTask, summarizeClinicalInboxTasks } from "../lib/clinicalInboxSummary.js";
@@ -357,9 +358,11 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
           <div><dt>Service</dt><dd>{task.service || task.track || "Not available"}</dd></div>
           <div><dt>Entered queue</dt><dd>{formatDateTime(task.occurredAt) ? `${formatDateTime(task.occurredAt)} · Dubai` : "Not available"}</dd></div>
           <div><dt>Source</dt><dd>{sourceLabel(task)}</dd></div>
-          <div><dt>Current medication</dt><dd>{currentMedication}</dd></div>
+          {task.category !== "refill_review" ? <div><dt>Current medication</dt><dd>{currentMedication}</dd></div> : null}
         </dl>
       </section>
+
+      {task.category === "refill_review" ? <RefillMedicationContext context={task.raw?.medication_context} /> : null}
 
       <div className="clinical-detail-actions">
         <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>

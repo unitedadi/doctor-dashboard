@@ -542,7 +542,7 @@ function mapAppointment(item) {
   };
 }
 
-function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp }) {
+function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp, onTodayCountChange }) {
   const { I, Avatar, Topbar, StatusChip, ClinicalContextBanner, ConfirmationModal, ActionToast } = window.DD_UI;
   const PatientChart = window.DD_PatientChart;
   const ConsultOutcomeModal = window.DD_ConsultOutcomeModal;
@@ -553,6 +553,10 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [selectedId, setSelectedId] = useStateA(null);
   const [loading, setLoading] = useStateA(true);
   const [error, setError] = useStateA("");
+  const [refreshError, setRefreshError] = useStateA("");
+  const [refreshing, setRefreshing] = useStateA(false);
+  const [lastUpdated, setLastUpdated] = useStateA(null);
+  const pendingRequest = React.useRef(null);
   const [joiningId, setJoiningId] = useStateA(null);
   const [callingId, setCallingId] = useStateA(null);
   const [callConfirm, setCallConfirm] = useStateA(null);
@@ -573,33 +577,73 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const [outcomeTarget, setOutcomeTarget] = useStateA(null);
   const [joinedAppointments, setJoinedAppointments] = useStateA({});
 
-  const loadAppointments = React.useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadAppointments = React.useCallback(async ({ background = false } = {}) => {
+    if (background && pendingRequest.current) return;
+    pendingRequest.current?.abort();
+    const controller = new AbortController();
+    pendingRequest.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    if (!background) setLoading(true);
+    setRefreshing(true);
     try {
-      const data = await fetchJson(`${API_BASE}/doctor/dashboard/appointments?date=${selectedDate}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`);
-      const nextToday = (data.today || []).map(mapAppointment).sort((a, b) => a.time.localeCompare(b.time));
-      const nextWeek = (data.week || []).map(mapAppointment).sort((a, b) => {
+      const data = await fetchJson(`${API_BASE}/doctor/dashboard/appointments?date=${selectedDate}&doctor_id=${encodeURIComponent(DOCTOR_ID)}`, {
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (pendingRequest.current !== controller || controller.signal.aborted) return;
+      if (!Array.isArray(data.today) || !Array.isArray(data.week)) throw new Error("Invalid schedule response");
+      const nextToday = data.today.map(mapAppointment).sort((a, b) => a.time.localeCompare(b.time));
+      const nextWeek = data.week.map(mapAppointment).sort((a, b) => {
         const dateCompare = String(a.date).localeCompare(String(b.date));
         return dateCompare || a.time.localeCompare(b.time);
       });
 
       setToday(nextToday);
       setWeek(nextWeek);
+      setLastUpdated(Date.now());
+      setRefreshError("");
+      if (selectedDate === dubaiToday()) onTodayCountChange?.(nextToday.length);
       setSelectedId((current) => {
         const all = [...nextToday, ...nextWeek];
         if (current && all.some((appointment) => appointment.id === current)) return current;
         return nextToday.find((appointment) => appointment.status === "upcoming")?.id || nextToday[0]?.id || nextWeek[0]?.id || null;
       });
     } catch {
-      setError("Could not load appointments from the dev API.");
+      if (pendingRequest.current === controller) {
+        setRefreshError("Could not refresh the schedule. New bookings or changes may be missing. Please retry.");
+      }
     } finally {
-      setLoading(false);
+      window.clearTimeout(timeout);
+      if (pendingRequest.current === controller) {
+        pendingRequest.current = null;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [selectedDate]);
+  }, [selectedDate, onTodayCountChange]);
 
   useEffectA(() => {
+    setToday([]);
+    setWeek([]);
+    setSelectedId(null);
+    setLastUpdated(null);
+    setRefreshError("");
     loadAppointments();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") loadAppointments({ background: true });
+    };
+    const timer = window.setInterval(refreshWhenVisible, 30_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      pendingRequest.current?.abort();
+      pendingRequest.current = null;
+    };
   }, [loadAppointments]);
 
   const loadPatientProfiles = React.useCallback(async () => {
@@ -933,10 +977,22 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
             ))}
           </div>
 
+          <div className="apt-refresh-status">
+            <span>{lastUpdated ? `Updated ${formatDubaiClock(lastUpdated)} Dubai time · Auto-refresh every 30s` : "Schedule not yet updated"}</span>
+            <button type="button" className="btn-ghost" disabled={refreshing} onClick={() => loadAppointments({ background: true })}>
+              {refreshing ? "Refreshing…" : "Refresh schedule"}
+            </button>
+          </div>
+          {refreshError && (
+            <div className="api-state" role="alert">
+              <span>{refreshError}</span>
+              <button type="button" className="btn-ghost" disabled={refreshing} onClick={() => loadAppointments({ background: true })}>Retry refresh</button>
+            </div>
+          )}
           {error && (
             <div className="api-state">
               <span>{error} Nothing was changed.</span>
-              <button type="button" className="btn-ghost" onClick={loadAppointments}>Retry</button>
+              <button type="button" className="btn-ghost" onClick={() => { setError(""); loadAppointments(); }}>Retry</button>
             </div>
           )}
 
@@ -946,7 +1002,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
               <div />
               <div />
             </div>
-          ) : scheduleAppointments.length === 0 ? (
+          ) : !lastUpdated && refreshError ? null : scheduleAppointments.length === 0 ? (
             <div className="empty-state apt-empty">
               <strong>No consultations scheduled for this {scheduleScope === "week" ? "window" : "day"}</strong>
               {nextScheduledDay ? (

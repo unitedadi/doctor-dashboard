@@ -260,12 +260,13 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
       }
     }
 
-    loadAppointmentCount()
+    // The mounted schedule owns its live count; do not race it with a stale response.
+    if (route !== 'appointments') loadAppointmentCount()
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [route])
 
   return (
     <div className="app" data-screen-label={route}>
@@ -330,6 +331,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
         )}
         {route === 'appointments' && (
           <AppointmentsView
+            onTodayCountChange={setAppointmentCount}
             onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', hubMode: 'charts' })}
             onOpenChat={(id: string, customerId?: string, channelId?: string) => go('patient-hub', { patientId: id, customerId: customerId || '', channelId: channelId || '', hubMode: 'all' })}
             onPrescribeRx={(appointment: DashboardActionPayload) => go('prescribe', {

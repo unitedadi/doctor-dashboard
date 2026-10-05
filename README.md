@@ -45,3 +45,15 @@ npm run build:prod # production-mode build
 npm run preview    # preview built dist locally
 npm run lint
 ```
+
+## Schedule refresh regression check
+
+```bash
+npx playwright install chromium # once per machine
+npm run test:appointments
+```
+
+Runs the real dashboard with synthetic appointments for both doctors and mocked API reads;
+it does not access Production or change patient records. Checks 30-second visible-tab refresh,
+focus/reconnect refresh, selection and sidebar counts, failed/slow responses, date changes,
+and cleanup when leaving Schedule. Authentication bypass is limited to this local Vite test.
