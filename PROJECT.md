@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-05 - Needs prescription sidebar shortcut
+
+- Source: Aditya requested a separate sidebar count for pending prescriptions, followed by approval to commit and push to main.
+- Changed: added the Needs prescription shortcut using the existing clinical-inbox task summary and category navigation; refill review remains separate.
+- Verification: 53 tests and production build passed after merging current main. Local browser check with 11 synthetic prescription tasks confirmed the count and category navigation. Existing prescription-screen edits were preserved in the original checkout.
+- Follow-up: Production deployment has not yet been verified.
+
 ### 2026-10-01 17:30 +04 - Questions patients asked TrueSight to pass on
 
 - Source: Aditya. TrueSight tells patients "I've flagged this to <their doctor>", but 12 such questions were open (one urgent, a day overdue) with no doctor screen showing them.
