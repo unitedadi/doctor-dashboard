@@ -1,4 +1,5 @@
 const DOCTOR_TASK_CATEGORIES = new Set([
+  "prescription_reconciliation",
   "purchase_review",
   "purchase_intake",
   "needs_prescription",
@@ -10,6 +11,7 @@ const DOCTOR_TASK_CATEGORIES = new Set([
 ]);
 
 const DOCTOR_TASK_ACTIONS = new Set([
+  "RECONCILE_PRESCRIPTION",
   "REVIEW_PURCHASE",
   "COMPLETE_PURCHASE_INTAKE",
   "PRESCRIBE_RX",

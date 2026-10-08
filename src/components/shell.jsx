@@ -195,6 +195,7 @@ function Sidebar({
           </button>
           {it.id === "clinical-inbox" && clinicalInboxBreakdown ? (
             <div className="sidebar-inbox-shortcuts" aria-label="Clinical inbox shortcuts">
+              <span>Current work</span>
               {[
                 ['needs_outcome', 'Needs outcome', clinicalInboxBreakdown.needsOutcome],
                 ['purchase_review', 'Purchase review', clinicalInboxBreakdown.purchaseReview],
@@ -224,6 +225,7 @@ function Sidebar({
               >
                 <span>Refill review</span><strong>{clinicalInboxBreakdown.refillReview}</strong>
               </button>
+              <button type="button" className={activeInboxCategory === "earlier" ? "active" : ""} onClick={() => onOpenInboxCategory?.("earlier")}><span>Earlier work &amp; record checks</span><strong>{clinicalInboxBreakdown.earlier ?? 0}</strong></button>
             </div>
           ) : null}
         </React.Fragment>

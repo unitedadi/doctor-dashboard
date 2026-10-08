@@ -9,6 +9,7 @@ import { clinicalTaskCategory, isDoctorClinicalTask } from "../lib/clinicalInbox
 const { useEffect: useEffectI, useMemo: useMemoI, useState: useStateI } = React;
 
 const GROUPS = [
+  { key: "prescription_reconciliation", label: "Prescription record checks" },
   { key: "purchase_review", label: "Purchase review" },
   { key: "purchase_intake", label: "Patient details needed" },
   { key: "needs_prescription", label: "Needs prescription" },
@@ -20,6 +21,7 @@ const GROUPS = [
 ];
 
 const CATEGORY_COPY = {
+  prescription_reconciliation: { label: "Prescription record check", reason: "An existing prescription was found for this patient. Check whether it covers this visit; do not issue a duplicate to clear the inbox.", closes: "Closed after the existing prescription is confirmed for this visit.", tone: "steady" },
   purchase_review: { label: "Purchase review", reason: "Review the medication purchased for this patient.", closes: "Closed after a doctor records approval.", tone: "critical" },
   purchase_intake: { label: "Patient details needed", reason: "The patient has not completed intake for this paid order.", closes: "Patient details must be completed before a prescription can be reviewed.", tone: "steady" },
   needs_prescription: {
@@ -179,10 +181,18 @@ function lifecycleForTask(task) {
   const isMessage = category === "message_needs_response";
   const when = formatDateTime(task?.occurredAt);
 
+  if (category === "prescription_reconciliation") {
+    return [
+      { label: "Consultation", meta: "Completed", state: "done" },
+      { label: "Prescription", meta: task.raw.record_issue ? "Patient link needs checking" : "Existing prescription found", state: task.raw.record_issue ? "current" : "done" },
+      { label: "Visit link", meta: "Confirmation needed", state: "current" },
+    ];
+  }
   if (category === "purchase_review" || category === "purchase_intake") {
     const missingIntake = category === "purchase_intake";
     return [
       { label: "Purchase", meta: "Paid", state: "done" },
+      ...(task.raw.delivered_at ? [{ label: "Delivery", meta: "Already delivered", state: "done" }] : []),
       { label: "Patient details", meta: missingIntake ? "Incomplete" : "Submitted", state: missingIntake ? "current" : "done" },
       { label: "Prescription review", meta: missingIntake ? "Awaiting patient details" : "Doctor decision needed", state: missingIntake ? "pending" : "current" },
     ];
@@ -215,11 +225,10 @@ function lifecycleForTask(task) {
     },
     {
       label: "Prescription",
-      meta: isReissue ? "Issued, unpaid · replaceable" : isNeedsPrescription ? "Not issued" : "Pending",
+      meta: isReissue ? "Issued, unpaid · replaceable" : isNeedsPrescription ? "Not linked to this visit" : "Decision needed",
       state: isReissue || isNeedsPrescription ? "current" : "pending",
     },
-    { label: "Payment", meta: "Pending", state: "pending" },
-    { label: "Delivery", meta: "Pending", state: "pending" },
+
   ];
 }
 
@@ -352,11 +361,13 @@ function TaskDetail({ onResolved, task, onOpenPatient, onOpenChat, onOpenContext
       </div>
 
       <section className="clinical-decision-summary">
-        <span>Decision needed</span>
+        <span>{task.raw.inbox_queue === "earlier" ? "Earlier work / record check" : "Decision needed"}</span>
         <h3>{task.summary || task.title}</h3>
-        <p>{copy.reason}</p>
+        <p>{task.raw.queue_reason || task.raw.record_issue || copy.reason}</p>
         <p>{copy.closes}</p>
       </section>
+
+      <InboxReviewActions key={task.id} task={task} onResolved={onResolved} />
 
       <section className="clinical-detail-section">
         <div className="clinical-detail-label">Clinical thread</div>
@@ -377,9 +388,8 @@ function TaskDetail({ onResolved, task, onOpenPatient, onOpenChat, onOpenContext
 
       {task.category === "refill_review" ? <RefillMedicationContext context={task.raw?.medication_context} /> : null}
 
-      <InboxReviewActions key={task.id} task={task} onResolved={onResolved} />
       <div className="clinical-detail-actions">
-        {!task.category.startsWith("purchase_") && <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>
+        {!task.category.startsWith("purchase_") && task.category !== "prescription_reconciliation" && <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>
           {actionLabel}
         </button>}
         {task.category === "needs_prescription" && <button className="clinical-secondary-action" onClick={() => onRecordOutcome?.(task)}>Record a different outcome</button>}
@@ -433,9 +443,11 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   const [dismissTask, setDismissTask] = useStateI(null);
   const [actionError, setActionError] = useStateI("");
   const [actionToast, setActionToast] = useStateI("");
-  const [categoryFilter, setCategoryFilter] = useStateI(initialCategory);
+  const [queue, setQueue] = useStateI(initialCategory === "earlier" ? "earlier" : "current");
+  const [categoryFilter, setCategoryFilter] = useStateI(initialCategory === "earlier" ? "" : initialCategory);
 
   useEffectI(() => {
+    setQueue(initialCategory === "earlier" ? "earlier" : "current");
     setCategoryFilter(GROUPS.some((group) => group.key === initialCategory) ? initialCategory : "");
   }, [initialCategory]);
 
@@ -469,7 +481,10 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     }
   };
 
-  const activeTasks = categoryFilter ? tasks.filter((task) => task.category === categoryFilter) : tasks;
+  const queueTasks = tasks.filter(task => (task.raw.inbox_queue || "current") === queue);
+  const activeTasks = categoryFilter ? queueTasks.filter(task => task.category === categoryFilter) : queueTasks;
+  const queueCounts = (queue === "earlier" ? inbox.earlier_counts : inbox.current_counts) || {};
+  const queueTotal = categoryFilter ? queueCounts[categoryFilter] ?? activeTasks.length : Object.values(queueCounts).reduce((sum, count) => sum + Number(count), 0) || activeTasks.length;
 
   const visibleTasks = useMemoI(() => {
     const query = search.trim().toLowerCase();
@@ -490,14 +505,25 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     <div className="screen clinical-inbox-screen fade-in">
       <Topbar
         title="Clinical inbox"
-        subtitle={loading ? (activeTasks.length ? "Refreshing clinical work…" : "Loading clinical work…") : `${activeTasks.length} task${activeTasks.length === 1 ? "" : "s"} need a doctor decision.`}
+        subtitle={loading ? (activeTasks.length ? "Refreshing clinical work…" : "Loading clinical work…") : `${queueTotal} ${queue === "earlier" ? "earlier tasks and record checks" : `current task${queueTotal === 1 ? "" : "s"}`}.`}
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search tasks or patients"
       />
 
+      <div className="clinical-inbox-queues" role="group" aria-label="Inbox work queue">
+        <button type="button" aria-pressed={queue === "current"} onClick={() => { setQueue("current"); setCategoryFilter(""); }}>Current work</button>
+        <button type="button" aria-pressed={queue === "earlier"} onClick={() => { setQueue("earlier"); setCategoryFilter(""); }}>Earlier work &amp; record checks</button>
+        <details><summary>How this inbox works</summary>
+          <p><strong>Needs prescription:</strong> prescribe from the selected visit, or record its outcome. When a prescription already exists, use the record check instead of prescribing again.</p>
+          <p><strong>Needs reply:</strong> open the conversation and reply, or select No reply needed after reviewing it. Earlier messages are not new requests.</p>
+          <p><strong>Purchase review:</strong> a paid medication order needs a prescription decision. Review the purchased medication and any uploaded prescription. Approve issues a prescription for this paid order without another payment.</p>
+          <p><strong>Earlier work:</strong> unresolved activity older than 30 days, delivered orders with missing review records, and prescriptions needing a visit link. These remain open; moving them here does not approve or close them.</p>
+        </details>
+      </div>
       <div className="clinical-inbox-layout">
         <div className="clinical-inbox-list">
+          <p className="clinical-inbox-queue-explanation">{queue === 'earlier' ? 'Earlier activity and record checks. Review what was already done before taking a new clinical action.' : 'Current requests and recent consultations. Earlier messages, consultation records and delivered purchases are kept separately.'}</p>
           {error && (
             <div className="clinical-inbox-warning">
               Could not load {error}. Please refresh and try again.
@@ -550,7 +576,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onOpenChat={onOpenChat}
           onOpenContextChat={setChatTask}
           onRecordOutcome={setOutcomeTask}
-          onResolved={inbox.refresh}
+          onResolved={inbox.resolveTask}
           onPrescribeRx={onPrescribeRx}
           onPrescribeQuickWlp={onPrescribeQuickWlp}
           onDismissRefill={setDismissTask}

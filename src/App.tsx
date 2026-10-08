@@ -121,7 +121,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   const [routeContext, setRouteContext] = useState<Record<string, string>>(initialNavigationState.context)
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
   const inbox = useClinicalInbox()
-  const clinicalInboxBreakdown = inbox.counts ? summarizeClinicalInboxTasks(inbox.tasks, inbox.counts) : null
+  const clinicalInboxBreakdown = inbox.counts ? { ...summarizeClinicalInboxTasks(inbox.tasks, inbox.current_counts ?? inbox.counts), earlier: Object.values(inbox.earlier_counts ?? {}).reduce((sum, count) => sum + count, 0) } : null
   const clinicalInboxCount = clinicalInboxBreakdown?.total ?? null
   const [rating, setRating] = useState<{ average: number; count: number } | null>(null)
   const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })

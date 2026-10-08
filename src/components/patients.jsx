@@ -607,7 +607,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
       const nextPatients = mapDirectoryPatients(directories);
       setPatients(nextPatients);
       setSelectedId((current) => {
-        if (initialPatientId && nextPatients.some((patient) => patient.id === initialPatientId)) return initialPatientId;
+        if (initialPatientId) return initialPatientId;
         if (initialCustomerId) {
           const patientByCustomer = nextPatients.find((patient) => patient.customerId === initialCustomerId);
           if (patientByCustomer) return patientByCustomer.id;
@@ -646,7 +646,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
         if (cancelled) return;
         setPatients(rows.map(mapPatient));
         setTotal(data.total);
-        setSelectedId((current) => rows.some((row) => row.id === current) ? current : rows[0]?.id || null);
+        setSelectedId((current) => rows.some((row) => row.id === current) ? current : initialPatientId && !pageSearch && offset === 0 ? initialPatientId : rows[0]?.id || null);
       })
       .catch(() => { if (!cancelled) setError("Could not load patient charts. Try again."); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -706,7 +706,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
     if (filter === "today" && patient.upcoming?.date !== today) return false;
     return true;
   });
-  const p = filtered.find((patient) => patient.id === selectedId) || filtered[0] || null;
+  const p = filtered.find((patient) => patient.id === selectedId) || (!selectedId ? filtered[0] : null) || null;
 
   return (
     <>
@@ -811,7 +811,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           ) : p ? (
             <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={reloadPatients} />
           ) : (
-            <div className="empty-state">Select a patient</div>
+            <div className="empty-state">{initialPatientId && selectedId === initialPatientId ? "The requested patient’s chart is unavailable. No other patient has been opened." : "Select a patient"}</div>
           )}
         </div>
       </div>

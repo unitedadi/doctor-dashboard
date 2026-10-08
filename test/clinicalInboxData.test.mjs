@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadClinicalInbox } from '../src/lib/clinicalInboxData.js';
+import { loadClinicalInbox, removeResolvedInboxTask } from '../src/lib/clinicalInboxData.js';
 import { summarizeClinicalInboxTasks } from '../src/lib/clinicalInboxSummary.js';
 
 test('loads past 100 tasks and includes refill tasks from subsequent pages', async () => {
@@ -46,4 +46,16 @@ test('publishes the first page and full counts before a slow later page complete
   assert.equal(snapshots[0].counts.needs_prescription, 2);
   release({tasks:[{id:'second'}],has_more:false,counts:{needs_prescription:2}});
   assert.equal((await complete).tasks.length, 2);
+});
+
+test('a confirmed resolution clears only its task and queue count, exactly once', () => {
+  const snapshot = { tasks: [{id:'old',category:'prescription_reconciliation',inbox_queue:'earlier'}, {id:'paid',category:'purchase_review',inbox_queue:'current'}],
+    counts: {prescription_reconciliation:1,purchase_review:1}, current_counts:{purchase_review:1}, earlier_counts:{prescription_reconciliation:1} };
+  const resolved = removeResolvedInboxTask(snapshot, 'old');
+  assert.equal(resolved.tasks.length, 1);
+  assert.equal(resolved.earlier_counts.prescription_reconciliation, 0);
+  assert.equal(resolved.current_counts.purchase_review, 1);
+  assert.equal(resolved.counts.prescription_reconciliation, 0);
+  assert.strictEqual(removeResolvedInboxTask(resolved, 'old'), resolved);
+  assert.equal(snapshot.tasks.length, 2);
 });
