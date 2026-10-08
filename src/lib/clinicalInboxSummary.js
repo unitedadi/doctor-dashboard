@@ -1,4 +1,6 @@
 const DOCTOR_TASK_CATEGORIES = new Set([
+  "purchase_review",
+  "purchase_intake",
   "needs_prescription",
   "needs_outcome",
   "message_needs_response",
@@ -8,6 +10,8 @@ const DOCTOR_TASK_CATEGORIES = new Set([
 ]);
 
 const DOCTOR_TASK_ACTIONS = new Set([
+  "REVIEW_PURCHASE",
+  "COMPLETE_PURCHASE_INTAKE",
   "PRESCRIBE_RX",
   "PRESCRIBE_QUICK_WLP",
   "PRESCRIBE_REFILL",
@@ -33,12 +37,16 @@ export function isDoctorClinicalTask(task) {
   return !action || DOCTOR_TASK_ACTIONS.has(action);
 }
 
-export function summarizeClinicalInboxTasks(tasks) {
+export function summarizeClinicalInboxTasks(tasks, counts) {
   const visibleTasks = Array.isArray(tasks) ? tasks.filter(isDoctorClinicalTask) : [];
+  const count = category => counts ? Number(counts[category] || 0) : visibleTasks.filter(task => clinicalTaskCategory(task) === category).length;
   return {
-    total: visibleTasks.length,
-    needsPrescription: visibleTasks.filter((task) => clinicalTaskCategory(task) === "needs_prescription").length,
-    needsReply: visibleTasks.filter((task) => clinicalTaskCategory(task) === "message_needs_response").length,
-    refillReview: visibleTasks.filter((task) => clinicalTaskCategory(task) === "refill_review").length,
+    total: counts ? [...DOCTOR_TASK_CATEGORIES].reduce((total, category) => total + count(category), 0) : visibleTasks.length,
+    needsOutcome: count("needs_outcome"),
+    purchaseReview: count("purchase_review"),
+    purchaseIntake: count("purchase_intake"),
+    needsPrescription: count("needs_prescription"),
+    needsReply: count("message_needs_response"),
+    refillReview: count("refill_review"),
   };
 }

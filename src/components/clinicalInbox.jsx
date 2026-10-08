@@ -1,13 +1,16 @@
+import InboxReviewActions from "./inboxReviewActions.jsx";
 import * as React from "react";
 import RefillMedicationContext from "./refillMedicationContext.jsx";
 import { API_BASE, DOCTOR_ID } from "../config.js";
 import { authFetch, fetchJson } from "../lib/authFetch.js";
-import { clinicalTaskCategory, isDoctorClinicalTask, summarizeClinicalInboxTasks } from "../lib/clinicalInboxSummary.js";
+import { clinicalTaskCategory, isDoctorClinicalTask } from "../lib/clinicalInboxSummary.js";
 
 /* global React */
 const { useEffect: useEffectI, useMemo: useMemoI, useState: useStateI } = React;
 
 const GROUPS = [
+  { key: "purchase_review", label: "Purchase review" },
+  { key: "purchase_intake", label: "Patient details needed" },
   { key: "needs_prescription", label: "Needs prescription" },
   { key: "reissue", label: "Re-issue" },
   { key: "needs_outcome", label: "Needs outcome" },
@@ -17,10 +20,12 @@ const GROUPS = [
 ];
 
 const CATEGORY_COPY = {
+  purchase_review: { label: "Purchase review", reason: "Review the medication purchased for this patient.", closes: "Closed after a doctor records approval.", tone: "critical" },
+  purchase_intake: { label: "Patient details needed", reason: "The patient has not completed intake for this paid order.", closes: "Patient details must be completed before a prescription can be reviewed.", tone: "steady" },
   needs_prescription: {
     label: "Needs prescription",
     queueLabel: "Issue prescription",
-    reason: "The backend marked the consultation completed with no prescription issued. Never inferred from slot time.",
+    reason: "This consultation still needs a medication decision. Check any later prescription before issuing another.",
     decision: "Review the chart, confirm medication choice, and issue the prescription if clinically appropriate.",
     closes: "Closed when the prescription is issued.",
     actionFallback: "Issue prescription",
@@ -174,6 +179,14 @@ function lifecycleForTask(task) {
   const isMessage = category === "message_needs_response";
   const when = formatDateTime(task?.occurredAt);
 
+  if (category === "purchase_review" || category === "purchase_intake") {
+    const missingIntake = category === "purchase_intake";
+    return [
+      { label: "Purchase", meta: "Paid", state: "done" },
+      { label: "Patient details", meta: missingIntake ? "Incomplete" : "Submitted", state: missingIntake ? "current" : "done" },
+      { label: "Prescription review", meta: missingIntake ? "Awaiting patient details" : "Doctor decision needed", state: missingIntake ? "pending" : "current" },
+    ];
+  }
   if (isMessage) {
     return [
       { label: "Received", meta: when || "Patient message", state: "done" },
@@ -275,7 +288,7 @@ function TaskRow({ task, selected, onSelect }) {
   );
 }
 
-function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId }) {
+function TaskDetail({ onResolved, task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId }) {
   const { I, Avatar, StatusChip, ClinicalContextBanner } = window.DD_UI;
   if (!task) {
     return (
@@ -364,10 +377,12 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
 
       {task.category === "refill_review" ? <RefillMedicationContext context={task.raw?.medication_context} /> : null}
 
+      <InboxReviewActions key={task.id} task={task} onResolved={onResolved} />
       <div className="clinical-detail-actions">
-        <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>
+        {!task.category.startsWith("purchase_") && <button className="clinical-primary-action" onClick={primaryAction} disabled={!actionLabel}>
           {actionLabel}
-        </button>
+        </button>}
+        {task.category === "needs_prescription" && <button className="clinical-secondary-action" onClick={() => onRecordOutcome?.(task)}>Record a different outcome</button>}
         {canOpenPatient && (
           <button className="clinical-secondary-action" onClick={() => onOpenPatient?.(task.patientId, task.customerId)}>
             Open chart
@@ -401,18 +416,18 @@ function TaskDetail({ task, onOpenPatient, onOpenChat, onOpenContextChat, onPres
   );
 }
 
-function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp, onCountChange, onBreakdownChange, initialCategory = "" }) {
+function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescribeQuickWlp, inbox, initialCategory = "" }) {
   const { Topbar, ConfirmationModal, ActionToast } = window.DD_UI;
   const PatientChatDrawer = window.DD_PatientChatDrawer;
   const ConsultOutcomeModal = window.DD_ConsultOutcomeModal;
-  const [tasks, setTasks] = useStateI([]);
+  const tasks = useMemoI(() => inbox.tasks.map(mapClinicalTask).filter(isDoctorClinicalTask), [inbox.tasks]);
+  const { loading, error } = inbox;
   const [selectedId, setSelectedId] = useStateI(null);
   const [search, setSearch] = useStateI("");
-  const [loading, setLoading] = useStateI(true);
-  const [error, setError] = useStateI("");
+
   const [chatTask, setChatTask] = useStateI(null);
   const [outcomeTask, setOutcomeTask] = useStateI(null);
-  const [reloadToken, setReloadToken] = useStateI(0);
+
   const [refillActionId, setRefillActionId] = useStateI("");
   const [expandedGroups, setExpandedGroups] = useStateI({});
   const [dismissTask, setDismissTask] = useStateI(null);
@@ -423,39 +438,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   useEffectI(() => {
     setCategoryFilter(GROUPS.some((group) => group.key === initialCategory) ? initialCategory : "");
   }, [initialCategory]);
-
-  useEffectI(() => {
-    let cancelled = false;
-
-    async function loadInbox() {
-      setLoading(true);
-      setError("");
-      const params = new URLSearchParams({
-        doctor_id: DOCTOR_ID,
-        lookback_days: "90",
-        limit: "100",
-      });
-      const payload = await fetchJson(`${API_BASE}/doctor/clinical-inbox?${params.toString()}`);
-      if (cancelled) return;
-
-      const nextTasks = asArray(payload.tasks)
-        .map(mapClinicalTask)
-        .filter(isDoctorClinicalTask);
-      setTasks(nextTasks);
-      setSelectedId((current) => nextTasks.some((task) => task.id === current) ? current : nextTasks[0]?.id || null);
-      setLoading(false);
-    }
-
-    loadInbox().catch(() => {
-      if (!cancelled) {
-        setError("clinical inbox");
-        setLoading(false);
-        onCountChange?.(null);
-      }
-    });
-
-    return () => { cancelled = true; };
-  }, [onCountChange, reloadToken]);
 
   const dismissRefillReview = async (task) => {
     const refillRequestId = task?.refillRequestId || task?.sourceId;
@@ -473,12 +455,10 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
         }),
       });
       const nextTasks = tasks.filter((item) => item.refillRequestId !== refillRequestId);
-      setTasks(nextTasks);
+
       setSelectedId((selected) => nextTasks.some((item) => item.id === selected) ? selected : nextTasks[0]?.id || null);
-      const summary = summarizeClinicalInboxTasks(nextTasks);
-      onCountChange?.(summary.total);
-      onBreakdownChange?.(summary);
-      setReloadToken((value) => value + 1);
+
+      inbox.refresh();
       setActionToast("Refill request closed as no refill needed");
       window.setTimeout(() => setActionToast(""), 3200);
     } catch (err) {
@@ -490,14 +470,6 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
   };
 
   const activeTasks = categoryFilter ? tasks.filter((task) => task.category === categoryFilter) : tasks;
-
-  useEffectI(() => {
-    if (!loading && !error) {
-      const summary = summarizeClinicalInboxTasks(tasks);
-      onCountChange?.(summary.total);
-      onBreakdownChange?.(summary);
-    }
-  }, [error, loading, onBreakdownChange, onCountChange, tasks]);
 
   const visibleTasks = useMemoI(() => {
     const query = search.trim().toLowerCase();
@@ -578,6 +550,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           onOpenChat={onOpenChat}
           onOpenContextChat={setChatTask}
           onRecordOutcome={setOutcomeTask}
+          onResolved={inbox.refresh}
           onPrescribeRx={onPrescribeRx}
           onPrescribeQuickWlp={onPrescribeQuickWlp}
           onDismissRefill={setDismissTask}
@@ -601,7 +574,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
               onPrescribeRx?.(task);
               return;
             }
-            setReloadToken((value) => value + 1);
+            inbox.refresh();
           }}
         />
       )}

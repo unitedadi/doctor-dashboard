@@ -70,3 +70,12 @@ html.mobile-device-blocked-root #root {
   color: rgba(23, 59, 61, 0.62);
   font: 400 14px/1.5 "Google Sans Flex", "Google Sans", system-ui, -apple-system, sans-serif;
 }
+
+.inbox-review-form { background: #f5f3e9; border: 1px solid #dedbc9; border-radius: 14px; padding: 18px; }
+.inbox-review-form h3 { margin: 0 0 10px; }
+.inbox-review-form p { line-height: 1.5; }
+.inbox-review-form form, .inbox-review-form label { display: grid; gap: 8px; }
+.inbox-review-form form { gap: 16px; }
+.inbox-review-form input:not([type=checkbox]), .inbox-review-form textarea, .inbox-review-form select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #c7ceca; border-radius: 7px; background: white; color: #173b3d; font: inherit; }
+.inbox-review-form .inbox-review-confirm { display: flex; align-items: flex-start; line-height: 1.5; }
+.inbox-review-form [role=alert] { color: #a62d35; }

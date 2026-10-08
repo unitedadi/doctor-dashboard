@@ -195,6 +195,11 @@ function Sidebar({
           </button>
           {it.id === "clinical-inbox" && clinicalInboxBreakdown ? (
             <div className="sidebar-inbox-shortcuts" aria-label="Clinical inbox shortcuts">
+              {[
+                ['needs_outcome', 'Needs outcome', clinicalInboxBreakdown.needsOutcome],
+                ['purchase_review', 'Purchase review', clinicalInboxBreakdown.purchaseReview],
+                ['purchase_intake', 'Patient details needed', clinicalInboxBreakdown.purchaseIntake],
+              ].map(([category, label, count]) => <button key={category} type="button" className={activeInboxCategory === category ? 'active' : ''} onClick={() => onOpenInboxCategory?.(category)}><span>{label}</span><strong>{count}</strong></button>)}
               <button
                 type="button"
                 className={activeInboxCategory === "needs_prescription" ? "active" : ""}

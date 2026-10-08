@@ -28,10 +28,14 @@ export async function authFetch(url, options = {}) {
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
-  return fetch(url, {
+  const response = await fetch(url, {
     ...options,
     headers,
   });
+  if (response.ok && !["GET", "HEAD"].includes(String(options.method || "GET").toUpperCase()) && shouldAttachAuth(url)) {
+    window.dispatchEvent(new Event("doctor-data-changed"));
+  }
+  return response;
 }
 
 export async function fetchJson(url, options) {

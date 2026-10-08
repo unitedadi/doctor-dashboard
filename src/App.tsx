@@ -1,3 +1,4 @@
+import { useClinicalInbox } from './lib/useClinicalInbox'
 import { useEffect, useState } from 'react'
 import './data.js'
 import './components/shell.jsx'
@@ -13,7 +14,7 @@ import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
 import { prescriptionAmendmentContext } from './lib/prescriptionAmendment.js'
-import { summarizeClinicalInboxTasks, type ClinicalInboxSummary } from './lib/clinicalInboxSummary.js'
+import { summarizeClinicalInboxTasks } from './lib/clinicalInboxSummary.js'
 import { playDoctorAlertSound, startDoctorAlertSound, unlockDoctorAlertSound } from './lib/doctorAlertSound.js'
 import {
   disableDoctorChatPush,
@@ -27,9 +28,6 @@ type AppointmentCountPayload = {
   today?: unknown[]
 }
 
-type ClinicalInboxCountPayload = {
-  tasks?: unknown[]
-}
 
 type FeedbackMetricsPayload = {
   metrics?: {
@@ -122,9 +120,9 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
   const [route, setRoute] = useState(initialNavigationState.route)
   const [routeContext, setRouteContext] = useState<Record<string, string>>(initialNavigationState.context)
   const [appointmentCount, setAppointmentCount] = useState<number | null>(null)
-  const [clinicalInboxCount, setClinicalInboxCount] = useState<number | null>(null)
-  const [clinicalRevision, setClinicalRevision] = useState(0)
-  const [clinicalInboxBreakdown, setClinicalInboxBreakdown] = useState<ClinicalInboxSummary | null>(null)
+  const inbox = useClinicalInbox(route)
+  const clinicalInboxBreakdown = inbox.counts ? summarizeClinicalInboxTasks(inbox.tasks, inbox.counts) : null
+  const clinicalInboxCount = clinicalInboxBreakdown?.total ?? null
   const [rating, setRating] = useState<{ average: number; count: number } | null>(null)
   const [pushState, setPushState] = useState<DoctorChatPushState>({ status: 'loading', label: 'Checking alerts' })
   const [pushBusy, setPushBusy] = useState(false)
@@ -173,25 +171,6 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
     }
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    const params = new URLSearchParams({ doctor_id: DOCTOR_ID, lookback_days: '90', limit: '100' })
-    fetchJson<ClinicalInboxCountPayload>(`${API_BASE}/doctor/clinical-inbox?${params.toString()}`)
-      .then((data) => {
-        if (!cancelled) {
-          const summary = summarizeClinicalInboxTasks(data.tasks)
-          setClinicalInboxCount(summary.total)
-          setClinicalInboxBreakdown(summary)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setClinicalInboxCount(null)
-          setClinicalInboxBreakdown(null)
-        }
-      })
-    return () => { cancelled = true }
-  }, [route, clinicalRevision])
 
   useEffect(() => {
     let cancelled = false
@@ -291,8 +270,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
       <main className="main">
         {route === 'clinical-inbox' && (
           <ClinicalInboxView
-            onCountChange={setClinicalInboxCount}
-            onBreakdownChange={setClinicalInboxBreakdown}
+            inbox={inbox}
             initialCategory={routeContext.category || ''}
             onOpenPatient={(id: string, customerId?: string) => go('patient-hub', { patientId: id || '', customerId: customerId || '', hubMode: 'charts' })}
             onOpenChat={(id: string, channelId?: string) => go('patient-hub', { patientId: id || '', channelId: channelId || '', hubMode: 'needs_reply' })}
@@ -417,7 +395,7 @@ function App({ doctorEmail = '', onSignOut }: AppProps) {
             initialPatientPhone={routeContext.patientPhone}
             originLabel={routeContext.originLabel}
             onBack={() => go(routeContext.originRoute || 'appointments')}
-            onSent={() => setClinicalRevision((revision) => revision + 1)}
+            onSent={inbox.refresh}
           />
         )}
       </main>
