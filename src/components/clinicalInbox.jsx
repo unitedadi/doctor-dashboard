@@ -490,7 +490,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
     <div className="screen clinical-inbox-screen fade-in">
       <Topbar
         title="Clinical inbox"
-        subtitle={loading ? "Loading clinical work…" : `${activeTasks.length} task${activeTasks.length === 1 ? "" : "s"} need a doctor decision.`}
+        subtitle={loading ? (activeTasks.length ? "Refreshing clinical work…" : "Loading clinical work…") : `${activeTasks.length} task${activeTasks.length === 1 ? "" : "s"} need a doctor decision.`}
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search tasks or patients"
@@ -513,7 +513,7 @@ function ClinicalInboxView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescri
           ) : null}
 
           <div className="clinical-task-list">
-            {loading ? (
+            {loading && !activeTasks.length ? (
               <div className="clinical-inbox-empty">Loading clinical tasks...</div>
             ) : groupedTasks.length ? (
               groupedTasks.map((group) => {

@@ -15,7 +15,7 @@ test('loads past 100 tasks and includes refill tasks from subsequent pages', asy
   assert.equal(data.tasks.length,125);
   assert.equal(summarizeClinicalInboxTasks(data.tasks,data.counts).refillReview,15);
 });
-test('does not publish a partial snapshot when a later page fails', async () => {
+test('reports a later-page failure instead of returning a successful incomplete result', async () => {
   let calls=0;
   await assert.rejects(loadClinicalInbox(async()=>{
     if (++calls===2) throw Error('connection lost');
@@ -29,4 +29,21 @@ test('uses complete server totals instead of the displayed page size',()=>{
   assert.equal(summary.needsOutcome,8);
   assert.equal(summary.purchaseReview,5);
   assert.equal(summary.purchaseIntake,11);
+});
+
+test('publishes the first page and full counts before a slow later page completes', async () => {
+  let release;
+  const slowPage = new Promise(resolve => { release = resolve; });
+  const snapshots = [];
+  let calls = 0;
+  const complete = loadClinicalInbox(async () => {
+    if (++calls === 2) return slowPage;
+    return {tasks:[{id:'first'}],has_more:true,counts:{needs_prescription:2}};
+  }, '/api', 'qa', undefined, page => snapshots.push(page));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshots.length, 1);
+  assert.deepEqual(snapshots[0].tasks, [{id:'first'}]);
+  assert.equal(snapshots[0].counts.needs_prescription, 2);
+  release({tasks:[{id:'second'}],has_more:false,counts:{needs_prescription:2}});
+  assert.equal((await complete).tasks.length, 2);
 });

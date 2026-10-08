@@ -1,8 +1,8 @@
 export const INBOX_CATEGORIES = ['needs_prescription','needs_outcome','message_needs_response','reissue','refill_review','lab_results_ready','purchase_review','purchase_intake'];
 
-// Load every page before publishing a new snapshot. A failed page must never
-// replace a correct count with a partial list.
-export async function loadClinicalInbox(fetcher, apiBase, doctorId, signal) {
+// Publish available tasks while later pages load. Counts always come from the
+// complete server totals, never from the number of tasks loaded so far.
+export async function loadClinicalInbox(fetcher, apiBase, doctorId, signal, onPage) {
   const tasks = [];
   let first;
   let offset = 0;
@@ -11,6 +11,7 @@ export async function loadClinicalInbox(fetcher, apiBase, doctorId, signal) {
     const page = await fetcher(`${apiBase}/doctor/clinical-inbox?${params}`, { signal });
     first ??= page;
     tasks.push(...(page.tasks || []));
+    onPage?.({ ...first, tasks: [...new Map(tasks.map(task => [task.id, task])).values()] });
     if (!page.has_more) break;
     if (!page.tasks?.length) throw new Error('Incomplete inbox page. Please refresh.');
     offset += page.tasks.length;
