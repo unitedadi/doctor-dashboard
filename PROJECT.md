@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-12 - Request paid-order intake on WhatsApp
+
+- Source: Aditya requested a doctor action to ask the customer for missing intake on their existing paid order.
+- Changed: Patient details needed now has a Request details on WhatsApp button, saved send/receipt state, duplicate-click protection, and honest uncertain-send handling. Existing approval and reconciliation actions are unchanged.
+- Verification: 58 existing tests, production build, and 8 local full-dashboard browser scenarios passed. Screenshots and results: `output/intake-whatsapp/`; repeat with `scripts/check-intake-whatsapp.mjs` using its documented isolated mock API settings.
+- Release authorized on 12 October after Meta approved `rx_purchase_intake_request_v1`. Tests and production build rerun before commit. Requires paired backend and checkout paid-intake resume release before enabling; live deployment needs independent verification. No real send performed. Backend owns access, recipient, link and durable one-attempt guard; delivered/read require provider receipts.
+
 ### 2026-10-05 - Needs prescription sidebar shortcut
 
 - Source: Aditya requested a separate sidebar count for pending prescriptions, followed by approval to commit and push to main.
