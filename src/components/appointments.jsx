@@ -340,6 +340,12 @@ function appointmentOutcomeActionsAvailable(appointment, nowMs) {
   return nowMs >= startMs;
 }
 
+// Once an appointment has started, a member who did not join is a no-show, not a cancellation: ops follows no-shows up.
+function appointmentStarted(appointment, nowMs) {
+  const startMs = new Date(appointment?.scheduledStartAt || "").getTime();
+  return Number.isFinite(startMs) && nowMs >= startMs;
+}
+
 function appointmentSlotEnded(appointment, nowMs) {
   const endMs = new Date(appointment?.scheduledEndAt || "").getTime();
   return Number.isFinite(endMs) && nowMs >= endMs;
@@ -689,7 +695,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const selectedOutcomeUnlocked = selected ? appointmentOutcomeActionsAvailable(selected, nowMs) : false;
   const canCompleteSelected = selectedActionState.canComplete && selectedOutcomeUnlocked;
   const canNoShowSelected = selectedActionState.canNoShow && selectedOutcomeUnlocked;
-  const canCancelSelected = Boolean(selected && !isClosedStatus(selected.status));
+  const canCancelSelected = Boolean(selected && !isClosedStatus(selected.status) && !appointmentStarted(selected, nowMs));
   const canRecordOutcomeSelected = selectedActionState.canRecordOutcome;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
   const selectedHasMedicationOrder = Boolean(
@@ -912,8 +918,12 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const cancelConsultation = async () => {
     if (!cancelConfirm) return;
     const appointment = cancelConfirm;
-    setCancellingId(appointment.id);
     setCancelConfirm(null);
+    if (appointmentStarted(appointment, Date.now())) {
+      setError("This consultation has started. Mark it as a no-show instead.");
+      return;
+    }
+    setCancellingId(appointment.id);
     setError("");
     try {
       const response = await authFetch(`${API_BASE}/doctor/appointments/${appointment.id}/cancel`, {
