@@ -5,8 +5,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
-// Once an appointment has started, the doctor marks a member who did not join as a no-show; Cancel is only offered before.
-// Real React UI, synthetic patients, mocked reads only. Never calls the live API.
+// QuickWLP stays cancellable while booked; Rx switches to no-show once the appointment starts.
+// Real React UI, synthetic patients, mocked API requests only. Never calls the live API.
 const cwd = fileURLToPath(new URL('../', import.meta.url))
 const socket = createServer()
 await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve))
@@ -33,7 +33,7 @@ function appointment(id, name, time, date, doctorId, source) {
   return {
     id, source, patient_id: `patient_${id}`, quickwlp_lead_id: `lead_${id}`,
     time, date, duration_minutes: 15, service_name: 'Quick Consult', visit_type: 'phone',
-    status: 'upcoming', track_key: 'weight-loss', doctor_id: doctorId,
+    status: 'BOOKED', track_key: 'weight-loss', doctor_id: doctorId,
     scheduled_start_at: `${date}T${time}:00+04:00`, scheduled_end_at: `${date}T${time.slice(0, 3)}15:00+04:00`,
     patient: { id: `patient_${id}`, name, initials: name[0], phone: '+971500000000' },
   }
@@ -60,6 +60,9 @@ try {
       if (!url.pathname.startsWith('/api/')) return route.continue()
       if (request.method() !== 'GET') {
         writes.push(`${request.method()} ${url.pathname}`)
+        if (request.method() === 'POST' && /^\/api\/doctor\/appointments\/(started|upcoming)\/cancel$/.test(url.pathname)) {
+          return route.fulfill({ json: { ok: true } })
+        }
         return route.abort()
       }
       if (url.pathname.endsWith('/dashboard/appointments')) {
@@ -67,6 +70,9 @@ try {
         return route.fulfill({ json: { today: [
           appointment('started', 'Started Patient', '15:00', date, 'doctor_sami_dev', source),
           appointment('upcoming', 'Upcoming Patient', '16:00', date, 'doctor_sami_dev', source),
+          ...['COMPLETED', 'CANCELLED', 'NO_SHOW'].map(status => ({
+            ...appointment(status, `${status} Patient`, '15:00', date, 'doctor_sami_dev', source), status,
+          })),
         ], week: [] } }).catch(() => {})
       }
       return route.fulfill({ json: { patients: [], tasks: [], metrics: {} } })
@@ -77,24 +83,46 @@ try {
       await until(async () => (await page.locator('.workbench-name').textContent().catch(() => '')) === name, `${name} selected`)
     }
     await page.goto(`${origin}/?account_id=mp_sami`)
-    await until(() => page.locator('.apt-card').count().then(n => n === 2), 'schedule loaded')
+    await until(() => page.locator('.apt-card').count().then(n => n === 5), 'schedule loaded')
+
+    for (const status of ['COMPLETED', 'CANCELLED', 'NO_SHOW']) {
+      await choose(`${status} Patient`)
+      assert.equal(await button('Cancel').count(), 0, `${source}: closed ${status} consult cannot be cancelled`)
+    }
 
     await choose('Upcoming Patient')
     assert.equal(await button('Cancel').count(), 1, 'Cancel is offered before the appointment starts')
     assert.equal(await button('Mark no-show').count(), 0, 'no-show waits for the start time')
 
     await choose('Started Patient')
-    assert.equal(await button('Cancel').count(), 0, 'no Cancel once the appointment has started')
-    assert.equal(await button('Mark no-show').count(), 1, 'Mark no-show is offered instead')
+    assert.equal(await button('Cancel').count(), source === 'quickwlp' ? 1 : 0, `${source}: Cancel after start`)
+    assert.equal(await button('Mark no-show').count(), 1, 'Mark no-show is offered after start')
+
+    if (source === 'quickwlp') {
+      await button('Cancel').click()
+      await button('Cancel consultation').click()
+      await until(() => Promise.resolve(writes.length === 1), 'QuickWLP cancel request after start')
+      assert.deepEqual(writes, ['POST /api/doctor/appointments/started/cancel'])
+    }
 
     await choose('Upcoming Patient')
+    await button('Cancel').click()
     await page.clock.runFor(31 * 60_000)
     await until(() => button('Mark no-show').count().then(n => n === 1), 'no-show unlocks at the start time')
-    assert.equal(await button('Cancel').count(), 0, 'Cancel goes away when the start time passes')
+    await button('Cancel consultation').click()
+    if (source === 'rx') {
+      await until(() => page.getByText('This consultation has started. Mark it as a no-show instead. Nothing was changed.', { exact: true }).count().then(n => n === 1), 'Rx confirmation blocked after start')
+    } else {
+      await until(() => Promise.resolve(writes.length === 2), 'QuickWLP confirmation remains allowed after start')
+    }
+    await until(() => button('Cancel').count().then(n => n === (source === 'quickwlp' ? 1 : 0)), `${source}: Cancel availability updates at start time`)
 
-    assert.deepEqual(writes, [], 'tests perform no mutations')
+    assert.deepEqual(writes, source === 'quickwlp' ? [
+      'POST /api/doctor/appointments/started/cancel',
+      'POST /api/doctor/appointments/upcoming/cancel',
+    ] : [], 'only mocked QuickWLP cancellations are sent; Rx cutoff prevents writes')
     assert.deepEqual(errors, [], 'no runtime errors')
-    console.log(`PASS ${source}: Cancel before the start, Mark no-show after it, switching at the start time`)
+    console.log(`PASS ${source}: Cancel availability, confirmation across start time, closed statuses, no-show and runtime checks`)
     await context.close()
   }
 } finally {

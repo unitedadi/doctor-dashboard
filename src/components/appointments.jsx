@@ -340,7 +340,7 @@ function appointmentOutcomeActionsAvailable(appointment, nowMs) {
   return nowMs >= startMs;
 }
 
-// Once an appointment has started, a member who did not join is a no-show, not a cancellation: ops follows no-shows up.
+// Rx cancellation closes at the start time; booked QuickWLP consultations remain cancellable.
 function appointmentStarted(appointment, nowMs) {
   const startMs = new Date(appointment?.scheduledStartAt || "").getTime();
   return Number.isFinite(startMs) && nowMs >= startMs;
@@ -695,7 +695,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
   const selectedOutcomeUnlocked = selected ? appointmentOutcomeActionsAvailable(selected, nowMs) : false;
   const canCompleteSelected = selectedActionState.canComplete && selectedOutcomeUnlocked;
   const canNoShowSelected = selectedActionState.canNoShow && selectedOutcomeUnlocked;
-  const canCancelSelected = Boolean(selected && !isClosedStatus(selected.status) && !appointmentStarted(selected, nowMs));
+  const canCancelSelected = Boolean(selected && !isClosedStatus(selected.status) && (selectedIsQuickWlp || !appointmentStarted(selected, nowMs)));
   const canRecordOutcomeSelected = selectedActionState.canRecordOutcome;
   const canPrescribeSelectedRx = selected && !selectedIsQuickWlp && selectedActionState.canPrescribe;
   const selectedHasMedicationOrder = Boolean(
@@ -919,7 +919,7 @@ function AppointmentsView({ onOpenPatient, onOpenChat, onPrescribeRx, onPrescrib
     if (!cancelConfirm) return;
     const appointment = cancelConfirm;
     setCancelConfirm(null);
-    if (appointmentStarted(appointment, Date.now())) {
+    if (appointment.source !== "quickwlp" && appointmentStarted(appointment, Date.now())) {
       setError("This consultation has started. Mark it as a no-show instead.");
       return;
     }

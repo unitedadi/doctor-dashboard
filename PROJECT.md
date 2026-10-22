@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-22 - Keep booked QuickWLP consultations cancellable after start
+
+- Source: Aditya requested removing the start-time cancellation cutoff for QuickWLP only, with commit, push to main and deployment authorized.
+- Changed: Schedule keeps Cancel available for open QuickWLP consultations and allows confirmation after the start time; Rx retains both cutoff checks. Updated the browser regression for BOOKED consultations, closed statuses and confirmation across the start time.
+- Verification: 58 unit tests, QuickWLP/Rx browser regression and production build passed. Full lint reports three existing errors in unchanged `clinicalInboxData.d.ts` and `useClinicalInbox.ts`; the build warns about bundle size.
+- Release: use the existing main-branch Vercel deployment path; final commit and deployment evidence recorded in `~/BOTS_README.md`.
+
 ### 2026-10-12 - Request paid-order intake on WhatsApp
 
 - Source: Aditya requested a doctor action to ask the customer for missing intake on their existing paid order.
