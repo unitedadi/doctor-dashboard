@@ -28,11 +28,16 @@ export default function PatientDemographics({ patientId, leadId, doctorId = DOCT
   const [saved, setSaved] = React.useState(false);
   const [reload, setReload] = React.useState(0);
   const path = leadId ? `/doctor/quickwlp/requests/${encodeURIComponent(leadId)}/demographics`
-    : `/doctor/patients/${encodeURIComponent(patientId)}/demographics`;
+    : patientId ? `/doctor/patients/${encodeURIComponent(patientId)}/demographics` : null;
 
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true); setPatient(null); setDraft(null); setError(""); setSaved(false); onReady?.(false);
+    if (!path) {
+      setError("The prescription’s member link is missing. Reopen it from the patient’s chart.");
+      setLoading(false);
+      return;
+    }
     fetchJson(`${API_BASE}${path}?doctor_id=${encodeURIComponent(doctorId)}`)
       .then(data => { if (!cancelled) { setPatient(data.patient); onReady?.(!data.patient.missing_fields?.length); } })
       .catch(err => { if (!cancelled) setError(errorText(err)); })

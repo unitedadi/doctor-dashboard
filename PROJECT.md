@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-23 - Reissue demographics without a consultation record
+
+- Source: Patient Hub reissue showed a missing-member error although the same member existed in both patient stores.
+- Changed QuickWLP reissues to read the exact Patient Hub member instead of the consultation-only lead endpoint. New consultation prescribing retains its existing route. Missing member IDs fail closed without guessing.
+- Verification: 61 Node tests and production build passed. Playwright exercised the actual prescribing view with synthetic responses: refill without consultation, missing DOB and same-member save, missing/inaccessible member, ordinary consultation route, and member switching. No prescription was submitted.
+- Live read-only diagnosis: lead demographics returned 404 while exact-member demographics returned 200. User-confirmed DOB was separately saved through Ops member editing; prescription rows and member IDs were unchanged. Dashboard fix remains isolated and unreleased.
+
 ### 2026-10-22 - Keep booked QuickWLP consultations cancellable after start
 
 - Source: Aditya requested removing the start-time cancellation cutoff for QuickWLP only, with commit, push to main and deployment authorized.

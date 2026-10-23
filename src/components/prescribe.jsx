@@ -1657,7 +1657,14 @@ function PrescribeView({
       <div className="rx-layout">
         <div className="rx-main">
           <div className="rx-main-scroll dd-scroll">
-            {isQuickWlpMode && <PatientDemographics key={initialQuickWlpLeadId} leadId={initialQuickWlpLeadId} doctorId={quickWlpDoctorId} onReady={setDemographicsReady} onSaved={() => setError("")} />}
+            {isQuickWlpMode && <PatientDemographics
+              key={isAmendMode ? initialPatientId : initialQuickWlpLeadId}
+              patientId={isAmendMode ? initialPatientId : undefined}
+              leadId={isAmendMode ? undefined : initialQuickWlpLeadId}
+              doctorId={quickWlpDoctorId}
+              onReady={setDemographicsReady}
+              onSaved={() => setError("")}
+            />}
             {hasClinicalBlocker ? (
               <div className="api-state rx-api-state rx-clinical-blocker" role="alert">
                 <span>
