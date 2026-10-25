@@ -155,10 +155,6 @@ function createDoctorNote(patientId, body) {
   });
 }
 
-function fetchPatientRefillRequests(patientId) {
-  return fetchJson(`${API_BASE}/doctor/rx/refill-requests?doctor_id=${DOCTOR_ID}&patient_id=${encodeURIComponent(patientId)}&limit=20&offset=0`);
-}
-
 function updateClinicalProfile(patientId, body) {
   return fetchJson(`${API_BASE}/doctor/patients/${encodeURIComponent(patientId)}/clinical-profile?doctor_id=${DOCTOR_ID}`, {
     method: "PATCH",
@@ -278,14 +274,14 @@ function assessmentKindLabel(value) {
 }
 
 function assessmentAnswerPairs(submission) {
+  const labels = new Map(asArray(submission?.ordered_answers).map((answer) => [answer.question_id, answer.label]));
   return Object.entries(submission?.answers || {})
     .map(([key, value]) => ({
       key,
-      label: humanizeAnswerKey(key),
+      label: labels.get(key) || humanizeAnswerKey(key),
       value: humanizeAnswerValue(value),
     }))
-    .filter((item) => item.value)
-    .slice(0, 12);
+    .filter((item) => item.value);
 }
 
 function assessmentAnswerGroup(key) {
@@ -458,11 +454,19 @@ function refillDetailRows(refill) {
       label: "Delivery experience",
       value: refillAnswerLabel("delivery_experience", readAnswer(refill, ["delivery_experience", "delivery_rating", "experience"])),
     },
+    ...Object.entries(refill.answers_json || {})
+      .filter(([key]) => ![
+        "dosage_adjustment", "dose_adjustment", "dosePreference", "dose_preference",
+        "side_effects", "sideEffects", "weight_loss_last_month", "total_progress", "weight_loss_range", "progress",
+        "current_weight_kg", "current_weight", "weight_kg", "delivery_experience", "delivery_rating", "experience",
+        "doctor_message", "message_to_doctor", "message",
+      ].includes(key))
+      .map(([key, value]) => ({ label: humanizeAnswerKey(key), value: humanizeAnswerValue(value) })),
   ].filter((row) => row.value);
 }
 
 function RefillRequestSummary({ refills }) {
-  const visibleRefills = asArray(refills).slice(0, 2);
+  const visibleRefills = asArray(refills);
   if (!visibleRefills.length) return null;
   return (
     <ChartSection title="Refill request details" subtitle="Patient-submitted answers for dose, progress, side effects, and weight.">
@@ -864,11 +868,8 @@ function PrescriptionGuardrails({
   );
 }
 
-function AssessmentReader({ assessment, title = "Assessment answers", subtitle = "Latest intake answers in readable clinical language.", className = "" }) {
+function AssessmentReader({ assessment, title = "Assessment answers", subtitle = "All submitted intake answers in readable clinical language.", className = "" }) {
   const submissions = asArray(assessment?.submissions);
-  const latest = submissions[0];
-  const pairs = assessmentAnswerPairs(latest);
-  const groups = groupedAssessmentPairs(pairs);
   const basic = assessment?.basic || {};
   const basicPairs = [
     { label: "Body shape", value: humanizeAnswerValue(basic.body_shape) },
@@ -879,36 +880,38 @@ function AssessmentReader({ assessment, title = "Assessment answers", subtitle =
 
   return (
     <ChartSection title={title} subtitle={subtitle} className={`patient-assessment-section ${className}`.trim()}>
-      {latest ? (
-        <>
-          <div className="patient-assessment-head">
-            <div>
-              <strong>{assessmentKindLabel(latest.kind || latest.track_key)}</strong>
-              <span>{[latest.submitted_at ? formatDateTime(latest.submitted_at) : "", latest.template_version ? `Version ${latest.template_version}` : ""].filter(Boolean).join(" · ")}</span>
+      {submissions.length ? submissions.map((submission, index) => {
+        const groups = groupedAssessmentPairs(assessmentAnswerPairs(submission));
+        return (
+          <article className="patient-care-subsection" key={submission.id || index}>
+            <div className="patient-assessment-head">
+              <div>
+                <strong>{assessmentKindLabel(submission.kind || submission.track_key)}</strong>
+                <span>{[submission.submitted_at ? formatDateTime(submission.submitted_at) : "", submission.template_version ? `Version ${submission.template_version}` : ""].filter(Boolean).join(" · ")}</span>
+              </div>
             </div>
-            {submissions.length > 1 ? <em>{submissions.length} submissions</em> : null}
-          </div>
-          {groups.length ? (
-            <div className="patient-assessment-groups">
-              {groups.map((group) => (
-                <div className="patient-assessment-group" key={group.label}>
-                  <h4>{group.label}</h4>
-                  <div className="patient-assessment-grid">
-                    {group.items.map((item) => (
-                      <div key={item.key}>
-                        <span>{item.label}</span>
-                        <strong>{item.value}</strong>
-                      </div>
-                    ))}
+            {groups.length ? (
+              <div className="patient-assessment-groups">
+                {groups.map((group) => (
+                  <div className="patient-assessment-group" key={group.label}>
+                    <h4>{group.label}</h4>
+                    <div className="patient-assessment-grid">
+                      {group.items.map((item) => (
+                        <div key={item.key}>
+                          <span>{item.label}</span>
+                          <strong>{item.value}</strong>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyInline>No detailed answers available for the latest assessment.</EmptyInline>
-          )}
-        </>
-      ) : basicPairs.length ? (
+                ))}
+              </div>
+            ) : (
+              <EmptyInline>No detailed answers available for this assessment.</EmptyInline>
+            )}
+          </article>
+        );
+      }) : basicPairs.length ? (
         <div className="patient-assessment-grid">
           {basicPairs.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
         </div>
@@ -1685,7 +1688,6 @@ function PatientChart({
   const [error, setError] = useStatePC("");
   const [editingProfile, setEditingProfile] = useStatePC(false);
   const [outcomeTarget, setOutcomeTarget] = useStatePC(null);
-  const [refillRequestDetails, setRefillRequestDetails] = useStatePC([]);
   const compact = mode === "compact";
   const appointmentMode = mode === "appointment";
   const taskMode = mode === "task";
@@ -1725,12 +1727,6 @@ function PatientChart({
   const deliveries = asArray(chart?.medication_delivery);
   const refills = asArray(chart?.refills);
   const consultations = asArray(chart?.consultations);
-  const refillKey = refills.map((refill) => refill.id || refill.refill_request_id || refill.submitted_at || refill.status).join("|");
-  const refillDetailsById = new Map(refillRequestDetails.map((refill) => [refill.refill_request_id || refill.id, refill]));
-  const enrichedRefills = refills.map((refill) => ({
-    ...refill,
-    ...(refillDetailsById.get(refill.id || refill.refill_request_id) || {}),
-  }));
   const latestPrescription = prescriptions[0];
   const amendablePrescription = prescriptions.find((prescription) => prescription.can_amend === true);
   const nextAction = asArray(chart?.next_actions)[0];
@@ -1770,22 +1766,6 @@ function PatientChart({
     refreshChart();
   };
 
-  useEffectPC(() => {
-    if (!patient.id || !refills.length) {
-      setRefillRequestDetails([]);
-      return undefined;
-    }
-    let cancelled = false;
-    fetchPatientRefillRequests(patient.id)
-      .then((data) => {
-        if (!cancelled) setRefillRequestDetails(asArray(data.requests || data.refill_requests));
-      })
-      .catch(() => {
-        if (!cancelled) setRefillRequestDetails([]);
-      });
-    return () => { cancelled = true; };
-  }, [patient.id, refillKey]);
-
   if (!patientId && !chart) return <div className="empty-state">Select a patient chart.</div>;
   if (loading && !chart) return <div className="empty-state">Loading patient chart...</div>;
   if (error && !chart) return <div className="api-state patient-api-state">{error}</div>;
@@ -1801,7 +1781,7 @@ function PatientChart({
         medication={medication}
         latestPrescription={latestPrescription}
         deliveries={deliveries}
-        refills={enrichedRefills}
+        refills={refills}
         patientPayload={patientPayload}
         onAmendPrescription={onAmendPrescription}
         onNoteSaved={saveNoteAndRefreshChart}
@@ -1829,7 +1809,7 @@ function PatientChart({
           lifecycle={lifecycle}
           latestPrescription={latestPrescription}
           deliveries={deliveries}
-          refills={enrichedRefills}
+          refills={refills}
         patientPayload={patientPayload}
         onAmendPrescription={onAmendPrescription}
       />
@@ -1875,7 +1855,7 @@ function PatientChart({
           medication={medication}
           latestPrescription={latestPrescription}
           deliveries={deliveries}
-          refills={enrichedRefills}
+          refills={refills}
           careState={chatCareState}
           eligibilityReason={context?.eligibilityReason}
           lastConsultAt={context?.lastConsultAt}
@@ -1959,7 +1939,7 @@ function PatientChart({
             medication={medication}
             latestPrescription={latestPrescription}
             latestDelivery={deliveries[0]}
-            refills={enrichedRefills}
+            refills={refills}
           />
         )}
 
@@ -1991,7 +1971,7 @@ function PatientChart({
           <RxLifecycleStrip steps={lifecycle} />
         </ChartSection>
 
-        <RefillRequestSummary refills={enrichedRefills} />
+        <RefillRequestSummary refills={refills} />
 
         <div className={compact || appointmentMode || taskMode ? "patient-chart-single" : "patient-emr-grid"}>
           <div className="patient-emr-main">
