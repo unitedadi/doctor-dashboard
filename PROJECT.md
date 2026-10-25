@@ -78,6 +78,13 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-25 - MZFIX-FRONTEND expired WLP chart history
+
+- Source: Aditya requested the frontend half of the expired-member clinical-history repair, with an isolated branch and PR only.
+- Changed: the chart reads refill answers directly from its authorized chart response, renders every check-in and assessment, and keeps answers after the twelfth visible.
+- Verification: synthetic EXPIRED-member browser regression covers three PRESCRIBED check-ins, dated older assessments, legacy measurements supplied without a health-profile row, and a denied response for an unrelated doctor. The original frontend fails four regression cases; the updated frontend passes all 67 tests. Full `npm test` and `npm run build` passed; lint retains three existing errors in unchanged inbox files. Screenshot: `output/expired-wlp-chart-history.png`.
+- Follow-up: depends on the paired RealBackend `refills[].answers_json` and dated legacy `clinical.assessment.submissions` fields; no merge, deployment, production configuration change, or database write is authorized by this task.
+
 ### 2026-10-23 - Reissue demographics without a consultation record
 
 - Source: Patient Hub reissue showed a missing-member error although the same member existed in both patient stores.
