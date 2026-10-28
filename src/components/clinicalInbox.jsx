@@ -297,6 +297,40 @@ function TaskRow({ task, selected, onSelect }) {
   );
 }
 
+function PatientCallButton({ name, phone }) {
+  const dialogRef = React.useRef(null);
+  const buttonRef = React.useRef(null);
+  const titleId = React.useId();
+  const number = String(phone || "").trim();
+  const { I } = window.DD_UI;
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="clinical-secondary-action clinical-call-button"
+        onClick={() => dialogRef.current?.showModal()}
+        disabled={!number}
+        title={number ? `Show ${name}'s phone number` : "Phone number unavailable"}
+        aria-haspopup="dialog"
+      >
+        {I.phone} Call
+      </button>
+      <dialog ref={dialogRef} className="clinical-call-dialog" aria-labelledby={titleId} onClose={() => buttonRef.current?.focus()}>
+        <div className="clinical-call-dialog-head">
+          <h2 id={titleId}>Call {name}</h2>
+          <button type="button" className="icon-btn" aria-label="Close phone number" onClick={() => dialogRef.current?.close()}>
+            {I.x}
+          </button>
+        </div>
+        <p className="clinical-call-number">{number}</p>
+        <p className="clinical-call-hint">Use this number to call the patient.</p>
+      </dialog>
+    </>
+  );
+}
+
 function TaskDetail({ onResolved, task, onOpenPatient, onOpenChat, onOpenContextChat, onPrescribeRx, onPrescribeQuickWlp, onRecordOutcome, onDismissRefill, refillActionId }) {
   const { I, Avatar, StatusChip, ClinicalContextBanner } = window.DD_UI;
   if (!task) {
@@ -350,8 +384,11 @@ function TaskDetail({ onResolved, task, onOpenPatient, onOpenChat, onOpenContext
     <aside className="clinical-inbox-detail">
       <div className="clinical-detail-head">
         <Avatar initials={task.initials} name={task.patientName} size="lg" />
-        <div>
-          <h2>{task.patientName}</h2>
+        <div className="clinical-detail-patient">
+          <div className="clinical-detail-title">
+            <h2>{task.patientName}</h2>
+            <PatientCallButton key={task.id} name={task.patientName} phone={task.phone} />
+          </div>
           <p>{[task.phone, memberMeta(task)].filter(Boolean).join(" · ")}</p>
         </div>
       </div>
