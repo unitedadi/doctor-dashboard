@@ -12,6 +12,7 @@ import {
   setActiveDoctorAccount,
 } from './config.js'
 import { setApiTokenProvider } from './lib/authFetch.js'
+import { patientDeepLinkRedirect } from './lib/patientDeepLink.js'
 
 setActiveDoctorAccount(resolveDoctorAccountFromLocation() || undefined)
 
@@ -217,7 +218,7 @@ function DoctorAuthShell() {
             Workspace · <strong>{account.profile.name}</strong>
           </p>
           <div className="doctor-auth-clerk">
-            <SignIn routing="hash" />
+            <SignIn routing="hash" forceRedirectUrl={patientDeepLinkRedirect(window.location)} />
             <p className="doctor-auth-security">Secured by Clerk · desktop only</p>
           </div>
         </div>

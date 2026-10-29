@@ -14,6 +14,7 @@ import './styles/dashboard.css'
 import { API_BASE, DOCTOR_ID } from './config'
 import { fetchJson } from './lib/authFetch.js'
 import { prescriptionAmendmentContext } from './lib/prescriptionAmendment.js'
+import { patientIdFromPath } from './lib/patientDeepLink.js'
 import { summarizeClinicalInboxTasks } from './lib/clinicalInboxSummary.js'
 import { playDoctorAlertSound, startDoctorAlertSound, unlockDoctorAlertSound } from './lib/doctorAlertSound.js'
 import {
@@ -93,6 +94,8 @@ function dubaiToday() {
 }
 
 function initialNavigation(): { route: string; context: Record<string, string> } {
+  const patientId = patientIdFromPath(window.location.pathname)
+  if (patientId) return { route: 'patient-hub', context: { patientId, hubMode: 'charts' } }
   const params = new URLSearchParams(window.location.search)
   const view = params.get('view')
   const channelId = params.get('channel_id') || ''

@@ -78,6 +78,12 @@ The business goal is to reduce manual founder/CX intervention by giving doctors 
 
 ## Task History
 
+### 2026-10-29 - Patient chart deep links
+
+- Source: Aditya requested direct patient-ID links to the doctor chart.
+- Changed: both patient-ID paths open the existing doctor-scoped chart, with the destination preserved through sign-in and a clear missing-patient state.
+- Verification: routing and redirect unit tests, synthetic browser checks, and production build. Production release requires approval through the separate Vercel-backed main branch.
+
 ### 2026-10-25 - MZFIX-FRONTEND expired WLP chart history
 
 - Source: Aditya requested the frontend half of the expired-member clinical-history repair, with an isolated branch and PR only.

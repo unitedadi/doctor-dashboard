@@ -811,7 +811,7 @@ function PatientsView({ initialPatientId, initialCustomerId, onMessage, onPrescr
           ) : p ? (
             <PatientDetail p={p} onMessage={onMessage} onPrescribe={onPrescribe} onAmendPrescription={onAmendPrescription} onProfileSaved={reloadPatients} />
           ) : (
-            <div className="empty-state">{initialPatientId && selectedId === initialPatientId ? "The requested patient’s chart is unavailable. No other patient has been opened." : "Select a patient"}</div>
+            <div className="empty-state">{error ? "Could not load patient charts. Try again." : initialPatientId && selectedId === initialPatientId ? "Patient not found or not available to your account. No other patient has been opened." : "Select a patient"}</div>
           )}
         </div>
       </div>
