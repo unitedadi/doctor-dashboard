@@ -107,6 +107,25 @@ function LabRequestsSummary({ requests }) {
   );
 }
 
+function LabResultHandoffs({ reports }) {
+  const items = asArray(reports);
+  if (!items.length) return null;
+  return (
+    <ChartSection title="Shared lab results" subtitle="Reports shared for this patient's consultations.">
+      <div className="patient-lab-request-list">
+        {items.map((report) => (
+          <article className="patient-lab-request" key={report.note_id}>
+            <div><strong>Lab report · {report.order_id}</strong><span>{formatDateTime(report.created_at)}</span></div>
+            <button type="button" className="btn-ghost" onClick={() => downloadLabReport(report.report_url).catch((err) => window.alert(err.message))}>
+              Download results
+            </button>
+          </article>
+        ))}
+      </div>
+    </ChartSection>
+  );
+}
+
 function formatMoneyFils(value) {
   const amount = Number(value || 0);
   if (!Number.isFinite(amount) || amount <= 0) return "";
@@ -1965,6 +1984,7 @@ function PatientChart({
           </ChartSection>
         ) : null}
 
+        <LabResultHandoffs reports={chart.lab_result_handoffs} />
         <LabRequestsSummary requests={chart.lab_requests} />
 
         <ChartSection title="Prescription lifecycle" subtitle={focusedMode ? "" : "Consult, prescription, payment, delivery, and refill state in one place."} className="patient-lifecycle-section">
