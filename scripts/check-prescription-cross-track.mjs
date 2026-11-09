@@ -44,8 +44,8 @@ try {
     if (attempt === 199) throw new Error(`Local test server did not start: ${serverOutput}`)
     await delay(25)
   }
-  browser = await chromium.launch({ channel: 'chromium' })
-  for (const source of ['quickwlp', 'rx']) for (const track of ['weight-loss', 'peptides']) {
+  browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: 'chromium' })
+  for (const source of ['quickwlp', 'rx']) for (const track of (source === 'quickwlp' ? ['weight-loss', 'peptides', 'lab', 'iv', 'skin'] : ['weight-loss', 'peptides'])) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
     const page = await context.newPage()
     const writes = []
@@ -80,8 +80,9 @@ try {
     })
     await page.goto(`${origin}/?account_id=mp_sami`)
     await page.getByRole('button', { name: 'Issue prescription', exact: true }).click()
-    const otherTrack = track === 'weight-loss' ? 'Peptides' : 'Weight loss'
-    const otherCatalog = track === 'weight-loss' ? 'peptides' : 'weight-loss'
+    const startsWithPeptides = track === 'peptides'
+    const otherTrack = startsWithPeptides ? 'Weight loss' : 'Peptides'
+    const otherCatalog = startsWithPeptides ? 'weight-loss' : 'peptides'
     const sharedRow = page.locator('.rx-product-row').filter({ hasText: 'Shared medication' })
     await sharedRow.getByRole('button', { name: 'Add', exact: true }).click()
     const tab = page.locator('.rx-product-source-tabs button').filter({ hasText: otherTrack })

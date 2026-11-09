@@ -963,7 +963,10 @@ function PrescribeView({
   const [refillContextRetry, setRefillContextRetry] = useStateR(0);
   const labIdempotencyKey = useRefR("");
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
-  const quickWlpTrackKey = initialQuickWlpTrackKey || initialTrackKey || "weight-loss";
+  // Visit tracks (for example lab or IV) are not medication catalogue keys.
+  // Preserve the consultation context; all medication tabs remain available.
+  const consultTrackKey = initialQuickWlpTrackKey || initialTrackKey || "weight-loss";
+  const quickWlpTrackKey = TRACKS.some((track) => track.key === consultTrackKey) ? consultTrackKey : "weight-loss";
   const quickWlpSellerId = initialQuickWlpSellerId || SUPPLEMENT_SELLER_ID;
   const quickWlpSellerName = initialQuickWlpSellerName || (initialQuickWlpSellerId ? initialQuickWlpSellerId : "DarDoc");
   const quickWlpPromoCode = initialQuickWlpPromoCode || "";
