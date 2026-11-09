@@ -1073,7 +1073,7 @@ function PrescribeView({
   const activeProductCatalog = productCatalogKey === SUPPLEMENTS_CATALOG.key
     ? SUPPLEMENTS_CATALOG
     : TRACKS.find((track) => track.key === productCatalogKey) || activeTrack;
-  const productCatalogs = patient ? TRACKS : [...TRACKS, SUPPLEMENTS_CATALOG];
+  const productCatalogs = [...TRACKS, SUPPLEMENTS_CATALOG];
   const hasUnpricedCartItems = cart.some((item) => priceFils(item.price_fils) === undefined);
   const chartClinicalBlockerFields = useMemoR(() => incompleteClinicalFields(patientChart), [patientChart]);
   const missingClinicalFields = useMemoR(

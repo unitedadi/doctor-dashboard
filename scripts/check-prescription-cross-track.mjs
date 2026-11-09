@@ -67,10 +67,17 @@ try {
       if (url.pathname.endsWith('/quickwlp/products')) {
         const catalog = url.searchParams.get('catalog')
         catalogRequests.push(catalog)
-        const products = catalog === 'weight-loss'
-          ? [product('shared', 'MEDICATION', 'Shared medication'), product('weight', 'WEIGHT_LOSS', 'Weight medicine')]
-          : [product('shared', 'MEDICATION', 'Shared medication'), product('peptide', 'PEPTIDE', 'Peptide medicine')]
+        const products = catalog === 'supplements'
+          ? [product('supplement', 'SUPPLEMENT', 'Supplement item')]
+          : catalog === 'weight-loss'
+            ? [product('shared', 'MEDICATION', 'Shared medication'), product('weight', 'WEIGHT_LOSS', 'Weight medicine')]
+            : [product('shared', 'MEDICATION', 'Shared medication'), product('peptide', 'PEPTIDE', 'Peptide medicine')]
         return route.fulfill({ json: { products } })
+      }
+      if (url.pathname === '/api/verticals/shipments/products') {
+        assert.equal(url.searchParams.get('category'), 'SUPPLEMENT')
+        catalogRequests.push('supplements')
+        return route.fulfill({ json: { products: [product('supplement', 'SUPPLEMENT', 'Supplement item')] } })
       }
       if (url.pathname.includes('/rx/tracks/') && url.pathname.endsWith('/prescribable-products')) {
         catalogRequests.push(url.pathname)
@@ -96,11 +103,16 @@ try {
       ? catalogRequests.includes(otherCatalog)
       : catalogRequests.includes(`/api/doctor/rx/tracks/${track}/prescribable-products`),
     `Expected ${source} catalog request for ${track}`)
+    await page.locator('.rx-product-source-tabs button').filter({ hasText: 'Supplements' }).click()
+    const supplementRow = page.locator('.rx-product-row').filter({ hasText: 'Supplement item' })
+    await supplementRow.getByRole('button', { name: 'Add', exact: true }).click()
+    assert.equal((await supplementRow.locator('.rx-product-qty').textContent()).trim(), '1')
+    assert.ok(catalogRequests.includes('supplements'), 'Patient context must load the supplements catalog')
     assert.deepEqual(writes, [], 'No prescription or other API writes in smoke test')
     assert.deepEqual(errors, [], 'No browser errors')
     await context.close()
   }
-  console.log('PASS: QuickWLP and Rx consultations can select the opposite medication catalog without changing the consultation track or making API writes')
+  console.log('PASS: 7 QuickWLP/Rx consultation contexts select medicines, peptides and supplements without changing consultation identity or making API writes')
 } finally {
   await browser?.close()
   server.kill('SIGTERM')
