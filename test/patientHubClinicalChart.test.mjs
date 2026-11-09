@@ -122,7 +122,7 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       if (await fetch(origin).then((response) => response.ok).catch(() => false)) break;
       await delay(25);
     }
-    browser = await chromium.launch({ channel: "chromium" });
+    browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: "chromium" });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const requests = [];
     const errors = [];

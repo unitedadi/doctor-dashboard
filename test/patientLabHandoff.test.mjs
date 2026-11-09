@@ -24,7 +24,7 @@ test('patient chart displays and opens the explicitly shared report', async () =
   let browser;
   try {
     for (let i = 0; i < 200; i++) { if (await fetch(origin).then(r => r.ok).catch(() => false)) break; await delay(25); }
-    browser = await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:true});
+    browser = await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:true});
     for (const viewport of [{width:390,height:844}, {width:1365,height:768}]) {
       const context = await browser.newContext({viewport, acceptDownloads:true}); let opened = false;
       await context.route('**/*', async route => {
