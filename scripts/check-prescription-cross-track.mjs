@@ -68,7 +68,7 @@ try {
         const catalog = url.searchParams.get('catalog')
         catalogRequests.push(catalog)
         const products = catalog === 'supplements'
-          ? [product('supplement', 'SUPPLEMENT', 'Supplement item')]
+          ? [product('supplement', 'SUPPLEMENT', 'Supplement item'), product('SKIN-SKU-DEC-GS1', 'SKIN', 'Decoded GS1')]
           : catalog === 'weight-loss'
             ? [product('shared', 'MEDICATION', 'Shared medication'), product('weight', 'WEIGHT_LOSS', 'Weight medicine')]
             : [product('shared', 'MEDICATION', 'Shared medication'), product('peptide', 'PEPTIDE', 'Peptide medicine')]
@@ -107,12 +107,15 @@ try {
     const supplementRow = page.locator('.rx-product-row').filter({ hasText: 'Supplement item' })
     await supplementRow.getByRole('button', { name: 'Add', exact: true }).click()
     assert.equal((await supplementRow.locator('.rx-product-qty').textContent()).trim(), '1')
+    const gs1Row = page.locator('.rx-product-row').filter({ hasText: 'Decoded GS1' })
+    await gs1Row.getByRole('button', { name: 'Add', exact: true }).click()
+    assert.equal((await gs1Row.locator('.rx-product-qty').textContent()).trim(), '1')
     assert.ok(catalogRequests.includes('supplements'), 'Patient context must load the supplements catalog')
     assert.deepEqual(writes, [], 'No prescription or other API writes in smoke test')
     assert.deepEqual(errors, [], 'No browser errors')
     await context.close()
   }
-  console.log('PASS: 7 QuickWLP/Rx consultation contexts select medicines, peptides and supplements without changing consultation identity or making API writes')
+  console.log('PASS: 7 QuickWLP/Rx consultation contexts select medicines, peptides, supplements and the exact GS1 together without changing consultation identity or making API writes')
 } finally {
   await browser?.close()
   server.kill('SIGTERM')

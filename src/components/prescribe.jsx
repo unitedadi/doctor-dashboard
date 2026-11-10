@@ -1,3 +1,4 @@
+import { loadDoctorSupplementProducts } from "../lib/doctorSupplementProducts.js";
 import PatientDemographics from "./patientDemographics.jsx";
 import RefillMedicationContext from "./refillMedicationContext.jsx";
 import * as React from "react";
@@ -1287,17 +1288,11 @@ function PrescribeView({
           const data = await fetchJson(`${API_BASE}/doctor/quickwlp/products?${params.toString()}`);
           if (!cancelled) setProducts((data.products || []).map(normalizeProductIdentity));
         } else if (productCatalogKey === SUPPLEMENTS_CATALOG.key) {
-          const params = new URLSearchParams({
-            seller_id: SUPPLEMENT_SELLER_ID,
-            product_type: "SKU",
-            category: "SUPPLEMENT",
-            view: "full",
-            limit: "100",
-            offset: "0",
+          const products = await loadDoctorSupplementProducts({
+            fetchJson, apiBase: API_BASE, doctorId: DOCTOR_ID,
+            sellerId: SUPPLEMENT_SELLER_ID, query,
           });
-          if (query.trim()) params.set("q", query.trim());
-          const data = await fetchJson(`${API_BASE}/verticals/shipments/products?${params.toString()}`);
-          if (!cancelled) setProducts((data.products || []).map(mapSupplementProduct).map(normalizeProductIdentity));
+          if (!cancelled) setProducts(products.map(mapSupplementProduct).map(normalizeProductIdentity));
         } else {
           const params = new URLSearchParams({
             doctor_id: DOCTOR_ID,
