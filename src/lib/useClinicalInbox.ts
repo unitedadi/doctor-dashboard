@@ -8,7 +8,10 @@ export function useClinicalInbox() {
   const [revision, setRevision] = useState(0)
   const [state, setState] = useState<InboxData & { loading: boolean; error: string }>({ tasks: [], counts: undefined, loading: true, error: '' })
   const refreshing = useRef(false)
-  const refresh = useCallback(() => setRevision(value => value + 1), [])
+  const refresh = useCallback(() => {
+    setState(previous => ({ ...previous, loading: true, error: '' }))
+    setRevision(value => value + 1)
+  }, [])
   useEffect(() => {
     const focused = () => { if (!refreshing.current) refresh() }
     const visible = () => { if (document.visibilityState === 'visible') focused() }
@@ -24,7 +27,6 @@ export function useClinicalInbox() {
   useEffect(() => {
     const controller = new AbortController()
     refreshing.current = true
-    setState(previous => ({ ...previous, loading: true, error: '' }))
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)])
     loadClinicalInbox(fetchJson, API_BASE, DOCTOR_ID, signal, data => {
       if (!controller.signal.aborted) setState(previous => previous.counts ? previous : { ...data, loading: true, error: '' })
