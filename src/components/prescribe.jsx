@@ -1597,7 +1597,7 @@ function PrescribeView({
           items,
           ...(isAmendMode ? { reason: amendReason.trim() } : {}),
         };
-      if (!isQuickWlpMode && !initialRefillRequestId && !isAmendMode) {
+      if (!isQuickWlpMode && !initialRefillRequestId && !initialConsultationId && !isAmendMode) {
         payload.issue_mode = "DIRECT";
         const request = JSON.stringify({ endpoint, payload });
         if (prescriptionAttempt.current?.request !== request) {

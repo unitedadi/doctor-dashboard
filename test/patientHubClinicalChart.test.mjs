@@ -104,7 +104,8 @@ test("expired WLP chart preserves clinical history from the chart response", asy
           onPrescribe: (action) => { window.lastPrescriptionAction = action; },
           onAmendPrescription: () => { window.lastAmendment = true; } }));
       };
-      window.mountPrescribe = () => root.render(React.createElement(window.DD_PrescribeView, {
+      window.mountPrescribe = (consultationId) => root.render(React.createElement(window.DD_PrescribeView, {
+        key: consultationId || 'manual', initialConsultationId: consultationId,
         initialPatientId: 'expired-wlp-test', initialCustomerId: 'synthetic-customer', initialTrackKey: 'weight-loss'
       }));
     </script>`);
@@ -248,6 +249,14 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       await page.getByRole('button', { name: 'Re-issue prescription', exact: true }).waitFor();
       await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
       assert.equal((await page.evaluate(() => window.lastPrescriptionAction)).patientId, 'unpaid-expired-test');
+    });
+    await t.test("consultation-scoped prescribing retains its existing care-plan path", async () => {
+      await page.evaluate(() => window.mountPrescribe('explicit-rx-consultation'));
+      await page.locator('.rx-product-row').filter({ hasText: 'Synthetic Medication' }).getByRole('button', { name: 'Add', exact: true }).click();
+      await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
+      await page.getByText('Prescription issued', { exact: true }).first().waitFor();
+      assert.equal(prescriptions.length, 3);
+      assert.equal(prescriptions[2].issue_mode, undefined);
     });
     await t.test("an unrelated doctor's denied chart never falls back to fetching clinical history", async () => {
       const start = requests.length;
