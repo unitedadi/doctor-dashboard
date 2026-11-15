@@ -365,7 +365,7 @@ function prescriptionWorkflowCopy(workflowMode, activeTrack, patientsLoading) {
     },
     issue: {
       title: "Issue prescription",
-      subtitle: patientsLoading ? "Loading eligible patients" : "Select a completed consultation, then issue the prescription.",
+      subtitle: patientsLoading ? "Loading members" : "Select a member, review their clinical details, and issue the prescription.",
       reviewTitle: "Review prescription",
       typeLabel: "Initial prescription",
       cta: "Issue prescription",
@@ -426,7 +426,7 @@ function ReviewChecklist({ patient, isQuickWlpMode, typeLabel, sellerName, promo
   if (!patient) {
     return (
       <div className="rx-review-empty">
-        Choose a completed consultation before building a prescription.
+        Choose a member before building a prescription.
       </div>
     );
   }
@@ -963,6 +963,7 @@ function PrescribeView({
   const [refillContextError, setRefillContextError] = useStateR("");
   const [refillContextRetry, setRefillContextRetry] = useStateR(0);
   const labIdempotencyKey = useRefR("");
+  const prescriptionAttempt = useRefR(null);
   const quickWlpDoctorId = initialQuickWlpDoctorId || DOCTOR_ID;
   // Visit tracks (for example lab or IV) are not medication catalogue keys.
   // Preserve the consultation context; all medication tabs remain available.
@@ -1596,6 +1597,14 @@ function PrescribeView({
           items,
           ...(isAmendMode ? { reason: amendReason.trim() } : {}),
         };
+      if (!isQuickWlpMode && !initialRefillRequestId && !isAmendMode) {
+        payload.issue_mode = "DIRECT";
+        const request = JSON.stringify({ endpoint, payload });
+        if (prescriptionAttempt.current?.request !== request) {
+          prescriptionAttempt.current = { request, key: crypto.randomUUID() };
+        }
+        payload.idempotency_key = prescriptionAttempt.current.key;
+      }
       const data = await fetchJson(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1684,7 +1693,7 @@ function PrescribeView({
                 <h3>Prescription not ready for this patient</h3>
                 <p>
                   This button was opened from a patient context, but this patient is not ready for prescription issue yet.
-                  Complete the consultation first, then issue the prescription from the same patient or appointment.
+                  Open a member's chart or select a member to issue a prescription.
                 </p>
                 <button type="button" className="btn-ghost" onClick={loadPatients}>Check again</button>
               </div>
@@ -1708,7 +1717,7 @@ function PrescribeView({
                       setPatientQuery(event.target.value);
                       setSelectedPatientKey("");
                     }}
-                    placeholder="Search patients with completed consultations"
+                    placeholder="Search members"
                   />
                 </div>
 
@@ -1727,7 +1736,7 @@ function PrescribeView({
                           </div>
                         </div>
                         <div className="tm">
-                          <span>Completed</span>
+                          <span>{item.latestCompletedAt ? "Last consultation" : "Member"}</span>
                           <strong>{formatDateTime(item.latestCompletedAt)}</strong>
                         </div>
                       </button>
@@ -1749,7 +1758,7 @@ function PrescribeView({
                         : [patient.phone, patient.age ? `${patient.age}y` : "", patient.sex, activeTrack.label].filter(Boolean).join(" · ")}
                     </div>
                   </div>
-                  {!isQuickWlpMode ? <time>{workflowMode === "refill" ? "Refill request" : "Completed consult"}{patient.latestCompletedAt ? ` · ${formatDateTime(patient.latestCompletedAt)}` : ""}</time> : null}
+                  {!isQuickWlpMode && (workflowMode === "refill" || patient.latestCompletedAt) ? <time>{workflowMode === "refill" ? "Refill request" : "Last consultation"}{patient.latestCompletedAt ? ` · ${formatDateTime(patient.latestCompletedAt)}` : ""}</time> : null}
                   {!isQuickWlpMode && !contextualRxMode && <button className="btn-ghost rx-change-patient" onClick={() => setSelectedPatientKey("")}>Change patient</button>}
                 </div>
 
@@ -2021,7 +2030,7 @@ function PrescribeView({
               <div className="section-hdr rx-selected-items-title"><div className="label">Selected items</div></div>
               <div className="rx-cart">
                 {!patient ? (
-                  <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a patient with a completed consultation to begin."}</div>
+                  <div className="empty">{isQuickWlpMode ? "Quick WLP request not found." : "Choose a member to begin."}</div>
                 ) : cart.length === 0 ? (
                   <div className="empty">Nothing selected yet. Add items from the catalog.</div>
                 ) : cart.map((item) => (
