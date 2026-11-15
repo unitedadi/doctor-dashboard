@@ -95,12 +95,19 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       import '/src/components/shell.jsx';
       import '/src/components/clinicalUi.jsx';
       import '/src/components/patientChart.jsx';
+      import '/src/components/prescribe.jsx';
       import '/src/styles/dashboard.css';
       const root = createRoot(document.getElementById('root'));
-      window.mountChart = (patientId, account = 'mp_sami') => {
+      window.mountChart = (patientId, account = 'mp_sami', initialChart) => {
         setActiveDoctorAccount(account);
-        root.render(React.createElement(window.DD_PatientChart, { key: account + patientId, patientId }));
+        root.render(React.createElement(window.DD_PatientChart, { key: account + patientId, patientId, initialChart,
+          onPrescribe: (action) => { window.lastPrescriptionAction = action; },
+          onAmendPrescription: () => { window.lastAmendment = true; } }));
       };
+      window.mountPrescribe = (consultationId) => root.render(React.createElement(window.DD_PrescribeView, {
+        key: consultationId || 'manual', initialConsultationId: consultationId,
+        initialPatientId: 'expired-wlp-test', initialCustomerId: 'synthetic-customer', initialTrackKey: 'weight-loss'
+      }));
     </script>`);
   const socket = createServer();
   await new Promise((resolve) => socket.listen(0, "127.0.0.1", resolve));
@@ -125,6 +132,7 @@ test("expired WLP chart preserves clinical history from the chart response", asy
     browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: "chromium" });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const requests = [];
+    const prescriptions = [];
     const errors = [];
     await context.route("**/*", async (route) => {
       const request = route.request();
@@ -132,7 +140,21 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       if (url.origin !== origin) return route.abort();
       if (!url.pathname.startsWith("/api/")) return route.continue();
       requests.push(`${request.method()} ${url.pathname}${url.search}`);
+      if (request.method() === "POST" && url.pathname.endsWith('/rx/tracks/weight-loss/prescriptions')) {
+        prescriptions.push(request.postDataJSON());
+        return route.fulfill(prescriptions.length === 1
+          ? { status: 503, json: { error: 'synthetic_retry' } }
+          : { status: 201, json: { prescription_checkout: { created: true, prescription_id: 'synthetic-rx' }, checkout_url: 'https://example.test/prescription' } });
+      }
       if (request.method() !== "GET") return route.abort();
+      if (url.pathname.endsWith('/prescribable-patients')) return route.fulfill({ json: { patients: [{
+        patient_id: 'expired-wlp-test', customer_id: 'synthetic-customer', name: 'Synthetic Member',
+        track_key: 'weight-loss', doctor_id: 'doctor_sami_dev', subscription_status: 'EXPIRED', can_prescribe: true
+      }] } });
+      if (url.pathname.endsWith('/prescribable-products')) return route.fulfill({ json: { products: [{
+        product_id: 'synthetic-medication', name: 'Synthetic Medication', price_fils: 10000, active: true,
+        attributes_json: { category: 'WEIGHT_LOSS' }
+      }] } });
       if (url.pathname.endsWith("/chart")) {
         const allowed = url.pathname.includes("/expired-wlp-test/") && url.searchParams.get("doctor_id") === "doctor_sami_dev";
         return route.fulfill(allowed ? { json: expiredChart } : { status: 404, json: { error: "patient_not_found" } });
@@ -147,6 +169,14 @@ test("expired WLP chart preserves clinical history from the chart response", asy
     await page.waitForFunction(() => typeof window.mountChart === "function");
     await page.evaluate(() => window.mountChart("expired-wlp-test"));
     await page.getByRole("heading", { name: "Synthetic Member", exact: true }).waitFor();
+
+    await t.test("expired members can open prescribing without consultation eligibility", async () => {
+      await page.getByRole("button", { name: "Issue prescription", exact: true }).click();
+      const action = await page.evaluate(() => window.lastPrescriptionAction);
+      assert.equal(action.patientId, "expired-wlp-test");
+      assert.equal(action.customerId, "synthetic-customer");
+      assert.equal(action.mode, "issue");
+    });
 
     await t.test("all three PRESCRIBED check-ins expose dated weight, progress, dose and response answers", async () => {
       const cards = page.locator(".patient-refill-review-card");
@@ -182,6 +212,52 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       assert.deepEqual(errors, []);
     });
     await page.screenshot({ path: `${cwd}output/expired-wlp-chart-history.png`, fullPage: true });
+    await t.test("the prescribing form submits direct mode for the selected member and reuses its key after a failed response", async () => {
+      await page.evaluate(() => window.mountPrescribe());
+      await page.locator('.rx-product-row').filter({ hasText: 'Synthetic Medication' }).getByRole('button', { name: 'Add', exact: true }).click();
+      await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
+      await page.getByText('synthetic_retry', { exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
+      await page.getByText('Prescription issued', { exact: true }).first().waitFor();
+      assert.equal(prescriptions.length, 2);
+      assert.equal(prescriptions[0].issue_mode, 'DIRECT');
+      assert.equal(prescriptions[0].customer_id, 'synthetic-customer');
+      assert.equal(prescriptions[0].doctor_id, 'doctor_sami_dev');
+      assert.equal(prescriptions[0].idempotency_key, prescriptions[1].idempotency_key);
+      assert.ok(prescriptions[0].idempotency_key);
+      assert.equal(prescriptions[0].items[0].product_id, 'synthetic-medication');
+      assert.deepEqual(errors, []);
+      await page.screenshot({ path: `${cwd}output/direct-prescription-confirmed.png`, fullPage: true });
+    });
+    await t.test("paid and delivered medication and an outstanding consultation outcome do not hide follow-up prescribing", async () => {
+      const chart = { ...expiredChart, patient: { ...expiredChart.patient, id: 'paid-expired-test' },
+        prescriptions: [{ id: 'paid-prescription', status: 'ACTIVE', checkout_status: 'PAID', items: [] }],
+        medication_delivery: [{ order_id: 'paid-order', status: 'DELIVERED', paid_at: '2026-10-25T10:00:00Z', delivered_at: '2026-10-26T10:00:00Z', items: [] }],
+        lifecycle: { payment: { key: 'PAID' }, fulfillment: { key: 'DELIVERED' } },
+        consultations: [{ id: 'new-consult', status: 'COMPLETED', completed_at: '2026-11-15T10:00:00Z' }],
+        next_actions: [{ key: 'RECORD_CONSULT_OUTCOME' }] };
+      await page.evaluate(chart => window.mountChart('paid-expired-test', 'mp_sami', chart), chart);
+      await page.getByRole('button', { name: 'Record outcome', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Follow-up prescription', exact: true }).click();
+      assert.equal((await page.evaluate(() => window.lastPrescriptionAction)).patientId, 'paid-expired-test');
+      await page.screenshot({ path: `${cwd}output/paid-expired-prescribe-button.png`, fullPage: true });
+    });
+    await t.test("an unpaid prescription keeps both re-issue and new prescribing available", async () => {
+      const chart = { ...expiredChart, patient: { ...expiredChart.patient, id: 'unpaid-expired-test' },
+        prescriptions: [{ id: 'unpaid-prescription', status: 'ISSUED', can_amend: true, items: [] }] };
+      await page.evaluate(chart => window.mountChart('unpaid-expired-test', 'mp_sami', chart), chart);
+      await page.getByRole('button', { name: 'Re-issue prescription', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
+      assert.equal((await page.evaluate(() => window.lastPrescriptionAction)).patientId, 'unpaid-expired-test');
+    });
+    await t.test("consultation-scoped prescribing retains its existing care-plan path", async () => {
+      await page.evaluate(() => window.mountPrescribe('explicit-rx-consultation'));
+      await page.locator('.rx-product-row').filter({ hasText: 'Synthetic Medication' }).getByRole('button', { name: 'Add', exact: true }).click();
+      await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
+      await page.getByText('Prescription issued', { exact: true }).first().waitFor();
+      assert.equal(prescriptions.length, 3);
+      assert.equal(prescriptions[2].issue_mode, undefined);
+    });
     await t.test("an unrelated doctor's denied chart never falls back to fetching clinical history", async () => {
       const start = requests.length;
       await page.evaluate(() => window.mountChart("expired-wlp-test", "mp_marwa"));
@@ -192,7 +268,7 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       assert.ok(requests[start].includes("/expired-wlp-test/chart?doctor_id=doctor_marwa"));
       assert.deepEqual(errors, []);
     });
-    assert.ok(requests.every((url) => url.startsWith("GET ")), "only read requests were issued");
+    assert.ok(requests.filter(url => !url.startsWith('GET ')).every(url => url === 'POST /api/doctor/patients/expired-wlp-test/rx/tracks/weight-loss/prescriptions'));
   } finally {
     await browser?.close();
     server.kill();

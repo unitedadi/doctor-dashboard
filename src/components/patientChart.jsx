@@ -655,17 +655,10 @@ function contextCompletedAt(context) {
   return context?.prescribable?.latestCompletedAt || context?.prescribable?.latest_completed_at || "";
 }
 
-function prescriptionActionForChart({ chart, context, medication, amendablePrescription, nextAction }) {
-  if (isRecordOutcomeAction(nextAction)) return null;
-  const canPrescribe = contextCanPrescribe(context);
-  if (amendablePrescription) {
-    return { label: "Re-issue prescription", mode: "reissue", enabled: true, prescription: amendablePrescription };
-  }
-  if (!canPrescribe) return null;
+function prescriptionActionForChart({ chart, medication }) {
   if (pendingRefill(chart)) return { label: "Review refill", mode: "refill", enabled: true };
   if (chartHasPaidMedication(chart) || medication) return { label: "Follow-up prescription", mode: "followup", enabled: true };
-  if (chartHasCompletedConsult(chart)) return { label: "Issue prescription", mode: "issue", enabled: true };
-  return null;
+  return { label: "Issue prescription", mode: "issue", enabled: true };
 }
 
 function buildLifecycle(chart, context = {}) {
@@ -1790,7 +1783,7 @@ function PatientChart({
   if (error && !chart) return <div className="api-state patient-api-state">{error}</div>;
   if (!chart) return <div className="empty-state">Patient chart unavailable.</div>;
 
-  const prescriptionAction = prescriptionActionForChart({ chart, context, medication, amendablePrescription, nextAction });
+  const prescriptionAction = prescriptionActionForChart({ chart, medication });
 
   if (hubMode) {
     return (
@@ -1926,9 +1919,11 @@ function PatientChart({
               {onOpenPatient && mode !== "full" ? <button className="btn-ghost" onClick={() => onOpenPatient(patient.id, patient.customer_id)}>Open full chart</button> : null}
               {recordOutcomeAction ? (
                 <button className="btn-primary" onClick={() => setOutcomeTarget({ appointmentId: recordOutcomeAppointmentId, patientName: patient.name })}>{I.check}<span>Record outcome</span></button>
-              ) : prescriptionAction?.mode === "reissue" ? (
-                <button className="btn-primary" onClick={() => onAmendPrescription?.(patientPayload, prescriptionAction.prescription)}>{I.pill}<span>{prescriptionAction.label}</span></button>
-              ) : onPrescribe && prescriptionAction ? (
+              ) : null}
+              {amendablePrescription && onAmendPrescription ? (
+                <button className="btn-ghost" onClick={() => onAmendPrescription(patientPayload, amendablePrescription)}>{I.pill}<span>Re-issue prescription</span></button>
+              ) : null}
+              {onPrescribe && prescriptionAction ? (
                 <button className="btn-primary" onClick={() => onPrescribe({ patientId: patient.id, customerId: patient.customer_id, trackKey, mode: prescriptionAction.mode, chart })}>{I.pill}<span>{prescriptionAction.label}</span></button>
               ) : null}
             </div>

@@ -58,6 +58,6 @@ test('prescription review loads its exact request and has visible retry recovery
   assert.ok(prescribe.includes('match.customer_id !== initialCustomerId'));
   assert.ok(prescribe.includes('onRetry={'));
   assert.equal((prescribe.match(/refillMedicationContext=\{refillContext\?\.medicationContext\}/g) || []).length, 2);
-  assert.ok(prescribe.includes('workflowMode === "refill" ? "Refill request" : "Completed consult"'));
+  assert.ok(prescribe.includes('workflowMode === "refill" ? "Refill request" : "Last consultation"'));
   assert.ok(!prescribe.includes('status: "all", limit: "100", offset: "0"'));
 });
