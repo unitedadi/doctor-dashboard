@@ -98,10 +98,11 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       import '/src/components/prescribe.jsx';
       import '/src/styles/dashboard.css';
       const root = createRoot(document.getElementById('root'));
-      window.mountChart = (patientId, account = 'mp_sami') => {
+      window.mountChart = (patientId, account = 'mp_sami', initialChart) => {
         setActiveDoctorAccount(account);
-        root.render(React.createElement(window.DD_PatientChart, { key: account + patientId, patientId,
-          onPrescribe: (action) => { window.lastPrescriptionAction = action; } }));
+        root.render(React.createElement(window.DD_PatientChart, { key: account + patientId, patientId, initialChart,
+          onPrescribe: (action) => { window.lastPrescriptionAction = action; },
+          onAmendPrescription: () => { window.lastAmendment = true; } }));
       };
       window.mountPrescribe = () => root.render(React.createElement(window.DD_PrescribeView, {
         initialPatientId: 'expired-wlp-test', initialCustomerId: 'synthetic-customer', initialTrackKey: 'weight-loss'
@@ -226,6 +227,27 @@ test("expired WLP chart preserves clinical history from the chart response", asy
       assert.equal(prescriptions[0].items[0].product_id, 'synthetic-medication');
       assert.deepEqual(errors, []);
       await page.screenshot({ path: `${cwd}output/direct-prescription-confirmed.png`, fullPage: true });
+    });
+    await t.test("paid and delivered medication and an outstanding consultation outcome do not hide follow-up prescribing", async () => {
+      const chart = { ...expiredChart, patient: { ...expiredChart.patient, id: 'paid-expired-test' },
+        prescriptions: [{ id: 'paid-prescription', status: 'ACTIVE', checkout_status: 'PAID', items: [] }],
+        medication_delivery: [{ order_id: 'paid-order', status: 'DELIVERED', paid_at: '2026-10-25T10:00:00Z', delivered_at: '2026-10-26T10:00:00Z', items: [] }],
+        lifecycle: { payment: { key: 'PAID' }, fulfillment: { key: 'DELIVERED' } },
+        consultations: [{ id: 'new-consult', status: 'COMPLETED', completed_at: '2026-11-15T10:00:00Z' }],
+        next_actions: [{ key: 'RECORD_CONSULT_OUTCOME' }] };
+      await page.evaluate(chart => window.mountChart('paid-expired-test', 'mp_sami', chart), chart);
+      await page.getByRole('button', { name: 'Record outcome', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Follow-up prescription', exact: true }).click();
+      assert.equal((await page.evaluate(() => window.lastPrescriptionAction)).patientId, 'paid-expired-test');
+      await page.screenshot({ path: `${cwd}output/paid-expired-prescribe-button.png`, fullPage: true });
+    });
+    await t.test("an unpaid prescription keeps both re-issue and new prescribing available", async () => {
+      const chart = { ...expiredChart, patient: { ...expiredChart.patient, id: 'unpaid-expired-test' },
+        prescriptions: [{ id: 'unpaid-prescription', status: 'ISSUED', can_amend: true, items: [] }] };
+      await page.evaluate(chart => window.mountChart('unpaid-expired-test', 'mp_sami', chart), chart);
+      await page.getByRole('button', { name: 'Re-issue prescription', exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Issue prescription', exact: true }).click();
+      assert.equal((await page.evaluate(() => window.lastPrescriptionAction)).patientId, 'unpaid-expired-test');
     });
     await t.test("an unrelated doctor's denied chart never falls back to fetching clinical history", async () => {
       const start = requests.length;
